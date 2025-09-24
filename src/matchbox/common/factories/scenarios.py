@@ -10,11 +10,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Engine
 
 from matchbox.client.queries import Query
-from matchbox.common.dtos import (
-    ModelResolutionName,
-    ResolutionName,
-    SourceResolutionName,
-)
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.entities import FeatureConfig, SuffixRule
 from matchbox.common.factories.models import query_to_model_factory
@@ -101,22 +96,27 @@ def create_bare_scenario(
     **kwargs: Any,
 ) -> TestkitDAG:
     """Create a bare TestkitDAG scenario."""
-    dag = TestkitDAG()
+    dag_testkit = TestkitDAG()
 
     # Create collection and version
-    backend.create_collection(name=dag.collection)
-    backend.create_version(collection=dag.collection, name=dag.version)
+    backend.create_collection(name=dag_testkit.dag.name)
+    backend.create_version(
+        collection=dag_testkit.dag.name, name=dag_testkit.dag.version
+    )
 
     # Create linked sources
     linked = linked_sources_factory(
-        n_true_entities=n_entities, seed=seed, engine=warehouse_engine
+        n_true_entities=n_entities,
+        seed=seed,
+        engine=warehouse_engine,
+        dag=dag_testkit.dag,
     )
-    dag.add_source(linked)
+    dag_testkit.add_source(linked)
 
     # Write sources to warehouse
-    _testkitdag_to_location(warehouse_engine, dag)
+    _testkitdag_to_location(warehouse_engine, dag_testkit)
 
-    return dag
+    return dag_testkit
 
 
 @register_scenario("index")
@@ -129,25 +129,23 @@ def create_index_scenario(
 ) -> TestkitDAG:
     """Create an index TestkitDAG scenario."""
     # First create the bare scenario
-    dag = create_bare_scenario(backend, warehouse_engine, n_entities, seed, **kwargs)
+    dag_testkit = create_bare_scenario(
+        backend, warehouse_engine, n_entities, seed, **kwargs
+    )
 
     # Index sources in backend
-    for source_testkit in dag.sources.values():
+    for source_testkit in dag_testkit.sources.values():
         backend.insert_resolution(
             resolution=source_testkit.source.to_resolution(),
-            collection=dag.collection,
-            version=dag.version,
+            collection=source_testkit.source.dag.name,
+            version=source_testkit.source.dag.version,
         )
         backend.insert_source_data(
-            name=SourceResolutionName(
-                collection=dag.collection,
-                version=dag.version,
-                name=source_testkit.source.name,
-            ),
+            name=source_testkit.qualified_name,
             data_hashes=source_testkit.data_hashes,
         )
 
-    return dag
+    return dag_testkit
 
 
 @register_scenario("dedupe")
@@ -160,23 +158,24 @@ def create_dedupe_scenario(
 ) -> TestkitDAG:
     """Create a dedupe TestkitDAG scenario."""
     # First create the index scenario
-    dag = create_index_scenario(backend, warehouse_engine, n_entities, seed, **kwargs)
+    dag_testkit = create_index_scenario(
+        backend, warehouse_engine, n_entities, seed, **kwargs
+    )
 
-    # Get the linked sources
-    linked_key = next(iter(dag.linked.keys()))
-    linked = dag.linked[linked_key]
+    # Get the LinkedSourcesTestkit using one of the sources
+    linked = dag_testkit.get_linked_testkit("crn")
 
     # Create and add deduplication models
-    for testkit in dag.sources.values():
+    for testkit in dag_testkit.sources.values():
         resolution = testkit.source.to_resolution()
         name = f"naive_test_{resolution.name}"
 
         # Query the raw data
-        source_data = backend.query(source=resolution.name)
+        source_data = backend.query(source=testkit.qualified_name)
 
         # Build model testkit using query data
         model_testkit = query_to_model_factory(
-            left_query=Query(testkit.source, dag=dag.dag),
+            left_query=Query(testkit.source, dag=dag_testkit.dag),
             left_data=source_data,
             left_keys={resolution.name: "key"},
             true_entities=tuple(linked.true_entities),
@@ -189,20 +188,16 @@ def create_dedupe_scenario(
         # Add to backend and DAG
         backend.insert_resolution(
             resolution=model_testkit.model.to_resolution(),
-            collection=dag.collection,
-            version=dag.version,
+            collection=model_testkit.model.dag.name,
+            version=model_testkit.model.dag.version,
         )
         backend.insert_model_data(
-            name=ModelResolutionName(
-                collection=dag.collection,
-                version=dag.version,
-                name=model_testkit.model.name,
-            ),
+            name=model_testkit.qualified_name,
             results=model_testkit.probabilities,
         )
-        dag.add_model(model_testkit)
+        dag_testkit.add_model(model_testkit)
 
-    return dag
+    return dag_testkit
 
 
 @register_scenario("probabilistic_dedupe")
@@ -215,27 +210,24 @@ def create_probabilistic_dedupe_scenario(
 ) -> TestkitDAG:
     """Create a probabilistic dedupe TestkitDAG scenario."""
     # First create the index scenario
-    dag = create_index_scenario(backend, warehouse_engine, n_entities, seed, **kwargs)
+    dag_testkit = create_index_scenario(
+        backend, warehouse_engine, n_entities, seed, **kwargs
+    )
 
-    # Get the linked sources
-    linked_key = next(iter(dag.linked.keys()))
-    linked = dag.linked[linked_key]
+    # Get the LinkedSourcesTestkit using one of the sources
+    linked = dag_testkit.get_linked_testkit("crn")
 
     # Create and add deduplication models
-    for testkit in dag.sources.values():
+    for testkit in dag_testkit.sources.values():
         resolution = testkit.source.to_resolution()
         name = f"probabilistic_test_{resolution.name}"
 
         # Query the raw data
-        source_data = backend.query(
-            source=SourceResolutionName(
-                collection=dag.collection, version=dag.version, name=resolution.name
-            )
-        )
+        source_data = backend.query(source=testkit.qualified_name)
 
         # Build model testkit using query data
         model_testkit = query_to_model_factory(
-            left_query=Query(testkit.source, dag=dag.dag),
+            left_query=Query(testkit.source, dag=dag_testkit.dag),
             left_data=source_data,
             left_keys={resolution.name: "key"},
             true_entities=tuple(linked.true_entities),
@@ -249,22 +241,17 @@ def create_probabilistic_dedupe_scenario(
         # Add to backend and DAG
         backend.insert_resolution(
             resolution=model_testkit.model.to_resolution(),
-            collection=dag.collection,
-            version=dag.version,
-        )
-        qualified_model_name = ModelResolutionName(
-            collection=dag.collection,
-            version=dag.version,
-            name=model_testkit.model.name,
+            collection=model_testkit.model.dag.name,
+            version=model_testkit.model.dag.version,
         )
         backend.insert_model_data(
-            name=qualified_model_name,
+            name=model_testkit.qualified_name,
             results=model_testkit.probabilities,
         )
-        backend.set_model_truth(name=qualified_model_name, truth=50)
-        dag.add_model(model_testkit)
+        backend.set_model_truth(name=model_testkit.qualified_name, truth=50)
+        dag_testkit.add_model(model_testkit)
 
-    return dag
+    return dag_testkit
 
 
 @register_scenario("link")
@@ -277,54 +264,45 @@ def create_link_scenario(
 ) -> TestkitDAG:
     """Create a link TestkitDAG scenario."""
     # First create the dedupe scenario
-    dag = create_dedupe_scenario(backend, warehouse_engine, n_entities, seed, **kwargs)
+    dag_testkit = create_dedupe_scenario(
+        backend, warehouse_engine, n_entities, seed, **kwargs
+    )
 
-    # Get the linked sources
-    linked_key = next(iter(dag.linked.keys()))
-    linked = dag.linked[linked_key]
+    # Get the LinkedSourcesTestkit using one of the sources
+    linked = dag_testkit.get_linked_testkit("crn")
 
     # Extract models for linking
-    crn_model = dag.models["naive_test_crn"]
-    duns_model = dag.models["naive_test_duns"]
-    cdms_model = dag.models["naive_test_cdms"]
+    crn_model = dag_testkit.models["naive_test_crn"]
+    duns_model = dag_testkit.models["naive_test_duns"]
+    cdms_model = dag_testkit.models["naive_test_cdms"]
 
     # Query data for each resolution
     crn_data = backend.query(
-        source=SourceResolutionName(
-            collection=dag.collection, version=dag.version, name="crn"
-        ),
-        resolution=ResolutionName(
-            collection=dag.collection, version=dag.version, name=crn_model.name
-        ),
+        source=dag_testkit.sources["crn"].qualified_name,
+        resolution=crn_model.qualified_name,
     )
     duns_data = backend.query(
-        source=SourceResolutionName(
-            collection=dag.collection, version=dag.version, name="duns"
-        ),
-        resolution=ResolutionName(
-            collection=dag.collection, version=dag.version, name=duns_model.name
-        ),
+        source=dag_testkit.sources["duns"].qualified_name,
+        resolution=duns_model.qualified_name,
     )
     cdms_data = backend.query(
-        source=SourceResolutionName(
-            collection=dag.collection, version=dag.version, name="cdms"
-        ),
-        resolution=ResolutionName(
-            collection=dag.collection, version=dag.version, name=cdms_model.name
-        ),
+        source=dag_testkit.sources["cdms"].qualified_name,
+        resolution=cdms_model.qualified_name,
     )
 
     # Create CRN-DUNS link
     crn_duns_name = "deterministic_naive_test_crn_naive_test_duns"
     crn_duns_model = query_to_model_factory(
         left_query=Query(
-            dag.sources["crn"].source,
+            dag_testkit.sources["crn"].source,
             model=crn_model.model,
-            dag=dag.dag,
+            dag=dag_testkit.dag,
         ),
         left_data=crn_data,
         left_keys={"crn": "key"},
-        right_query=Query(dag.sources["duns"], model=duns_model.model, dag=dag.dag),
+        right_query=Query(
+            dag_testkit.sources["duns"], model=duns_model.model, dag=dag_testkit.dag
+        ),
         right_data=duns_data,
         right_keys={"duns": "key"},
         true_entities=tuple(linked.true_entities),
@@ -337,32 +315,29 @@ def create_link_scenario(
     # Add to backend and DAG
     backend.insert_resolution(
         resolution=crn_duns_model.model.to_resolution(),
-        collection=dag.collection,
-        version=dag.version,
-    )
-    qualified_crn_duns_name = ModelResolutionName(
-        collection=dag.collection, version=dag.version, name=crn_duns_name
+        collection=crn_duns_model.model.dag.name,
+        version=crn_duns_model.model.dag.version,
     )
     backend.insert_model_data(
-        name=qualified_crn_duns_name,
+        name=crn_duns_model.qualified_name,
         results=crn_duns_model.probabilities,
     )
-    dag.add_model(crn_duns_model)
+    dag_testkit.add_model(crn_duns_model)
 
     # Create CRN-CDMS link
     crn_cdms_name = "probabilistic_naive_test_crn_naive_test_cdms"
     crn_cdms_model = query_to_model_factory(
         left_query=Query(
-            dag.sources["crn"].source,
+            dag_testkit.sources["crn"].source,
             model=crn_model.model,
-            dag=dag.dag,
+            dag=dag_testkit.dag,
         ),
         left_data=crn_data,
         left_keys={"crn": "key"},
         right_query=Query(
-            dag.sources["cdms"].source,
+            dag_testkit.sources["cdms"].source,
             model=cdms_model.model,
-            dag=dag.dag,
+            dag=dag_testkit.dag,
         ),
         right_data=cdms_data,
         right_keys={"cdms": "key"},
@@ -375,25 +350,24 @@ def create_link_scenario(
     # Add to backend and DAG
     backend.insert_resolution(
         resolution=crn_cdms_model.model.to_resolution(),
-        collection=dag.collection,
-        version=dag.version,
-    )
-    qualified_crn_cdms_name = ModelResolutionName(
-        collection=dag.collection, version=dag.version, name=crn_cdms_name
+        collection=crn_cdms_model.model.dag.name,
+        version=crn_cdms_model.model.dag.version,
     )
     backend.insert_model_data(
-        name=qualified_crn_cdms_name, results=crn_cdms_model.probabilities
+        name=crn_cdms_model.qualified_name, results=crn_cdms_model.probabilities
     )
-    backend.set_model_truth(name=qualified_crn_cdms_name, truth=75)
-    dag.add_model(crn_cdms_model)
+    backend.set_model_truth(name=crn_cdms_model.qualified_name, truth=75)
+    dag_testkit.add_model(crn_cdms_model)
 
     # Create final join
     # Query the previous link's results
     crn_cdms_data_crn_only = backend.query(
-        source="crn", resolution=qualified_crn_cdms_name
+        source=dag_testkit.sources["crn"].qualified_name,
+        resolution=crn_cdms_model.qualified_name,
     ).rename_columns(["id", "keys_crn"])
     crn_cdms_data_cdms_only = backend.query(
-        source="cdms", resolution=qualified_crn_cdms_name
+        source=dag_testkit.sources["cdms"].qualified_name,
+        resolution=crn_cdms_model.qualified_name,
     ).rename_columns(["id", "keys_cdms"])
     crn_cdms_data = pa.concat_tables(
         [crn_cdms_data_crn_only, crn_cdms_data_cdms_only],
@@ -401,26 +375,24 @@ def create_link_scenario(
     ).combine_chunks()
 
     duns_data_linked = backend.query(
-        source="duns",
-        resolution=ModelResolutionName(
-            collection=dag.collection, version=dag.version, name=duns_model.name
-        ),
+        source=dag_testkit.sources["duns"].qualified_name,
+        resolution=duns_model.qualified_name,
     )
 
     final_join_name = "final_join"
     final_join_model = query_to_model_factory(
         left_query=Query(
-            dag.sources["crn"].source,
-            dag.sources["cdms"].source,
+            dag_testkit.sources["crn"].source,
+            dag_testkit.sources["cdms"].source,
             model=crn_cdms_model.model,
-            dag=dag.dag,
+            dag=dag_testkit.dag,
         ),
         left_data=crn_cdms_data,
         left_keys={"crn": "keys_crn", "cdms": "keys_cdms"},
         right_query=Query(
-            dag.sources["duns"].source,
+            dag_testkit.sources["duns"].source,
             model=duns_model.model,
-            dag=dag.dag,
+            dag=dag_testkit.dag,
         ),
         right_data=duns_data_linked,
         right_keys={"duns": "key"},
@@ -433,18 +405,16 @@ def create_link_scenario(
     # Add to backend and DAG
     backend.insert_resolution(
         resolution=final_join_model.model.to_resolution(),
-        collection=dag.collection,
-        version=dag.version,
+        collection=final_join_model.model.dag.name,
+        version=final_join_model.model.dag.version,
     )
     backend.insert_model_data(
-        name=ModelResolutionName(
-            collection=dag.collection, version=dag.version, name=final_join_name
-        ),
+        name=final_join_model.qualified_name,
         results=final_join_model.probabilities,
     )
-    dag.add_model(final_join_model)
+    dag_testkit.add_model(final_join_model)
 
-    return dag
+    return dag_testkit
 
 
 @register_scenario("alt_dedupe")
@@ -456,7 +426,7 @@ def create_alt_dedupe_scenario(
     **kwargs: Any,
 ) -> TestkitDAG:
     """Create a TestkitDAG scenario with two alternative dedupers."""
-    dag = TestkitDAG()
+    dag_testkit = TestkitDAG()
 
     # Create linked sources
     company_name_feature = FeatureConfig(
@@ -472,44 +442,38 @@ def create_alt_dedupe_scenario(
         repetition=1,
     )
 
-    linked = linked_sources_factory(source_parameters=(foo_a_tkit_source,))
-    dag.add_source(linked)
+    linked = linked_sources_factory(
+        source_parameters=(foo_a_tkit_source,), dag=dag_testkit.dag
+    )
+    dag_testkit.add_source(linked)
 
     # Write sources to warehouse
-    _testkitdag_to_location(warehouse_engine, dag)
+    _testkitdag_to_location(warehouse_engine, dag_testkit)
 
     # Index sources in backend
-    for source_testkit in dag.sources.values():
+    for source_testkit in dag_testkit.sources.values():
         backend.insert_resolution(
             resolution=source_testkit.source.to_resolution(),
-            collection=dag.collection,
-            version=dag.version,
+            collection=source_testkit.source.dag.name,
+            version=source_testkit.source.dag.version,
         )
         backend.insert_source_data(
-            name=SourceResolutionName(
-                source_testkit.source.name,
-                collection=dag.collection,
-                version=dag.version,
-            ),
+            name=source_testkit.qualified_name,
             data_hashes=source_testkit.data_hashes,
         )
 
     # Create and add deduplication models
-    for testkit in dag.sources.values():
+    for testkit in dag_testkit.sources.values():
         resolution = testkit.source.to_resolution()
         model_name1 = f"dedupe_{resolution.name}"
         model_name2 = f"dedupe2_{resolution.name}"
 
         # Query the raw data
-        source_data = backend.query(
-            source=SourceResolutionName(
-                collection=dag.collection, version=dag.version, name=resolution.name
-            )
-        )
+        source_data = backend.query(source=testkit.qualified_name)
 
         # Build model testkit using query data
         model_testkit1 = query_to_model_factory(
-            left_query=Query(testkit.source, dag=dag.dag),
+            left_query=Query(testkit.source, dag=dag_testkit.dag),
             left_data=source_data,
             left_keys={resolution.name: "key"},
             true_entities=tuple(linked.true_entities),
@@ -520,7 +484,7 @@ def create_alt_dedupe_scenario(
         )
 
         model_testkit2 = query_to_model_factory(
-            left_query=Query(testkit.source, dag=dag.dag),
+            left_query=Query(testkit.source, dag=dag_testkit.dag),
             left_data=source_data,
             left_keys={resolution.name: "key"},
             true_entities=tuple(linked.true_entities),
@@ -539,19 +503,18 @@ def create_alt_dedupe_scenario(
             # Add both models to backend and DAG
             backend.insert_resolution(
                 resolution=model.model.to_resolution(),
-                collection=dag.collection,
-                version=dag.version,
+                collection=source_testkit.source.dag.name,
+                version=source_testkit.source.dag.version,
             )
-            qualified_name = ModelResolutionName(
-                collection=dag.collection, version=dag.version, name=model.name
+            backend.insert_model_data(
+                name=model.qualified_name, results=model.probabilities
             )
-            backend.insert_model_data(name=qualified_name, results=model.probabilities)
-            backend.set_model_truth(name=qualified_name, truth=threshold)
+            backend.set_model_truth(name=model.qualified_name, truth=threshold)
 
             # Add to DAG
-            dag.add_model(model)
+            dag_testkit.add_model(model)
 
-    return dag
+    return dag_testkit
 
 
 @register_scenario("convergent")
@@ -568,7 +531,7 @@ def create_convergent_scenario(
     indexed sources with repetition, and two naive dedupe models that haven't yet
     had their results inserted.
     """
-    dag = TestkitDAG()
+    dag_testkit = TestkitDAG()
 
     # Create linked sources
     company_name_feature = FeatureConfig(
@@ -588,32 +551,29 @@ def create_convergent_scenario(
         source_parameters=(
             foo_a_tkit_source,
             foo_a_tkit_source.model_copy(update={"name": "foo_b"}),
-        )
+        ),
+        dag=dag_testkit.dag,
     )
 
-    dag.add_source(linked)
+    dag_testkit.add_source(linked)
 
     # Write sources to warehouse
-    _testkitdag_to_location(warehouse_engine, dag)
+    _testkitdag_to_location(warehouse_engine, dag_testkit)
 
     # Index sources in backend
-    for source_testkit in dag.sources.values():
+    for source_testkit in dag_testkit.sources.values():
         backend.insert_resolution(
             resolution=source_testkit.source.to_resolution(),
-            collection=dag.collection,
-            version=dag.version,
+            collection=source_testkit.source.dag.name,
+            version=source_testkit.source.dag.version,
         )
         backend.insert_source_data(
-            name=SourceResolutionName(
-                collection=dag.collection,
-                version=dag.version,
-                name=source_testkit.source.name,
-            ),
+            name=source_testkit.qualified_name,
             data_hashes=source_testkit.data_hashes,
         )
 
     # Create and add deduplication models
-    for testkit in dag.sources.values():
+    for testkit in dag_testkit.sources.values():
         resolution = testkit.source.to_resolution()
         name = f"naive_test_{resolution.name}"
 
@@ -622,7 +582,7 @@ def create_convergent_scenario(
 
         # Build model testkit using query data
         model_testkit = query_to_model_factory(
-            left_query=Query(testkit.source, dag=dag.dag),
+            left_query=Query(testkit.source, dag=dag_testkit.dag),
             left_data=source_query,
             left_keys={resolution.name: "key"},
             true_entities=tuple(linked.true_entities),
@@ -635,9 +595,9 @@ def create_convergent_scenario(
         assert model_testkit.probabilities.num_rows > 0
 
         # Add to DAG
-        dag.add_model(model_testkit)
+        dag_testkit.add_model(model_testkit)
 
-    return dag
+    return dag_testkit
 
 
 @contextmanager
@@ -669,25 +629,25 @@ def setup_scenario(
     # Check if we have a backend snapshot cached
     if cache_key in _DATABASE_SNAPSHOTS_CACHE:
         # Load cached snapshot and DAG
-        dag, snapshot = _DATABASE_SNAPSHOTS_CACHE[cache_key]
+        dag_testkit, snapshot = _DATABASE_SNAPSHOTS_CACHE[cache_key]
         # Because the location client can't be deep-copied, this will reuse an
         # old engine, with the same URL as `warehouse`, but a different object
         # Thus, in _testkitdag_to_location we need to overwrite all testkits with
         # our new warehouse object
-        dag = dag.model_copy(deep=True)
+        dag_testkit = dag_testkit.model_copy(deep=True)
 
         # Restore backend and write sources to warehouse
         backend.restore(snapshot=snapshot)
-        _testkitdag_to_location(warehouse, dag)
+        _testkitdag_to_location(warehouse, dag_testkit)
     else:
         # Create new TestkitDAG with proper backend integration
         scenario_builder = SCENARIO_REGISTRY[scenario_type]
-        dag = scenario_builder(backend, warehouse, n_entities, seed, **kwargs)
+        dag_testkit = scenario_builder(backend, warehouse, n_entities, seed, **kwargs)
 
         # Cache the snapshot and DAG
-        _DATABASE_SNAPSHOTS_CACHE[cache_key] = (dag, backend.dump())
+        _DATABASE_SNAPSHOTS_CACHE[cache_key] = (dag_testkit, backend.dump())
 
     try:
-        yield dag
+        yield dag_testkit
     finally:
         backend.clear(certain=True)

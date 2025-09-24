@@ -11,7 +11,14 @@ from matchbox.client.models import dedupers, linkers
 from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.results import Results
-from matchbox.common.dtos import ModelConfig, ModelType, Resolution, ResolutionType
+from matchbox.common.dtos import (
+    ModelConfig,
+    ModelResolutionName,
+    ModelType,
+    Resolution,
+    ResolutionName,
+    ResolutionType,
+)
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.logging import logger
 
@@ -125,7 +132,7 @@ class Model:
         )
 
     @property
-    def dependencies(self) -> list[str]:
+    def dependencies(self) -> list[ResolutionName]:
         """Returns all resolution names this model needs as implied by the queries."""
         if self.right_query:
             return (
@@ -169,6 +176,15 @@ class Model:
             left_query=resolution.config.left_query,
             right_query=resolution.config.right_query,
             truth=resolution.truth,
+        )
+
+    @property
+    def qualified_name(self) -> ModelResolutionName:
+        """Returns the model name qualified by collection and version."""
+        return ModelResolutionName(
+            collection=self.dag.name,
+            version=self.dag.version,
+            name=self.name,
         )
 
     @property

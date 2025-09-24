@@ -10,6 +10,7 @@ from matchbox.client import _handler
 from matchbox.client.models import Model
 from matchbox.client.queries import Query
 from matchbox.client.sources import Source
+from matchbox.common.dtos import CollectionName, UnqualifiedResolutionName, VersionName
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.logging import logger
 
@@ -17,10 +18,11 @@ from matchbox.common.logging import logger
 class DAG:
     """Self-sufficient pipeline of indexing, deduping and linking steps."""
 
-    def __init__(self, name: str, new: bool = False):
+    def __init__(self, name: CollectionName, new: bool = False):
         """Initialises empty DAG."""
-        self.name = name
-        self.nodes: dict[str, Source | Model] = {}
+        self.name: CollectionName = name
+        self.version: VersionName = "draft" if new else "published"
+        self.nodes: dict[UnqualifiedResolutionName, Source | Model] = {}
         self.graph: dict[str, list[str]] = {}
 
     def _check_dag(self, dag: Self):
@@ -38,9 +40,9 @@ class DAG:
             if step.right_query:
                 self._check_dag(step.right_query.dag)
 
-            for resolution_name in step.dependencies:
-                if resolution_name not in self.nodes:
-                    raise ValueError(f"Step {resolution_name} not added to DAG")
+            for resolution in step.dependencies:
+                if resolution.name not in self.nodes:
+                    raise ValueError(f"Step {resolution.name} not added to DAG")
             self.graph[step.name] = step.parents
         else:
             self.graph[step.name] = []

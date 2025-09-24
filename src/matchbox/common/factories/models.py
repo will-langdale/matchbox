@@ -26,7 +26,8 @@ from matchbox.common.arrow import SCHEMA_RESULTS
 from matchbox.common.dtos import (
     ModelResolutionName,
     ModelType,
-    SourceResolutionName,
+    UnqualifiedModelResolutionName,
+    UnqualifiedSourceResolutionName,
 )
 from matchbox.common.factories.entities import (
     ClusterEntity,
@@ -575,6 +576,11 @@ class ModelTestkit(BaseModel):
         return self.model.name
 
     @property
+    def qualified_name(self) -> ModelResolutionName:
+        """Returns the model name qualified by collection and version."""
+        return self.model.qualified_name
+
+    @property
     def data(self) -> pa.Table:
         """Return a PyArrow table in the same format as matchbox queries."""
         if self.model.config.type == ModelType.DEDUPER:
@@ -666,7 +672,7 @@ def _testkit_to_query(testkit: SourceTestkit | ModelTestkit) -> Query:
 
 
 def model_factory(
-    name: ModelResolutionName | None = None,
+    name: UnqualifiedModelResolutionName | None = None,
     dag: DAG | None = None,
     description: str | None = None,
     left_testkit: SourceTestkit | ModelTestkit | None = None,
@@ -885,13 +891,13 @@ def model_factory(
 def query_to_model_factory(
     left_query: Query,
     left_data: pa.Table,
-    left_keys: dict[SourceResolutionName, str],
+    left_keys: dict[UnqualifiedSourceResolutionName, str],
     true_entities: tuple[SourceEntity, ...],
-    name: ModelResolutionName | None = None,
+    name: UnqualifiedModelResolutionName | None = None,
     description: str | None = None,
     right_query: Query | None = None,
     right_data: pa.Table | None = None,
-    right_keys: dict[SourceResolutionName, str] | None = None,
+    right_keys: dict[UnqualifiedSourceResolutionName, str] | None = None,
     prob_range: tuple[float, float] = (0.8, 1.0),
     seed: int = 42,
 ) -> ModelTestkit:

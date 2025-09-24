@@ -29,6 +29,7 @@ from matchbox.common.dtos import (
     ResolutionType,
     SourceConfig,
     SourceField,
+    SourceResolutionName,
 )
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
@@ -562,6 +563,15 @@ class Source:
         return self.hashes
 
     # Note: name, description, truth are now instance variables, not properties
+
+    @property
+    def qualified_name(self) -> SourceResolutionName:
+        """Returns the source name qualified by collection and version."""
+        return SourceResolutionName(
+            collection=self.dag.name,
+            version=self.dag.version,
+            name=self.name,
+        )
 
     @property
     def prefix(self) -> str:

@@ -4,7 +4,10 @@ import pytest
 
 from matchbox.client.queries import Query
 from matchbox.common.arrow import SCHEMA_RESULTS
-from matchbox.common.dtos import ModelResolutionName, ResolutionName
+from matchbox.common.dtos import (
+    UnqualifiedModelResolutionName,
+    UnqualifiedResolutionName,
+)
 from matchbox.common.factories.models import (
     generate_dummy_probabilities,
     model_factory,
@@ -160,8 +163,8 @@ def test_model_type_creation(
     ],
 )
 def test_model_pipeline_with_dummy_methodology(
-    left_testkit: ResolutionName,
-    right_testkit: ResolutionName | None,
+    left_testkit: UnqualifiedResolutionName,
+    right_testkit: UnqualifiedResolutionName | None,
     model_type: Literal["deduper", "linker"],
 ) -> None:
     """Tests the factories validate "real" methodologies in various pipeline positions.
@@ -362,7 +365,7 @@ def test_model_factory_validation(
     ],
 )
 def test_model_factory_basic_creation(
-    name: ModelResolutionName,
+    name: UnqualifiedModelResolutionName,
     description: str,
     model_type: str,
     n_true_entities: int,

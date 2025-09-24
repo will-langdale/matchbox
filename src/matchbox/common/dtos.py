@@ -461,7 +461,7 @@ class QueryConfig(BaseModel):
         return v
 
     @property
-    def dependencies(self) -> list[str]:
+    def dependencies(self) -> list[ResolutionName]:
         """Return all resolution names that this query needs."""
         deps = list(self.source_resolutions)
         if self.model_resolution:
