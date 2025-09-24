@@ -14,14 +14,11 @@ from sqlalchemy import (
     select,
     union_all,
 )
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import Match, ResolutionName, SourceResolutionName
-from matchbox.common.exceptions import (
-    MatchboxResolutionNotFoundError,
-)
 from matchbox.common.logging import logger
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
@@ -36,20 +33,6 @@ from matchbox.server.postgresql.orm import (
 from matchbox.server.postgresql.utils.db import compile_sql
 
 T = TypeVar("T")
-
-
-def get_source_config(name: SourceResolutionName, session: Session) -> SourceConfigs:
-    """Converts the named source to a SourceConfigs ORM object."""
-    source_config = (
-        session.query(SourceConfigs)
-        .join(Resolutions, Resolutions.resolution_id == SourceConfigs.resolution_id)
-        .filter(Resolutions.name == name)
-        .first()
-    )
-    if source_config is None:
-        raise MatchboxResolutionNotFoundError(name=name)
-
-    return source_config
 
 
 def _build_probability_subquery(
@@ -486,19 +469,15 @@ def query(
     Returns all records with their final resolved cluster IDs.
     """
     with MBDB.get_session() as session:
-        source_config: SourceConfigs = get_source_config(source, session)
-        source_resolution: Resolutions = session.get(
-            Resolutions, source_config.resolution_id
-        )
+        source_config: SourceConfigs = Resolutions.from_name(
+            name=source, session=session
+        ).source_config
+        source_resolution: Resolutions = source_config.source_resolution
 
         if resolution:
-            truth_resolution: Resolutions = (
-                session.query(Resolutions)
-                .filter(Resolutions.name == resolution)
-                .first()
+            truth_resolution: Resolutions = Resolutions.from_name(
+                name=resolution, session=session
             )
-            if truth_resolution is None:
-                raise MatchboxResolutionNotFoundError(name=resolution)
         else:
             truth_resolution: Resolutions = source_resolution
 
@@ -609,16 +588,17 @@ def match(
     for each target.
     """
     with MBDB.get_session() as session:
-        # Get configurations
-        source_config: SourceConfigs = get_source_config(source, session)
-        truth_resolution: Resolutions | None = session.execute(
-            select(Resolutions).where(Resolutions.name == resolution)
-        ).scalar()
-        if truth_resolution is None:
-            raise MatchboxResolutionNotFoundError(name=resolution)
+        # Get configurations using ORM relationships
+        source_config: SourceConfigs = Resolutions.from_name(
+            name=source, session=session
+        ).source_config
+        truth_resolution: Resolutions = Resolutions.from_name(
+            name=resolution, session=session
+        )
 
         target_configs: list[SourceConfigs] = [
-            get_source_config(target, session) for target in targets
+            Resolutions.from_name(name=target, session=session).source_config
+            for target in targets
         ]
         target_source_config_ids = [tc.source_config_id for tc in target_configs]
 

@@ -529,9 +529,9 @@ class Match(BaseModel):
     """A match between primary keys in the Matchbox database."""
 
     cluster: int | None
-    source: str
+    source: SourceResolutionName
     source_id: set[str] = Field(default_factory=set)
-    target: str
+    target: SourceResolutionName
     target_id: set[str] = Field(default_factory=set)
 
     @model_validator(mode="after")
