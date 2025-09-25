@@ -18,7 +18,7 @@ class TestkitDAG(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # The real DAG that handles all logic
-    dag: DAG = Field(default_factory=lambda: DAG("collection"))
+    dag: DAG = Field(default_factory=lambda: DAG(name="collection", version="draft"))
 
     # Just registries of test data - no complex logic
     sources: dict[UnqualifiedSourceResolutionName, SourceTestkit] = {}

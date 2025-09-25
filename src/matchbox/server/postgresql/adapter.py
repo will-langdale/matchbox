@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 from pyarrow import Table
 from pydantic import BaseModel
 from sqlalchemy import and_, bindparam, delete, func, or_, select, update
-from sqlalchemy.orm import selectinload
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import (
@@ -25,7 +24,6 @@ from matchbox.common.eval import Judgement as CommonJudgement
 from matchbox.common.eval import ModelComparison
 from matchbox.common.exceptions import (
     MatchboxCollectionAlreadyExists,
-    MatchboxCollectionNotFoundError,
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
     MatchboxNoJudgements,
@@ -244,14 +242,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def delete_collection(self, name: CollectionName, certain: bool) -> None:  # noqa: D102
         with MBDB.get_session() as session:
-            collection_orm = session.execute(
-                select(Collections)
-                .where(Collections.name == name)
-                .options(selectinload(Collections.versions))
-            ).scalar_one_or_none()
-
-            if not collection_orm:
-                raise MatchboxCollectionNotFoundError(name=name)
+            collection_orm = Collections.from_name(name, session)
 
             if not certain:
                 version_names = [v.name for v in collection_orm.versions]
@@ -268,12 +259,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def create_version(self, collection: CollectionName, name: VersionName) -> Version:  # noqa: D102
         with MBDB.get_session() as session:
-            collection_orm = session.execute(
-                select(Collections).where(Collections.name == collection)
-            ).scalar_one_or_none()
-
-            if not collection_orm:
-                raise MatchboxCollectionNotFoundError(name=collection)
+            collection_orm = Collections.from_name(name, session)
 
             if name in [v.name for v in collection_orm.versions]:
                 raise MatchboxVersionAlreadyExists

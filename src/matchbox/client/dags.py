@@ -18,10 +18,10 @@ from matchbox.common.logging import logger
 class DAG:
     """Self-sufficient pipeline of indexing, deduping and linking steps."""
 
-    def __init__(self, name: CollectionName, new: bool = False):
+    def __init__(self, name: CollectionName, version: VersionName, new: bool = False):
         """Initialises empty DAG."""
         self.name: CollectionName = name
-        self.version: VersionName = "draft" if new else "published"
+        self.version: VersionName = version
         self.nodes: dict[UnqualifiedResolutionName, Source | Model] = {}
         self.graph: dict[str, list[str]] = {}
 

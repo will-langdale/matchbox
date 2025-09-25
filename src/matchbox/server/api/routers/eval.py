@@ -9,9 +9,12 @@ from matchbox.common.arrow import JudgementsZipFilenames, table_to_buffer
 from matchbox.common.dtos import (
     BackendParameterType,
     BackendResourceType,
+    CollectionName,
     InvalidParameterError,
     ModelResolutionName,
     NotFoundError,
+    UnqualifiedModelResolutionName,
+    VersionName,
 )
 from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.exceptions import (
@@ -91,13 +94,8 @@ def compare_models(
     """Return comparison of selected models."""
     try:
         return backend.compare_models(resolutions)
-    except MatchboxResolutionNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
+    except MatchboxResolutionNotFoundError:
+        raise
     except MatchboxNoJudgements as e:
         raise HTTPException(
             status_code=404,
@@ -112,20 +110,26 @@ def compare_models(
     responses={404: {"model": NotFoundError}, 422: {"model": InvalidParameterError}},
 )
 def sample(
-    backend: BackendDependency, n: int, resolution: ModelResolutionName, user_id: int
+    backend: BackendDependency,
+    collection: CollectionName,
+    version: VersionName,
+    resolution: UnqualifiedModelResolutionName,
+    n: int,
+    user_id: int,
 ) -> ParquetResponse:
     """Sample n cluster to validate."""
     try:
-        sample = backend.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
+        sample = backend.sample_for_eval(
+            resolution=ModelResolutionName(
+                collection=collection, version=version, name=resolution
+            ),
+            n=n,
+            user_id=user_id,
+        )
         buffer = table_to_buffer(sample)
         return ParquetResponse(buffer.getvalue())
-    except MatchboxResolutionNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
+    except MatchboxResolutionNotFoundError:
+        raise
     except MatchboxUserNotFoundError as e:
         raise HTTPException(
             status_code=404,

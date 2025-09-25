@@ -13,7 +13,11 @@ from matchbox.common.arrow import (
     SCHEMA_JUDGEMENTS,
     JudgementsZipFilenames,
 )
-from matchbox.common.dtos import BackendParameterType, BackendResourceType
+from matchbox.common.dtos import (
+    BackendParameterType,
+    BackendResourceType,
+    ModelResolutionName,
+)
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
@@ -96,39 +100,33 @@ def test_get_judgements(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
 
 def test_compare_models_ok(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_pr = {"a": (1, 0.5), "b": (0.5, 1)}
+    model_a_name = ModelResolutionName(name="a")
+    model_b_name = ModelResolutionName(name="b")
+    mock_pr = {model_a_name: (1, 0.5), model_b_name: (0.5, 1)}
     mock_backend.compare_models.return_value = mock_pr
-
-    resolutions_payload = [
-        {"collection": "default", "version": "v1", "name": "a"},
-        {"collection": "default", "version": "v1", "name": "b"},
-    ]
 
     response = test_client.post(
         "/eval/compare",
-        json=resolutions_payload,
+        json=[m.model_dump() for m in [model_a_name, model_b_name]],
     )
 
     assert response.status_code == 200
     result = response.json()
-    assert sorted(result.keys()) == ["a", "b"]
-    assert tuple(result["a"]) == mock_pr["a"]
-    assert tuple(result["b"]) == mock_pr["b"]
+    assert sorted(result.keys()) == ["default/v1/a", "default/v1/b"]
+    assert tuple(result["default/v1/a"]) == mock_pr[model_a_name]
+    assert tuple(result["default/v1/b"]) == mock_pr[model_b_name]
 
 
 def test_compare_models_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     test_client, mock_backend, _ = api_client_and_mocks
-
-    resolutions_payload = [
-        {"collection": "default", "version": "v1", "name": "a"},
-        {"collection": "default", "version": "v1", "name": "b"},
-        {"collection": "default", "version": "v1", "name": "c"},
-    ]
+    model_a_name = ModelResolutionName(name="a")
+    model_b_name = ModelResolutionName(name="b")
+    model_c_name = ModelResolutionName(name="c")
 
     mock_backend.compare_models.side_effect = MatchboxResolutionNotFoundError
     response = test_client.post(
         "/eval/compare",
-        json=resolutions_payload,
+        json=[m.model_dump() for m in [model_a_name, model_b_name, model_c_name]],
     )
     assert response.status_code == 404
     assert response.json()["entity"] == BackendResourceType.RESOLUTION
@@ -136,7 +134,7 @@ def test_compare_models_404(api_client_and_mocks: tuple[TestClient, Mock, Mock])
     mock_backend.compare_models.side_effect = MatchboxNoJudgements
     response = test_client.post(
         "/eval/compare",
-        json=resolutions_payload,
+        json=[m.model_dump() for m in [model_a_name, model_b_name, model_c_name]],
     )
     assert response.status_code == 404
     assert response.json()["entity"] == BackendResourceType.JUDGEMENT
@@ -160,13 +158,18 @@ def test_get_samples(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     # Process response
     response = test_client.get(
         "/eval/samples",
-        params={"n": 10, "resolution": "resolution", "user_id": 12},
+        params={
+            "collection": "test_collection",
+            "version": "v1",
+            "resolution": "a",
+            "n": 10,
+            "user_id": 12,
+        },
     )
+    assert response.status_code == 200
+
     buffer = BytesIO(response.content)
     table = pq.read_table(buffer)
-
-    # Check response
-    assert response.status_code == 200
     assert table.equals(sample)
 
 
@@ -196,7 +199,13 @@ def test_get_samples_404(
 
     response = test_client.get(
         "/eval/samples",
-        params={"n": 10, "resolution": "resolution", "user_id": 12},
+        params={
+            "collection": "test_collection",
+            "version": "v1",
+            "resolution": "a",
+            "n": 10,
+            "user_id": 12,
+        },
     )
 
     assert response.status_code == 404
@@ -210,7 +219,13 @@ def test_get_samples_422(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
 
     response = test_client.get(
         "/eval/samples",
-        params={"n": 10, "resolution": "resolution", "user_id": 12},
+        params={
+            "collection": "test_collection",
+            "version": "v1",
+            "resolution": "a",
+            "n": 10,
+            "user_id": 12,
+        },
     )
 
     assert response.status_code == 422

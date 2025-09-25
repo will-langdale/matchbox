@@ -26,12 +26,14 @@ from matchbox.common.dtos import (
     BackendUploadType,
     CollectionName,
     CountResult,
+    CRUDOperation,
     LoginAttempt,
     LoginResult,
     Match,
     NotFoundError,
     OKMessage,
     ResolutionName,
+    ResourceOperationStatus,
     SourceResolutionName,
     UnqualifiedModelResolutionName,
     UnqualifiedSourceResolutionName,
@@ -40,9 +42,11 @@ from matchbox.common.dtos import (
     VersionName,
 )
 from matchbox.common.exceptions import (
+    MatchboxCollectionNotFoundError,
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
+    MatchboxVersionNotFoundError,
 )
 from matchbox.server.api.dependencies import (
     BackendDependency,
@@ -65,10 +69,76 @@ app.include_router(eval.router)
 
 
 @app.exception_handler(StarletteHTTPException)
-async def http_exception_handler(request, exc):
+async def http_exception_handler(
+    request: Request, exc: StarletteHTTPException
+) -> JSONResponse:
     """Overwrite the default JSON schema for an `HTTPException`."""
     return JSONResponse(
         content=jsonable_encoder(exc.detail), status_code=exc.status_code
+    )
+
+
+@app.exception_handler(MatchboxCollectionNotFoundError)
+async def collection_not_found_handler(
+    request: Request, exc: MatchboxCollectionNotFoundError
+) -> JSONResponse:
+    """Handle collection not found errors."""
+    detail = NotFoundError(
+        details=str(exc), entity=BackendResourceType.COLLECTION
+    ).model_dump()
+    return JSONResponse(
+        status_code=404,
+        content=jsonable_encoder(detail),
+    )
+
+
+@app.exception_handler(MatchboxVersionNotFoundError)
+async def version_not_found_handler(
+    request: Request, exc: MatchboxVersionNotFoundError
+) -> JSONResponse:
+    """Handle version not found errors."""
+    detail = NotFoundError(
+        details=str(exc), entity=BackendResourceType.VERSION
+    ).model_dump()
+    return JSONResponse(
+        status_code=404,
+        content=jsonable_encoder(detail),
+    )
+
+
+@app.exception_handler(MatchboxResolutionNotFoundError)
+async def resolution_not_found_handler(
+    request: Request, exc: MatchboxResolutionNotFoundError
+) -> JSONResponse:
+    """Handle resolution not found errors."""
+    detail = NotFoundError(
+        details=str(exc), entity=BackendResourceType.RESOLUTION
+    ).model_dump()
+    return JSONResponse(
+        status_code=404,
+        content=jsonable_encoder(detail),
+    )
+
+
+@app.exception_handler(MatchboxDeletionNotConfirmed)
+async def deletion_not_confirmed_handler(
+    request: Request, exc: MatchboxDeletionNotConfirmed
+) -> JSONResponse:
+    """Handle deletion not confirmed errors."""
+    # Extract resource name from request
+    path_parts = request.url.path.split("/")
+    resource_name = path_parts[-1] if path_parts else "unknown"
+
+    detail = ResourceOperationStatus(
+        success=False,
+        name=resource_name,
+        operation=CRUDOperation.DELETE,
+        details=str(exc),
+    ).model_dump()
+
+    return JSONResponse(
+        status_code=409,
+        content=jsonable_encoder(detail),
     )
 
 
@@ -279,7 +349,9 @@ def query(
             ),
             resolution=ResolutionName(
                 collection=collection, version=version, name=resolution
-            ),
+            )
+            if resolution
+            else None,
             threshold=threshold,
             return_leaf_id=return_leaf_id,
             limit=limit,
@@ -364,7 +436,16 @@ def count_backend_items(
 
 @app.delete(
     "/database",
-    responses={409: {"model": str}},
+    responses={
+        409: {
+            "model": ResourceOperationStatus,
+            **ResourceOperationStatus.status_409_examples(),
+        },
+        500: {
+            "model": ResourceOperationStatus,
+            **ResourceOperationStatus.status_500_examples(),
+        },
+    },
     dependencies=[Depends(authorisation_dependencies)],
 )
 def clear_database(
@@ -377,13 +458,22 @@ def clear_database(
             )
         ),
     ] = False,
-) -> OKMessage:
+) -> ResourceOperationStatus:
     """Delete all data from the backend whilst retaining tables."""
     try:
         backend.clear(certain=certain)
-        return OKMessage()
-    except MatchboxDeletionNotConfirmed as e:
+        return ResourceOperationStatus(
+            success=True, name="database", operation=CRUDOperation.DELETE
+        )
+    except MatchboxDeletionNotConfirmed:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=409,
-            detail=str(e),
+            status_code=500,
+            detail=ResourceOperationStatus(
+                success=False,
+                name="database",
+                operation=CRUDOperation.DELETE,
+                details=str(e),
+            ),
         ) from e

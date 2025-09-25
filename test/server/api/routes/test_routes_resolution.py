@@ -11,7 +11,6 @@ from matchbox.common.dtos import (
     BackendResourceType,
     CRUDOperation,
     NotFoundError,
-    Resolution,
     ResourceOperationStatus,
     UploadStage,
 )
@@ -96,7 +95,7 @@ def test_insert_model(
     )
 
     mock_backend.insert_resolution.assert_called_once_with(
-        resolution=testkit.model.to_resolution()
+        resolution=testkit.model.to_resolution(), collection="default", version="v1"
     )
 
 
@@ -290,14 +289,17 @@ def test_set_truth(
     test_client, mock_backend, _ = api_client_and_mocks
 
     response = test_client.patch(
-        f"/collections/default/versions/v1/resolutions/{testkit.model.name}/truth",
+        f"/collections/{testkit.qualified_name.collection}"
+        f"/versions/{testkit.qualified_name.version}"
+        f"/resolutions/{testkit.qualified_name.name}"
+        "/truth",
         json=95,
     )
 
     assert response.status_code == 200
     assert response.json()["success"] is True
     mock_backend.set_model_truth.assert_called_once_with(
-        name=testkit.model.name, truth=95
+        name=testkit.qualified_name, truth=95
     )
 
 
@@ -446,36 +448,6 @@ def test_delete_resolution_404(
     assert error.entity == BackendResourceType.RESOLUTION
 
 
-def test_get_resolution_sources(
-    api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
-    source = source_factory().source.to_resolution()
-    test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_leaf_source_resolutions = Mock(return_value=[source])
-
-    response = test_client.get(
-        "/collections/default/versions/v1/resolutions/foo/sources"
-    )
-    assert response.status_code == 200
-    for s in response.json():
-        assert Resolution.model_validate(s)
-
-
-def test_get_resolution_sources_404(
-    api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
-    test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_leaf_source_resolutions = Mock(
-        side_effect=MatchboxResolutionNotFoundError
-    )
-
-    response = test_client.get(
-        "/collections/default/versions/v1/resolutions/foo/sources"
-    )
-    assert response.status_code == 404
-    assert response.json()["entity"] == BackendResourceType.RESOLUTION
-
-
 def test_complete_source_upload_process(
     s3: S3Client,
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
@@ -513,7 +485,9 @@ def test_complete_source_upload_process(
 
     # Assert backend given the config but not yet the data
     mock_backend.insert_resolution.assert_called_once_with(
-        resolution=source_testkit.source.to_resolution()
+        resolution=source_testkit.source.to_resolution(),
+        collection="default",
+        version="v1",
     )
     mock_backend.insert_source_data.assert_not_called()
 

@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 from matchbox.common.dtos import (
     BackendResourceType,
     Collection,
-    OKMessage,
     Version,
 )
 from matchbox.common.exceptions import (
@@ -16,6 +15,7 @@ from matchbox.common.exceptions import (
     MatchboxCollectionNotFoundError,
     MatchboxDeletionNotConfirmed,
     MatchboxVersionAlreadyExists,
+    MatchboxVersionNotFoundError,
 )
 from matchbox.common.factories.models import model_factory
 from matchbox.common.factories.sources import source_factory
@@ -42,32 +42,61 @@ def test_get_collection(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     # Mock collection data with versions and resolutions
     source_resolution = source_factory().source.to_resolution()
     model_resolution = model_factory().model.to_resolution()
-    collection_data = {
-        "v1": [source_resolution, model_resolution],
-        "v2": [source_resolution],
-    }
+    collection = Collection(
+        name="test_collection",
+        versions={
+            "v1": Version(
+                name="v1",
+                resolutions=[source_resolution, model_resolution],
+                mutable=False,
+                default=True,
+            ),
+            "v2": Version(
+                name="v2", resolutions=[source_resolution], mutable=True, default=False
+            ),
+        },
+    )
 
-    mock_backend.get_collection = Mock(return_value=collection_data)
+    mock_backend.get_collection = Mock(return_value=collection)
 
     response = test_client.get("/collections/test_collection")
 
     assert response.status_code == 200
-    assert "v1" in response.json()
-    assert "v2" in response.json()
-    assert len(response.json()["v1"]) == 2
-    assert len(response.json()["v2"]) == 1
+    assert Collection.model_validate(response.json())
     mock_backend.get_collection.assert_called_once_with(name="test_collection")
 
 
-def test_get_collection_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
-    """Test retrieving a non-existent collection."""
+@pytest.mark.parametrize(
+    ["method", "endpoint", "backend_method", "extra_params"],
+    [
+        pytest.param(
+            "GET", "/collections/nonexistent", "get_collection", {}, id="get_collection"
+        ),
+        pytest.param(
+            "DELETE",
+            "/collections/nonexistent",
+            "delete_collection",
+            {"certain": True},
+            id="delete_collection",
+        ),
+    ],
+)
+def test_collection_not_found_404(
+    method: str,
+    endpoint: str,
+    backend_method: str,
+    extra_params: dict[str, bool],
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+):
+    """Test 404 responses when collection doesn't exist."""
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_collection = Mock(side_effect=MatchboxCollectionNotFoundError())
+    mock_method = getattr(mock_backend, backend_method)
+    mock_method.side_effect = MatchboxCollectionNotFoundError()
 
-    response = test_client.get("/collections/nonexistent")
+    response = test_client.request(method, endpoint, params=extra_params)
 
     assert response.status_code == 404
-    assert response.json()["entity"] == BackendResourceType.RESOLUTION
+    assert response.json()["entity"] == BackendResourceType.COLLECTION
 
 
 def test_create_collection(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
@@ -77,23 +106,11 @@ def test_create_collection(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     new_collection = Collection(name="new_collection", versions={})
     mock_backend.create_collection = Mock(return_value=new_collection)
 
-    response = test_client.post("/collections", json={"name": "new_collection"})
+    response = test_client.post("/collections", json=new_collection.model_dump())
 
     assert response.status_code == 201
-    assert response.json()["name"] == "new_collection"
+    assert Collection.model_validate(response.json())
     mock_backend.create_collection.assert_called_once_with(name="new_collection")
-
-
-def test_create_collection_missing_name(
-    api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
-    """Test creating a collection without providing a name."""
-    test_client, _, _ = api_client_and_mocks
-
-    response = test_client.post("/collections", json={})
-
-    assert response.status_code == 422
-    assert "Collection name is required" in response.json()["detail"]
 
 
 def test_create_collection_already_exists(
@@ -106,7 +123,20 @@ def test_create_collection_already_exists(
     response = test_client.post("/collections", json={"name": "existing_collection"})
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "Collection already exists"
+    assert response.json()["success"] is False
+    assert response.json()["operation"] == "create"
+    assert response.json()["details"] == "Collection already exists."
+
+
+def test_create_collection_missing_name(
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+):
+    """Test creating a collection without providing a name."""
+    test_client, _, _ = api_client_and_mocks
+
+    response = test_client.post("/collections", json={})
+
+    assert response.status_code == 422
 
 
 def test_delete_collection(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
@@ -119,7 +149,8 @@ def test_delete_collection(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     )
 
     assert response.status_code == 200
-    assert "deleted successfully" in response.json()["message"]
+    assert response.json()["success"] is True
+    assert response.json()["operation"] == "delete"
     mock_backend.delete_collection.assert_called_once_with(
         name="test_collection", certain=True
     )
@@ -137,39 +168,13 @@ def test_delete_collection_needs_confirmation(
     response = test_client.delete("/collections/test_collection")
 
     assert response.status_code == 409
-    error_message = response.json()["detail"]
-    assert "v1" in error_message and "v2" in error_message
-
-
-def test_delete_collection_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
-    """Test deleting a non-existent collection."""
-    test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.delete_collection = Mock(side_effect=MatchboxCollectionNotFoundError())
-
-    response = test_client.delete("/collections/nonexistent", params={"certain": True})
-
-    assert response.status_code == 404
-    assert response.json()["entity"] == BackendResourceType.RESOLUTION
+    assert response.json()["success"] is False
+    assert response.json()["operation"] == "delete"
+    assert "v1" in response.json()["details"]
+    assert "v2" in response.json()["details"]
 
 
 # Version management tests
-
-
-def test_list_versions(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
-    """Test listing versions for a collection."""
-    test_client, mock_backend, _ = api_client_and_mocks
-
-    source_resolution = source_factory().source.to_resolution()
-    versions_data = {"v1": [source_resolution], "v2": []}
-
-    mock_backend.get_collection = Mock(return_value=versions_data)
-
-    response = test_client.get("/collections/test_collection/versions")
-
-    assert response.status_code == 200
-    assert "v1" in response.json()
-    assert "v2" in response.json()
-    mock_backend.get_collection.assert_called_once_with(name="test_collection")
 
 
 def test_get_version(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
@@ -177,29 +182,94 @@ def test_get_version(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     test_client, mock_backend, _ = api_client_and_mocks
 
     source_resolution = source_factory().source.to_resolution()
-    version_resolutions = [source_resolution]
+    version = Version(
+        name="v1", resolutions=[source_resolution], is_default=True, is_mutable=False
+    )
 
-    mock_backend.get_version = Mock(return_value=version_resolutions)
+    mock_backend.get_version = Mock(return_value=version)
 
     response = test_client.get("/collections/test_collection/versions/v1")
 
     assert response.status_code == 200
-    assert len(response.json()) == 1
-    assert response.json()[0]["name"] == source_resolution.name
+    assert Version.model_validate(response.json())
     mock_backend.get_version.assert_called_once_with(
         collection="test_collection", name="v1"
     )
 
 
-def test_get_version_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
-    """Test retrieving a non-existent version."""
+@pytest.mark.parametrize(
+    [
+        "exception_type",
+        "expected_entity",
+        "method",
+        "endpoint",
+        "backend_method",
+        "extra_params",
+    ],
+    [
+        pytest.param(
+            MatchboxCollectionNotFoundError,
+            BackendResourceType.COLLECTION,
+            "GET",
+            "/collections/nonexistent/versions/v1",
+            "get_version",
+            {},
+        ),
+        pytest.param(
+            MatchboxVersionNotFoundError,
+            BackendResourceType.VERSION,
+            "GET",
+            "/collections/test_collection/versions/nonexistent",
+            "get_version",
+            {},
+        ),
+        pytest.param(
+            MatchboxCollectionNotFoundError,
+            BackendResourceType.COLLECTION,
+            "POST",
+            "/collections/nonexistent/versions",
+            "create_version",
+            {},
+        ),
+        pytest.param(
+            MatchboxCollectionNotFoundError,
+            BackendResourceType.COLLECTION,
+            "DELETE",
+            "/collections/nonexistent/versions/v1",
+            "delete_version",
+            {"certain": True},
+        ),
+        pytest.param(
+            MatchboxVersionNotFoundError,
+            BackendResourceType.VERSION,
+            "DELETE",
+            "/collections/test_collection/versions/nonexistent",
+            "delete_version",
+            {"certain": True},
+        ),
+    ],
+)
+def test_version_endpoints_404(
+    exception_type: type[Exception],
+    expected_entity: BackendResourceType,
+    method: str,
+    endpoint: str,
+    backend_method: str,
+    extra_params: dict[str, bool],
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+):
+    """Test 404 responses for version endpoints when resources don't exist."""
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_version = Mock(side_effect=MatchboxCollectionNotFoundError())
+    mock_method = getattr(mock_backend, backend_method)
+    mock_method.side_effect = exception_type()
 
-    response = test_client.get("/collections/nonexistent/versions/v1")
+    json_data = {"name": "v1"} if method == "POST" else None
+    response = test_client.request(
+        method, endpoint, params=extra_params, json=json_data
+    )
 
     assert response.status_code == 404
-    assert response.json()["entity"] == BackendResourceType.RESOLUTION
+    assert response.json()["entity"] == expected_entity
 
 
 def test_create_version(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
@@ -210,42 +280,14 @@ def test_create_version(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     mock_backend.create_version = Mock(return_value=new_version)
 
     response = test_client.post(
-        "/collections/test_collection/versions", json={"name": "v2"}
+        "/collections/test_collection/versions", json=new_version.model_dump()
     )
 
     assert response.status_code == 201
-    assert response.json()["name"] == "v2"
-    assert response.json()["is_mutable"] is True
+    assert Version.model_validate(response.json())
     mock_backend.create_version.assert_called_once_with(
         collection="test_collection", name="v2"
     )
-
-
-def test_create_version_missing_name(
-    api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
-    """Test creating a version without providing a name."""
-    test_client, _, _ = api_client_and_mocks
-
-    response = test_client.post("/collections/test_collection/versions", json={})
-
-    assert response.status_code == 422
-    assert "Version name is required" in response.json()["detail"]
-
-
-def test_create_version_collection_not_found(
-    api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
-    """Test creating a version in a non-existent collection."""
-    test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.create_version = Mock(side_effect=MatchboxCollectionNotFoundError())
-
-    response = test_client.post(
-        "/collections/nonexistent/versions", json={"name": "v1"}
-    )
-
-    assert response.status_code == 404
-    assert response.json()["entity"] == BackendResourceType.RESOLUTION
 
 
 def test_create_version_already_exists(
@@ -260,7 +302,20 @@ def test_create_version_already_exists(
     )
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "Version already exists"
+    assert response.json()["success"] is False
+    assert response.json()["operation"] == "create"
+    assert response.json()["details"] == "Version already exists."
+
+
+def test_create_version_missing_name(
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+):
+    """Test creating a version without providing a name."""
+    test_client, _, _ = api_client_and_mocks
+
+    response = test_client.post("/collections/test_collection/versions", json={})
+
+    assert response.status_code == 422
 
 
 def test_set_version_mutable(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
@@ -273,11 +328,12 @@ def test_set_version_mutable(api_client_and_mocks: tuple[TestClient, Mock, Mock]
     mock_backend.set_version_mutable = Mock(return_value=updated_version)
 
     response = test_client.patch(
-        "/collections/test_collection/versions/v1/mutable", json={"mutable": False}
+        "/collections/test_collection/versions/v1/mutable", json=False
     )
 
     assert response.status_code == 200
-    assert response.json()["is_mutable"] is False
+    assert response.json()["success"] is True
+    assert response.json()["operation"] == "update"
     mock_backend.set_version_mutable.assert_called_once_with(
         collection="test_collection", name="v1", mutable=False
     )
@@ -294,7 +350,6 @@ def test_set_version_mutable_missing_flag(
     )
 
     assert response.status_code == 422
-    assert "Mutable flag is required" in response.json()["detail"]
 
 
 def test_set_version_default(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
@@ -307,11 +362,12 @@ def test_set_version_default(api_client_and_mocks: tuple[TestClient, Mock, Mock]
     mock_backend.set_version_default = Mock(return_value=updated_version)
 
     response = test_client.patch(
-        "/collections/test_collection/versions/v1/default", json={"default": True}
+        "/collections/test_collection/versions/v1/default", json=True
     )
 
     assert response.status_code == 200
-    assert response.json()["is_default"] is True
+    assert response.json()["success"] is True
+    assert response.json()["operation"] == "update"
     mock_backend.set_version_default.assert_called_once_with(
         collection="test_collection", name="v1", default=True
     )
@@ -328,30 +384,50 @@ def test_set_version_default_missing_flag(
     )
 
     assert response.status_code == 422
-    assert "Default flag is required" in response.json()["detail"]
 
 
 @pytest.mark.parametrize(
-    "endpoint,payload",
-    [("mutable", {"mutable": True}), ("default", {"default": False})],
+    ["endpoint", "payload", "exception_type", "expected_entity"],
+    [
+        pytest.param(
+            "mutable",
+            True,
+            MatchboxCollectionNotFoundError,
+            BackendResourceType.COLLECTION,
+        ),
+        pytest.param(
+            "mutable", True, MatchboxVersionNotFoundError, BackendResourceType.VERSION
+        ),
+        pytest.param(
+            "default",
+            False,
+            MatchboxCollectionNotFoundError,
+            BackendResourceType.COLLECTION,
+        ),
+        pytest.param(
+            "default", False, MatchboxVersionNotFoundError, BackendResourceType.VERSION
+        ),
+    ],
 )
 def test_version_patch_endpoints_404(
     endpoint: str,
-    payload: dict[str, bool],
+    payload: bool,
+    exception_type: type[Exception],
+    expected_entity: BackendResourceType,
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
 ):
     """Test 404 responses for version PATCH endpoints when resource doesn't exist."""
     test_client, mock_backend, _ = api_client_and_mocks
     method_name = f"set_version_{endpoint}"
     mock_method = getattr(mock_backend, method_name)
-    mock_method.side_effect = MatchboxCollectionNotFoundError()
+    mock_method.side_effect = exception_type()
 
     response = test_client.patch(
-        f"/collections/nonexistent/versions/v1/{endpoint}", json=payload
+        f"/collections/test_collection/versions/v1/{endpoint}", json=payload
     )
 
     assert response.status_code == 404
-    assert response.json()["entity"] == BackendResourceType.RESOLUTION
+    assert response.json()["entity"] == expected_entity
 
 
 def test_delete_version(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
@@ -364,7 +440,8 @@ def test_delete_version(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     )
 
     assert response.status_code == 200
-    assert response.json() == OKMessage().model_dump()
+    assert response.json()["success"] is True
+    assert response.json()["operation"] == "delete"
     mock_backend.delete_version.assert_called_once_with(
         collection="test_collection", name="v1", certain=True
     )
@@ -376,64 +453,13 @@ def test_delete_version_needs_confirmation(
     """Test deleting a version that requires confirmation."""
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.delete_version = Mock(
-        side_effect=MatchboxDeletionNotConfirmed(
-            children=["resolution1", "resolution2"]
-        )
+        side_effect=MatchboxDeletionNotConfirmed(children=["v1", "v2"])
     )
 
     response = test_client.delete("/collections/test_collection/versions/v1")
 
     assert response.status_code == 409
-    error_message = response.json()["detail"]
-    assert "resolution1" in error_message and "resolution2" in error_message
-
-
-def test_delete_version_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
-    """Test deleting a non-existent version."""
-    test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.delete_version = Mock(side_effect=MatchboxCollectionNotFoundError())
-
-    response = test_client.delete(
-        "/collections/nonexistent/versions/v1", params={"certain": True}
-    )
-
-    assert response.status_code == 404
-    assert response.json()["entity"] == BackendResourceType.RESOLUTION
-
-
-# Resolution listing test
-
-
-def test_list_resolutions(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
-    """Test listing resolutions in a version."""
-    test_client, mock_backend, _ = api_client_and_mocks
-
-    source_resolution = source_factory().source.to_resolution()
-    model_resolution = model_factory().model.to_resolution()
-    resolutions = [source_resolution, model_resolution]
-
-    mock_backend.get_version = Mock(return_value=resolutions)
-
-    response = test_client.get("/collections/test_collection/versions/v1/resolutions")
-
-    assert response.status_code == 200
-    assert len(response.json()) == 2
-    # Verify we can deserialise the resolutions
-    for resolution_data in response.json():
-        assert "name" in resolution_data
-        assert "resolution_type" in resolution_data
-
-    mock_backend.get_version.assert_called_once_with(
-        collection="test_collection", name="v1"
-    )
-
-
-def test_list_resolutions_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
-    """Test listing resolutions for a non-existent collection/version."""
-    test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_version = Mock(side_effect=MatchboxCollectionNotFoundError())
-
-    response = test_client.get("/collections/nonexistent/versions/v1/resolutions")
-
-    assert response.status_code == 404
-    assert response.json()["entity"] == BackendResourceType.RESOLUTION
+    assert response.json()["success"] is False
+    assert response.json()["operation"] == "delete"
+    assert "v1" in response.json()["details"]
+    assert "v2" in response.json()["details"]

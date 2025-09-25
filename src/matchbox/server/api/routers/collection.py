@@ -6,12 +6,10 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
-    BackendResourceType,
     Collection,
     CollectionName,
     CRUDOperation,
     NotFoundError,
-    OKMessage,
     Resolution,
     ResolutionName,
     ResolutionType,
@@ -28,6 +26,7 @@ from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
     MatchboxVersionAlreadyExists,
+    MatchboxVersionNotFoundError,
 )
 from matchbox.server.api.dependencies import (
     BackendDependency,
@@ -64,17 +63,9 @@ def list_collections(backend: BackendDependency) -> list[CollectionName]:
 def get_collection(
     backend: BackendDependency,
     collection: CollectionName,
-) -> dict[VersionName, list[Resolution]]:
+) -> Collection:
     """Get collection details with all versions and resolutions."""
-    try:
-        return backend.get_collection(name=collection)
-    except MatchboxCollectionNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
+    return backend.get_collection(name=collection)
 
 
 @router.post(
@@ -92,24 +83,20 @@ def get_collection(
 )
 def create_collection(
     backend: BackendDependency,
-    collection_data: Annotated[
-        dict[str, str], Body(description="Collection creation data")
-    ],
+    collection: Collection,
 ) -> Collection:
     """Create a new collection."""
-    name = collection_data.get("name")
-    if not name:
-        raise HTTPException(
-            status_code=422,
-            detail="Collection name is required",
-        )
-
     try:
-        return backend.create_collection(name=name)
+        return backend.create_collection(name=collection.name)
     except MatchboxCollectionAlreadyExists as e:
         raise HTTPException(
             status_code=409,
-            detail="Collection already exists",
+            detail=ResourceOperationStatus(
+                success=False,
+                name=collection.name,
+                operation=CRUDOperation.CREATE,
+                details=str(e),
+            ),
         ) from e
 
 
@@ -120,6 +107,10 @@ def create_collection(
         409: {
             "model": ResourceOperationStatus,
             **ResourceOperationStatus.status_409_examples(),
+        },
+        500: {
+            "model": ResourceOperationStatus,
+            **ResourceOperationStatus.status_500_examples(),
         },
     },
     dependencies=[Depends(authorisation_dependencies)],
@@ -132,48 +123,31 @@ def delete_collection(
     certain: Annotated[
         bool, Query(description="Confirm deletion of the collection")
     ] = False,
-) -> dict[str, str]:
+) -> ResourceOperationStatus:
     """Delete a collection."""
     try:
         backend.delete_collection(name=collection, certain=certain)
-        return {"message": f"Collection '{collection}' deleted successfully"}
-    except MatchboxCollectionNotFoundError as e:
+        return ResourceOperationStatus(
+            success=True, name=collection, operation=CRUDOperation.DELETE
+        )
+    except (
+        MatchboxCollectionNotFoundError,
+        MatchboxDeletionNotConfirmed,
+    ):
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
-    except MatchboxDeletionNotConfirmed as e:
-        raise HTTPException(
-            status_code=409,
-            detail=str(e),
+            status_code=500,
+            detail=ResourceOperationStatus(
+                success=False,
+                name=collection,
+                operation=CRUDOperation.DELETE,
+                details=str(e),
+            ),
         ) from e
 
 
 # Version management endpoints
-
-
-@router.get(
-    "/{collection}/versions",
-    responses={404: {"model": NotFoundError}},
-    summary="List versions for a collection",
-    description="Retrieve all versions for the specified collection.",
-)
-def list_versions(
-    backend: BackendDependency,
-    collection: CollectionName,
-) -> dict[VersionName, list[Resolution]]:
-    """List all versions for a collection."""
-    try:
-        return backend.get_collection(name=collection)
-    except MatchboxCollectionNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
 
 
 @router.get(
@@ -186,17 +160,9 @@ def get_version(
     backend: BackendDependency,
     collection: CollectionName,
     version: VersionName,
-) -> list[Resolution]:
+) -> Version:
     """Get a specific version."""
-    try:
-        return backend.get_version(collection=collection, name=version)
-    except MatchboxCollectionNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
+    return backend.get_version(collection=collection, name=version)
 
 
 @router.post(
@@ -216,35 +182,32 @@ def get_version(
 def create_version(
     backend: BackendDependency,
     collection: CollectionName,
-    version_data: Annotated[dict[str, str], Body(description="Version creation data")],
+    version: Version,
 ) -> Version:
     """Create a new version in a collection."""
-    name = version_data.get("name")
-    if not name:
-        raise HTTPException(
-            status_code=422,
-            detail="Version name is required",
-        )
-
     try:
-        return backend.create_version(collection=collection, name=name)
-    except MatchboxCollectionNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
+        return backend.create_version(collection=collection, name=version.name)
     except MatchboxVersionAlreadyExists as e:
         raise HTTPException(
             status_code=409,
-            detail="Version already exists",
+            detail=ResourceOperationStatus(
+                success=False,
+                name=version.name,
+                operation=CRUDOperation.CREATE,
+                details=str(e),
+            ),
         ) from e
 
 
 @router.patch(
     "/{collection}/versions/{version}/mutable",
-    responses={404: {"model": NotFoundError}},
+    responses={
+        404: {"model": NotFoundError},
+        500: {
+            "model": ResourceOperationStatus,
+            **ResourceOperationStatus.status_500_examples(),
+        },
+    },
     dependencies=[Depends(authorisation_dependencies)],
     summary="Change version mutability",
     description="Set whether a version can be modified.",
@@ -253,32 +216,44 @@ def set_version_mutable(
     backend: BackendDependency,
     collection: CollectionName,
     version: VersionName,
-    mutable_data: Annotated[dict[str, bool], Body(description="Mutability setting")],
-) -> Version:
+    mutable: Annotated[bool, Body(description="Mutability setting")],
+) -> ResourceOperationStatus:
     """Set version mutability."""
-    mutable = mutable_data.get("mutable")
-    if mutable is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Mutable flag is required",
-        )
-
     try:
-        return backend.set_version_mutable(
+        backend.set_version_mutable(
             collection=collection, name=version, mutable=mutable
         )
-    except MatchboxCollectionNotFoundError as e:
+        return ResourceOperationStatus(
+            success=True,
+            name=version,
+            operation=CRUDOperation.UPDATE,
+        )
+    except (
+        MatchboxCollectionNotFoundError,
+        MatchboxVersionNotFoundError,
+    ):
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
+            status_code=500,
+            detail=ResourceOperationStatus(
+                success=False,
+                name=version,
+                operation=CRUDOperation.UPDATE,
+                details=str(e),
             ).model_dump(),
         ) from e
 
 
 @router.patch(
     "/{collection}/versions/{version}/default",
-    responses={404: {"model": NotFoundError}},
+    responses={
+        404: {"model": NotFoundError},
+        500: {
+            "model": ResourceOperationStatus,
+            **ResourceOperationStatus.status_500_examples(),
+        },
+    },
     dependencies=[Depends(authorisation_dependencies)],
     summary="Change default version",
     description="Set whether a version is the default for its collection.",
@@ -287,25 +262,31 @@ def set_version_default(
     backend: BackendDependency,
     collection: CollectionName,
     version: VersionName,
-    default_data: Annotated[dict[str, bool], Body(description="Default setting")],
-) -> Version:
+    default: Annotated[bool, Body(description="Default setting")],
+) -> ResourceOperationStatus:
     """Set version as default."""
-    default = default_data.get("default")
-    if default is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Default flag is required",
-        )
-
     try:
-        return backend.set_version_default(
+        backend.set_version_default(
             collection=collection, name=version, default=default
         )
-    except MatchboxCollectionNotFoundError as e:
+        return ResourceOperationStatus(
+            success=True,
+            name=version,
+            operation=CRUDOperation.UPDATE,
+        )
+    except (
+        MatchboxCollectionNotFoundError,
+        MatchboxVersionNotFoundError,
+    ):
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
+            status_code=500,
+            detail=ResourceOperationStatus(
+                success=False,
+                name=version,
+                operation=CRUDOperation.UPDATE,
+                details=str(e),
             ).model_dump(),
         ) from e
 
@@ -317,6 +298,10 @@ def set_version_default(
         409: {
             "model": ResourceOperationStatus,
             **ResourceOperationStatus.status_409_examples(),
+        },
+        500: {
+            "model": ResourceOperationStatus,
+            **ResourceOperationStatus.status_500_examples(),
         },
     },
     dependencies=[Depends(authorisation_dependencies)],
@@ -330,22 +315,28 @@ def delete_version(
     certain: Annotated[
         bool, Query(description="Confirm deletion of the version")
     ] = False,
-) -> OKMessage:
+) -> ResourceOperationStatus:
     """Delete a version."""
     try:
         backend.delete_version(collection=collection, name=version, certain=certain)
-        return OKMessage()
-    except MatchboxCollectionNotFoundError as e:
+        return ResourceOperationStatus(
+            success=True, name=version, operation=CRUDOperation.DELETE
+        )
+    except (
+        MatchboxCollectionNotFoundError,
+        MatchboxVersionNotFoundError,
+        MatchboxDeletionNotConfirmed,
+    ):
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
-    except MatchboxDeletionNotConfirmed as e:
-        raise HTTPException(
-            status_code=409,
-            detail=str(e),
+            status_code=500,
+            detail=ResourceOperationStatus(
+                success=False,
+                name=version,
+                operation=CRUDOperation.DELETE,
+                details=str(e),
+            ),
         ) from e
 
 
@@ -370,7 +361,7 @@ def create_resolution(
     collection: CollectionName,
     version: VersionName,
     resolution: Resolution,
-) -> ResourceOperationStatus | UploadStatus:
+) -> ResourceOperationStatus:
     """Create a resolution (model or source)."""
     try:
         backend.insert_resolution(
@@ -383,6 +374,11 @@ def create_resolution(
             name=resolution.name,
             operation=CRUDOperation.CREATE,
         )
+    except (
+        MatchboxCollectionNotFoundError,
+        MatchboxVersionNotFoundError,
+    ):
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -409,18 +405,10 @@ def get_resolution(
     validate_type: ResolutionType | None = None,
 ) -> Resolution:
     """Get a resolution (model or source) from the backend."""
-    try:
-        return backend.get_resolution(
-            name=ResolutionName(collection=collection, version=version, name=name),
-            validate=validate_type,
-        )
-    except MatchboxResolutionNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
+    return backend.get_resolution(
+        name=ResolutionName(collection=collection, version=version, name=name),
+        validate=validate_type,
+    )
 
 
 @router.delete(
@@ -430,6 +418,10 @@ def get_resolution(
         409: {
             "model": ResourceOperationStatus,
             **ResourceOperationStatus.status_409_examples(),
+        },
+        500: {
+            "model": ResourceOperationStatus,
+            **ResourceOperationStatus.status_500_examples(),
         },
     },
     dependencies=[Depends(authorisation_dependencies)],
@@ -456,22 +448,22 @@ def delete_resolution(
             name=name,
             operation=CRUDOperation.DELETE,
         )
-    except MatchboxResolutionNotFoundError as e:
+    except (
+        MatchboxCollectionNotFoundError,
+        MatchboxVersionNotFoundError,
+        MatchboxDeletionNotConfirmed,
+        MatchboxResolutionNotFoundError,
+    ):
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
-    except MatchboxDeletionNotConfirmed as e:
-        raise HTTPException(
-            status_code=409,
+            status_code=500,
             detail=ResourceOperationStatus(
                 success=False,
                 name=name,
                 operation=CRUDOperation.DELETE,
                 details=str(e),
-            ).model_dump(),
+            ),
         ) from e
 
 
@@ -492,19 +484,11 @@ def set_data(
     validate_type: ResolutionType | None = None,
 ) -> UploadStatus:
     """Create an upload task for source hashes or model results."""
-    try:
-        # Get resolution from the specified version
-        resolution = backend.get_resolution(
-            name=ResolutionName(collection=collection, version=version, name=name),
-            validate=validate_type,
-        )
-    except MatchboxResolutionNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
+    # Get resolution from the specified version
+    resolution = backend.get_resolution(
+        name=ResolutionName(collection=collection, version=version, name=name),
+        validate=validate_type,
+    )
 
     if resolution.resolution_type == ResolutionType.SOURCE:
         upload_id = upload_tracker.add_source(metadata=resolution)
@@ -527,17 +511,9 @@ def get_results(
     name: UnqualifiedModelResolutionName,
 ) -> ParquetResponse:
     """Download results for a model as a parquet file."""
-    try:
-        res = backend.get_model_data(
-            name=ResolutionName(collection=collection, version=version, name=name)
-        )
-    except MatchboxResolutionNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
+    res = backend.get_model_data(
+        name=ResolutionName(collection=collection, version=version, name=name)
+    )
 
     buffer = table_to_buffer(res)
     return ParquetResponse(buffer.getvalue())
@@ -574,13 +550,12 @@ def set_truth(
             name=name,
             operation=CRUDOperation.UPDATE,
         )
-    except MatchboxResolutionNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
+    except (
+        MatchboxCollectionNotFoundError,
+        MatchboxVersionNotFoundError,
+        MatchboxResolutionNotFoundError,
+    ):
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -606,14 +581,6 @@ def get_truth(
     name: UnqualifiedModelResolutionName,
 ) -> float:
     """Get truth data for a resolution."""
-    try:
-        return backend.get_model_truth(
-            name=ResolutionName(collection=collection, version=version, name=name)
-        )
-    except MatchboxResolutionNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
+    return backend.get_model_truth(
+        name=ResolutionName(collection=collection, version=version, name=name)
+    )
