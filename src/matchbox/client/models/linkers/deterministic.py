@@ -1,20 +1,18 @@
 """A linking methodology based on a deterministic set of conditions."""
 
-from collections.abc import Iterable
-
 import polars as pl
 from pydantic import Field, field_validator
 
-from matchbox.client.helpers import comparison
+from matchbox.client.models import comparison
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
 
 
 class DeterministicSettings(LinkerSettings):
     """A data class to enforce the Deterministic linker's settings dictionary shape."""
 
-    comparisons: Iterable[str] = Field(
+    comparisons: list[str] = Field(
         description="""
-            An iterable of valid ON clause to compare fields between the left and 
+            A list of valid ON clause to compare fields between the left and 
             the right data.
 
             Use left.field and right.field to refer to columns in the respective 
@@ -32,27 +30,19 @@ class DeterministicSettings(LinkerSettings):
         """,
     )
 
-    @field_validator("comparisons")
+    @field_validator("comparisons", mode="before")
     @classmethod
-    def validate_comparison(cls, v: Iterable[str]) -> Iterable[str]:
-        """Validate the comparison string."""
-        return [comparison(comp_val) for comp_val in v]
+    def validate_comparison(cls, value: str | list[str]) -> list[str]:
+        """Turn single string into list of one string."""
+        if isinstance(value, str):
+            return [comparison(value)]
+        return [comparison(v) for v in value]
 
 
 class DeterministicLinker(Linker):
     """A deterministic linker that links based on a set of boolean conditions."""
 
     settings: DeterministicSettings
-
-    @classmethod
-    def from_settings(
-        cls, left_id: str, right_id: str, comparisons: str
-    ) -> "DeterministicLinker":
-        """Create a DeterministicLinker from a settings dictionary."""
-        settings = DeterministicSettings(
-            left_id=left_id, right_id=right_id, comparisons=comparisons
-        )
-        return cls(settings=settings)
 
     def prepare(self, left: pl.DataFrame, right: pl.DataFrame) -> None:
         """Prepare the linker for linking."""

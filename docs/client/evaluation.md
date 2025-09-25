@@ -55,24 +55,25 @@ Choosing the right threshold for your model involves balancing precision and rec
 To evaluate this in code, first you need to build and run a model outside of a DAG:
 
 ```python
-from matchbox import make_model, query, select
+from matchbox.client.models import Model
+from matchbox.client.queries import Query
+from matchbox.client.sources import Source
 from matchbox.client.models.dedupers import NaiveDeduper
 from sqlalchemy import create_engine
 
 engine = create_engine('postgresql://')
 
-df = query(select("source", client=engine))
+dag = DAG(name="companies", new=True)
 
-model = make_model(
+source = dag.source(...) # source parameters must be completed
+
+model = source.query().deduper(
     name="model_name",
     description=f"description",
     model_class=NaiveDeduper,
     model_settings={
-        "id": "id",
         "unique_fields": ["field1", "field2"],
     },
-    left_data=df,
-    left_resolution="source",
 )
 
 results = model.run()
@@ -104,25 +105,4 @@ p, r = eval_data.precision_recall(results, threshold=0.5)
     * The precision and recall scores will be the same at all thresholds.
 
     On the other hand, probabilistic models (like `SplinkLinker`), can output **any value between 0.0 and 1.0**.
-
-## Comparing models on the server
-
-To compare multiple models stored on the Matchbox server:
-
-```python
-from matchbox.client.eval import compare_models
-
-models_to_compare = [
-    "resolution_name_one",
-    "resolution_name_two",
-    "resolution_name_three"
-]
-comparison = compare_models(models_to_compare)
-
-for model in models_to_compare:
-    p, r = comparison[model]
-    print(f"Model {model} has precision: {p} and recall: {r}")
-```
-
-!!! tip "Model records overlap"
-    Only pairs covering records which exist in **all models and the validation data** are used in comparisons. So, a model’s precision and recall might differ when evaluated alone vs. in a group.
+    

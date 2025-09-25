@@ -3,11 +3,11 @@ from httpx import Client
 from matplotlib.figure import Figure
 from sqlalchemy import Engine, text
 
-from matchbox import make_model, query, select
 from matchbox.client import _handler
-from matchbox.client.dags import DAG, DedupeStep, IndexStep, StepInput
-from matchbox.client.eval import EvalData, compare_models, get_samples
+from matchbox.client.dags import DAG
+from matchbox.client.eval import EvalData, get_samples
 from matchbox.client.models.dedupers import NaiveDeduper
+from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.arrow import SCHEMA_CLUSTER_EXPANSION, SCHEMA_JUDGEMENTS
 from matchbox.common.eval import Judgement
 from matchbox.common.factories.sources import (
@@ -17,7 +17,6 @@ from matchbox.common.factories.sources import (
     SuffixRule,
     linked_sources_factory,
 )
-from matchbox.common.sources import RelationalDBLocation, SourceConfig
 
 
 @pytest.mark.docker
@@ -76,7 +75,7 @@ class TestE2EModelEvaluation:
 
         # Create tables in warehouse
         for source_testkit in linked_testkit.sources.values():
-            source_testkit.write_to_location(client=postgres_warehouse, set_client=True)
+            source_testkit.write_to_location()
 
         # Clear matchbox database before test
         response = matchbox_client.delete("/database", params={"certain": "true"})
@@ -84,46 +83,34 @@ class TestE2EModelEvaluation:
 
         # Create DAG
         dw_loc = RelationalDBLocation(name="postgres", client=postgres_warehouse)
-        batch_size = 1000
 
-        source_a_config = SourceConfig.new(
+        dag = DAG("companies", new=True)
+        self.__class__.dag = dag
+
+        source_a = dag.source(
             location=dw_loc,
             name="source_a",
             extract_transform="""
                 select
-                    key::text as id, 
-                    company_name, 
-                    registration_id 
+                    key::text as id,
+                    company_name,
+                    registration_id
                 from
                     source_a;
             """,
+            infer_types=True,
             key_field="id",
             index_fields=["company_name", "registration_id"],
         )
-        self.__class__.source_a_config = source_a_config
 
-        i_source_a = IndexStep(source_config=source_a_config, batch_size=batch_size)
-
-        self.__class__.final_resolution = "final"
-        dedupe_a = DedupeStep(
-            left=StepInput(
-                prev_node=i_source_a,
-                select={source_a_config: ["company_name", "registration_id"]},
-                batch_size=batch_size,
-            ),
-            name=self.final_resolution,
+        source_a.query().deduper(
+            name="final",
             description="Deduplicate source A",
             model_class=NaiveDeduper,
-            settings={
-                "id": "id",
-                "unique_fields": [source_a_config.f("registration_id")],
-            },
-            truth=1.0,
+            model_settings={"unique_fields": [source_a.f("registration_id")]},
         )
 
-        dag = DAG()
-        dag.add_steps(i_source_a, dedupe_a)
-        dag.run()
+        dag.run_and_sync()
 
         yield
 
@@ -144,8 +131,8 @@ class TestE2EModelEvaluation:
 
         # Get some samples
         samples = get_samples(
+            dag=self.dag,
             n=5,
-            resolution=self.final_resolution,
             user_id=user_id,
             clients={"postgres": self.engine},
         )
@@ -162,30 +149,15 @@ class TestE2EModelEvaluation:
 
         _handler.send_eval_judgement(judgement=judgement)
 
-        # Compare models based on judgements
-        comparison = compare_models([self.final_resolution])
-        assert "final" in comparison
-        assert len(comparison["final"]) == 2
-        assert isinstance(comparison["final"], tuple)
-
-        # Create and run a deduper model locally
-        queried_source = query(
-            select(self.source_a_config.name, client=self.engine),
-            return_type="polars",
-        )
-        deduper = make_model(
-            name="deduper_alt",
-            description="Deduplication",
+        # Create and run an alternative deduper model locally
+        source_a = self.dag.nodes["source_a"]
+        new_deduper = source_a.query().deduper(
+            name="alt_deduper",
             model_class=NaiveDeduper,
-            model_settings={
-                "id": "id",
-                "unique_fields": [self.source_a_config.f("registration_id")],
-            },
-            left_data=queried_source,
-            left_resolution=self.source_a_config.name,
+            model_settings={"unique_fields": [source_a.f("registration_id")]},
         )
 
-        results = deduper.run()
+        results = new_deduper.run(for_validation=True)
 
         # We can download judgements locally
         eval_data = EvalData()

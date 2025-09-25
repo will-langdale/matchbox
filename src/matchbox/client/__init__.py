@@ -1,17 +1,9 @@
 """All client-side functionalities of Matchbox."""
 
-from matchbox.client import dags, visualisation
-from matchbox.client.helpers.index import index
-from matchbox.client.helpers.selector import clean, match, query, select
-from matchbox.client.models.models import make_model
+from matchbox.client.dags import DAG
+from matchbox.client.sources import RelationalDBLocation
 
 __all__ = (
-    "dags",
-    "visualisation",
-    "index",
-    "match",
-    "query",
-    "select",
-    "clean",
-    "make_model",
+    "DAG",
+    "RelationalDBLocation",
 )

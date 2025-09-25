@@ -1,7 +1,8 @@
 """DAG container for testkits."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
+from matchbox.client.dags import DAG
 from matchbox.common.factories.models import ModelTestkit
 from matchbox.common.factories.sources import LinkedSourcesTestkit, SourceTestkit
 from matchbox.common.graph import (
@@ -13,6 +14,10 @@ from matchbox.common.graph import (
 
 class TestkitDAG(BaseModel):
     """Simple DAG container for testkits."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    dag: DAG = DAG("collection")
 
     sources: dict[SourceResolutionName, SourceTestkit] = {}
     linked: dict[str, LinkedSourcesTestkit] = {}
@@ -87,8 +92,12 @@ class TestkitDAG(BaseModel):
         self.root_source_names[name] = set()
 
         # Validate dependencies
-        left_res = testkit.model.model_config.left_resolution
-        right_res = testkit.model.model_config.right_resolution
+        left_res = testkit.model.config.left_query.point_of_truth
+        right_res = (
+            testkit.model.config.right_query.point_of_truth
+            if testkit.model.config.right_query
+            else None
+        )
         self._validate_dependencies(left_res, right_res)
 
         # Track dependencies based on left/right resolution

@@ -22,13 +22,13 @@
 
 The factory system aims to provide `*Testkit` objects that facilitate three groups of testing scenarios:
 
-* Realistic mock `SourceConfig` and `Model` objects to test client-side connectivity functions
+* Realistic mock `Source` and `Model` objects to test client-side connectivity functions
 * Realistic mock data to test server-side adapter functions
 * Realistic mock pipelines with controlled completeness to test client-side methodologies
 
 Three broad functions are provided:
 
-* [`source_factory()`][matchbox.common.factories.sources.source_factory] generates [`SourceTestkit`][matchbox.common.factories.sources.SourceTestkit] objects, which contain dummy `SourceConfig`s and associated data
+* [`source_factory()`][matchbox.common.factories.sources.source_factory] generates [`SourceTestkit`][matchbox.common.factories.sources.SourceTestkit] objects, which contain dummy `Source`s and associated data
 * [`linked_sources_factory()`][matchbox.common.factories.sources.linked_sources_factory] generates [`LinkedSourcesTestkit`][matchbox.common.factories.sources.LinkedSourcesTestkit] objects, which contain a collection of interconnected `SourceTestkit` objects, and the true entities this data describes
 * [`model_factory()`][matchbox.common.factories.models.model_factory] generates [`ModelTestkit`][matchbox.common.factories.models.ModelTestkit] objects, which mock probabilities that can connect both `SourceTestkit` and other `ModelTestkit` objects in ways that fail and succeed predictably
 
@@ -42,9 +42,9 @@ There are some common patterns you might consider using when editing or extendin
 
 ## Client-side connectivity
 
-We can use the factories to test inserting or retrieving isolated `SourceConfig` or `Model` objects.
+We can use the factories to test inserting or retrieving isolated `Source` or `Model` objects.
 
-Perhaps you're testing the API and want to put a realistic `SourceConfig` in the ingestion pipeline.
+Perhaps you're testing the API and want to put a realistic `Source` in the ingestion pipeline.
 
 ```python
 source_testkit = source_factory()
@@ -54,16 +54,6 @@ tracker = InMemoryUploadTracker()
 upload_id = tracker.add_source(source_testkit.source_config)
 ```
 
-Or you're testing the client handler and want to mock the API.
-
-```python
-@patch("matchbox.client.helpers.index.SourceConfig")
-def test_my_api(MockSource: Mock, matchbox_api: MockRouter):
-    source_testkit = source_factory(
-        features=[{"name": "company_name", "base_generator": "company"}]
-    )
-    MockSource.return_value = source_testkit.mock
-```
 
 `source_factory()` can be configured with a powerful range of [`FeatureConfig`][matchbox.common.factories.entities.FeatureConfig] objects, including a [variety of rules][matchbox.common.factories.entities.VariationRule] which distort and duplicate the data in predictable ways. These use [Faker](https://faker.readthedocs.io/) to generate data.
 
@@ -90,6 +80,23 @@ source_factory(
 )
 ```
 
+By default, each `SourceTestkit` or `ModelTestkit` creates a new [`DAG`][matchbox.client.dags.DAG]. If membership to the right DAG is important, you can either set it manually:
+
+```python
+dag = DAG("companies", new=True)
+source_testkit = source_factory(dag=dag)
+```
+
+Or, you can unpack your objects into `DAG` methods:
+
+```python
+source_testkit = source_factory()
+dag = DAG("companies", new=True)
+dag.source(**source_testkit.into_dag())
+```
+
+[`LinkedSourcesTestkit`][matchbox.common.factories.sources.LinkedSourcesTestkit] (see later) attach all linked sources to the same new DAG.
+
 ## Server-side adapters
 
 The factories can generate data suitable for `MatchboxDBAdapter.index()`, `MatchboxDBAdapter.insert_model()`, or `MatchboxDBAdapter.set_model_results()`. Between these functions, we can set up any backend in any configuration we need to test the other adapter methods.
@@ -99,7 +106,7 @@ Adding a `SourceConfig`.
 ```python
 source_testkit = source_factory()
 backend.index(
-    source_config=source_testkit.source_config
+    source_config=source_testkit.source.config
     data_hashes=source_testkit.data_hashes
 )
 ```
@@ -108,7 +115,7 @@ Adding a `Model`.
 
 ```python
 model_testkit = model_factory()
-backend.insert_model(model_config=model_testkit.model.model_config)
+backend.insert_model(model_config=model_testkit.model.config)
 ```
 
 Inserting results.
@@ -116,7 +123,7 @@ Inserting results.
 ```python
 model_testkit = model_factory()
 backend.set_model_results(
-    name=model_testkit.model.model_config.name, 
+    name=model_testkit.model.config.name, 
     results=model_testkit.probabilities
 )
 ```
@@ -128,7 +135,7 @@ linked_testkit = linked_sources_factory()
 
 for source_testkit in linked_testkit.sources.values():
     backend.index(
-        source_config=source_testkit.source_config
+        source_config=source_testkit.source.config
         data_hashes=source_testkit.data_hashes
     )
 
@@ -137,9 +144,9 @@ model_testkit = model_factory(
     true_entities=linked_testkit.true_entities,
 )
 
-backend.insert_model(model_config=model_testkit.model.model_config)
+backend.insert_model(model_config=model_testkit.model.config)
 backend.set_model_results(
-    name=model_testkit.model.model_config.name, 
+    name=model_testkit.model.config.name, 
     results=model_testkit.probabilities
 )
 ```
@@ -160,19 +167,19 @@ The `model_factory()` is designed so you can chain together known processes in a
 linked_testkit: LinkedSourcesTestkit = linked_sources_factory()
 
 # Create perfect deduped models first
-left_deduped: ModelTestkit = model_factory(
+left_deduper: ModelTestkit = model_factory(
     left_testkit=linked_testkit.sources["crn"],
     true_entities=linked_testkit.true_entities,
 )
-right_deduped: ModelTestkit = model_factory(
+right_deduper: ModelTestkit = model_factory(
     left_testkit=linked_testkit.sources["cdms"],
     true_entities=linked_testkit.true_entities,
 )
 
 # Create a model and generate probabilities
-model: Model = make_model(
-    left_data=left_deduped.query,
-    right_data=right_deduped.query
+model: Model = Model(
+    left_query=Query(left, model=left_deduper.model),
+    right_query=Query(right, model=right_deduper.model),
     ...
 )
 results: Results = model.run()
