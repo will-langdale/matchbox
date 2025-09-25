@@ -214,7 +214,7 @@ class RelationalDBLocation(Location):
 
         expr = expressions[0]
 
-        if not isinstance(expr, sqlglot.expressions.Select):
+        if not isinstance(expr, sqlglot.expressions.Select | sqlglot.expressions.Union):
             raise MatchboxSourceExtractTransformError(
                 "SQL statement must start with a SELECT or WITH command."
             )

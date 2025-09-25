@@ -12,13 +12,10 @@ from typing import (
 )
 
 import polars as pl
-import sqlglot
 from pandas import DataFrame as PandasDataFrame
 from polars import DataFrame as PolarsDataFrame
 from pyarrow import Table as ArrowTable
 from sqlalchemy.engine import Engine
-
-from matchbox.common.exceptions import MatchboxSourceExtractTransformError
 
 if TYPE_CHECKING:
     from adbc_driver_postgresql.dbapi import Connection as ADBCConnection
@@ -146,54 +143,3 @@ def sql_to_df(
         return (_to_format(batch) for batch in res)
 
     return _to_format(res)
-
-
-def validate_sql_for_data_extraction(sql: str) -> bool:
-    """Validates that the SQL statement only contains a single data-extracting command.
-
-    Args:
-        sql: The SQL statement to validate
-
-    Returns:
-        bool: True if the SQL statement is valid
-
-    Raises:
-        ParseError: If the SQL statement cannot be parsed
-        MatchboxSourceExtractTransformError: If validation requirements are not met
-    """
-    if not sql.strip():
-        raise MatchboxSourceExtractTransformError(
-            "SQL statement is empty or only contains whitespace."
-        )
-
-    expressions = sqlglot.parse(sql)
-
-    if len(expressions) > 1:
-        raise MatchboxSourceExtractTransformError(
-            "SQL statement contains multiple commands."
-        )
-
-    if not expressions:
-        raise MatchboxSourceExtractTransformError(
-            "SQL statement does not contain any valid expressions."
-        )
-
-    expr = expressions[0]
-
-    if not isinstance(expr, sqlglot.expressions.Select):
-        raise MatchboxSourceExtractTransformError(
-            "SQL statement must start with a SELECT or WITH command."
-        )
-
-    forbidden = (
-        sqlglot.expressions.DDL,
-        sqlglot.expressions.DML,
-        sqlglot.expressions.Into,
-    )
-
-    if len(list(expr.find_all(forbidden))) > 0:
-        raise MatchboxSourceExtractTransformError(
-            "SQL statement must not contain DDL or DML commands."
-        )
-
-    return True
