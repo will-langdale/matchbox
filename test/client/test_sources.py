@@ -57,7 +57,9 @@ def test_relational_db_location_instantiation(sqlite_in_memory_warehouse: Engine
     [
         pytest.param("SELECT * FROM test_table", True, id="valid-select"),
         pytest.param(
-            "SELECT id, name FROM test_table WHERE id > 1", True, id="valid-where"
+            "SELECT id, name FROM test_table WHERE id > 1",
+            True,
+            id="valid-where",
         ),
         pytest.param("SLECT * FROM test_table", False, id="invalid-syntax"),
         pytest.param("", False, id="empty-string"),
@@ -108,13 +110,21 @@ def test_relational_db_location_instantiation(sqlite_in_memory_warehouse: Engine
             True,
             id="valid-union",
         ),
+        # This test only works with postgres
+        pytest.param(
+            """
+            SELECT 'ciao' ~ 'hello'
+            """,
+            True,
+            id="valid-tilde",
+        ),
     ],
 )
 def test_relational_db_extract_transform(
-    sql: str, is_valid: bool, sqlite_in_memory_warehouse: Engine
+    sql: str, is_valid: bool, postgres_warehouse: Engine
 ):
     """Test SQL validation in validate_extract_transform."""
-    location = RelationalDBLocation(name="dbname", client=sqlite_in_memory_warehouse)
+    location = RelationalDBLocation(name="dbname", client=postgres_warehouse)
 
     if is_valid:
         assert location.validate_extract_transform(sql)
