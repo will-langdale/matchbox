@@ -18,9 +18,6 @@ from matchbox.common.dtos import (
     LocationConfig,
     LocationType,
     Match,
-    ModelConfig,
-    ModelType,
-    QueryConfig,
     Resolution,
     ResolutionName,
     ResolutionType,
@@ -41,6 +38,7 @@ from matchbox.common.factories.entities import (
     diff_results,
     query_to_cluster_entities,
 )
+from matchbox.common.factories.models import model_factory
 from matchbox.common.factories.scenarios import setup_scenario
 from matchbox.common.factories.sources import SourceTestkit
 from matchbox.server.base import MatchboxDBAdapter
@@ -114,17 +112,18 @@ class TestMatchboxBackend:
         """Test querying data from a deduplication point of truth."""
         with self.scenario(self.backend, "dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
+            naive_crn_testkit = dag_testkit.models.get("naive_test_crn")
 
             df_crn = self.backend.query(
                 source=crn_testkit.qualified_name,
-                resolution="naive_test_crn",
+                resolution=naive_crn_testkit.qualified_name,
             )
 
             assert isinstance(df_crn, pa.Table)
             assert df_crn.num_rows == crn_testkit.data.num_rows
             assert df_crn.schema.equals(SCHEMA_QUERY)
 
-            linked = dag_testkit.get_linked_testkit("naive_test_crn")
+            linked = dag_testkit.get_linked_testkit(naive_crn_testkit.name)
 
             assert pc.count_distinct(df_crn["id"]).as_py() == len(
                 linked.true_entity_subset("crn")
@@ -136,10 +135,11 @@ class TestMatchboxBackend:
             linker_name = "deterministic_naive_test_crn_naive_test_duns"
             crn_testkit = dag_testkit.sources.get("crn")
             duns_testkit = dag_testkit.sources.get("duns")
+            linker_testkit = dag_testkit.models.get(linker_name)
 
             df_crn = self.backend.query(
                 source=crn_testkit.qualified_name,
-                resolution=linker_name,
+                resolution=linker_testkit.qualified_name,
             )
 
             assert isinstance(df_crn, pa.Table)
@@ -148,7 +148,7 @@ class TestMatchboxBackend:
 
             df_duns = self.backend.query(
                 source=duns_testkit.qualified_name,
-                resolution=linker_name,
+                resolution=linker_testkit.qualified_name,
             )
 
             assert isinstance(df_duns, pa.Table)
@@ -171,10 +171,11 @@ class TestMatchboxBackend:
             linker_name = "probabilistic_naive_test_crn_naive_test_cdms"
             crn_testkit = dag_testkit.sources.get("crn")
             cdms_testkit = dag_testkit.sources.get("cdms")
+            linker_testkit = dag_testkit.models.get(linker_name)
 
             df_crn = self.backend.query(
                 source=crn_testkit.qualified_name,
-                resolution=linker_name,
+                resolution=linker_testkit.qualified_name,
             )
 
             assert isinstance(df_crn, pa.Table)
@@ -183,7 +184,7 @@ class TestMatchboxBackend:
 
             df_cdms = self.backend.query(
                 source=cdms_testkit.qualified_name,
-                resolution=linker_name,
+                resolution=linker_testkit.qualified_name,
             )
 
             assert isinstance(df_cdms, pa.Table)
@@ -195,12 +196,12 @@ class TestMatchboxBackend:
             # Test query with threshold
             df_crn_threshold = self.backend.query(
                 source=crn_testkit.qualified_name,
-                resolution=linker_name,
+                resolution=linker_testkit.qualified_name,
                 threshold=100,
             )
             df_cdms_threshold = self.backend.query(
                 source=cdms_testkit.qualified_name,
-                resolution=linker_name,
+                resolution=linker_testkit.qualified_name,
                 threshold=100,
             )
             threshold_ids = pa.concat_arrays(
@@ -380,7 +381,7 @@ class TestMatchboxBackend:
             test_collection_created = self.backend.create_collection("test_collection")
 
             assert test_collection_created.name == "test_collection"
-            assert test_collection_created.versions == {None: []}  # No versions yet
+            assert test_collection_created.versions == {}  # No versions yet
 
             collections_post = self.backend.list_collections()
             assert "test_collection" in collections_post
@@ -530,43 +531,33 @@ class TestMatchboxBackend:
         with self.scenario(self.backend, "index") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
             duns_testkit = dag_testkit.sources.get("duns")
+            linked = dag_testkit.get_linked_testkit("crn")
 
             # Test deduper insertion
             models_count = self.backend.models.count()
 
+            dedupe_1_testkit = model_factory(
+                name="dedupe_1",
+                description="Test deduper 1",
+                dag=dag_testkit.dag,
+                left_testkit=crn_testkit,
+                true_entities=linked.true_entities,
+            )
             self.backend.insert_resolution(
-                resolution=Resolution(
-                    name="dedupe_1",
-                    description="Test deduper 1",
-                    resolution_type=ResolutionType.MODEL,
-                    truth=100,
-                    config=ModelConfig(
-                        type=ModelType.DEDUPER,
-                        model_class="NaiveDeduper",
-                        model_settings="{}",
-                        left_query=QueryConfig(
-                            source_resolutions=[crn_testkit.source.name]
-                        ),
-                    ),
-                ),
+                resolution=dedupe_1_testkit.model.to_resolution(),
                 collection=dag_testkit.dag.name,
                 version=dag_testkit.dag.version,
             )
+
+            dedupe_2_testkit = model_factory(
+                name="dedupe_2",
+                description="Test deduper 2",
+                dag=dag_testkit.dag,
+                left_testkit=duns_testkit,
+                true_entities=linked.true_entities,
+            )
             self.backend.insert_resolution(
-                resolution=Resolution(
-                    name="dedupe_2",
-                    description="Test deduper 2",
-                    resolution_type=ResolutionType.MODEL,
-                    truth=100,
-                    config=ModelConfig(
-                        type=ModelType.DEDUPER,
-                        model_class="NaiveDeduper",
-                        model_settings="{}",
-                        left_query=QueryConfig(
-                            source_resolutions=[duns_testkit.source.name]
-                        ),
-                    ),
-                ),
+                resolution=dedupe_2_testkit.model.to_resolution(),
                 collection=dag_testkit.dag.name,
                 version=dag_testkit.dag.version,
             )
@@ -574,25 +565,15 @@ class TestMatchboxBackend:
             assert self.backend.models.count() == models_count + 2
 
             # Test linker insertion
-            linker_resolution = Resolution(
+            linker_testkit = model_factory(
                 name="link_1",
                 description="Test linker 1",
-                resolution_type=ResolutionType.MODEL,
-                truth=100,
-                config=ModelConfig(
-                    type=ModelType.LINKER,
-                    model_class="NaiveDeduper",
-                    model_settings="{}",
-                    left_query=QueryConfig(
-                        source_resolutions=["crn"], model_resolution="dedupe_1"
-                    ),
-                    right_query=QueryConfig(
-                        source_resolutions=["duns"], model_resolution="dedupe_2"
-                    ),
-                ),
+                left_testkit=dedupe_1_testkit,
+                right_testkit=dedupe_2_testkit,
+                true_entities=linked.true_entities,
             )
             self.backend.insert_resolution(
-                resolution=linker_resolution,
+                resolution=linker_testkit.model.to_resolution(),
                 collection=dag_testkit.dag.name,
                 version=dag_testkit.dag.version,
             )
@@ -602,7 +583,7 @@ class TestMatchboxBackend:
             # Test can't insert duplicate
             with pytest.raises(MatchboxResolutionAlreadyExists):
                 self.backend.insert_resolution(
-                    linker_resolution,
+                    linker_testkit.model.to_resolution(),
                     collection=dag_testkit.dag.name,
                     version=dag_testkit.dag.version,
                 )
@@ -639,7 +620,7 @@ class TestMatchboxBackend:
             )
 
             crn_retrieved = self.backend.get_resolution(
-                crn_testkit.source.name, validate=ResolutionType.SOURCE
+                crn_testkit.source.qualified_name, validate=ResolutionType.SOURCE
             )
 
             # Equality between the two is False because one lacks the Engine
@@ -1147,12 +1128,16 @@ class TestMatchboxBackend:
         with self.scenario(self.backend, "alt_dedupe") as dag_testkit:
             user_id = self.backend.login("alice")
 
-            model_names = list(dag_testkit.models.keys())
+            model_names = [
+                model.qualified_name for model in dag_testkit.models.values()
+            ]
 
             root_leaves = (
                 pl.from_arrow(
                     self.backend.sample_for_eval(
-                        n=10, resolution=model_names[0], user_id=user_id
+                        n=10,
+                        resolution=model_names[0],
+                        user_id=user_id,
                     )
                 )
                 .select(["root", "leaf"])
@@ -1167,7 +1152,7 @@ class TestMatchboxBackend:
                     )
                 )
 
-            pr = self.backend.compare_models(list(dag_testkit.models.keys()))
+            pr = self.backend.compare_models(model_names)
             # Precision must be 1 for both as the second model is like the first
             # but more conservative
             assert pr[model_names[0]][0] == pr[model_names[1]][0] == 1
@@ -1210,7 +1195,9 @@ class TestMatchboxBackend:
                     resolution=naive_crn_testkit.qualified_name,
                 )
             )
-            source_clusters = pl.from_arrow(self.backend.query(source="crn"))
+            source_clusters = pl.from_arrow(
+                self.backend.query(source=crn_testkit.qualified_name)
+            )
             # We can request more than available
             assert len(resolution_clusters["id"].unique()) < 99
 

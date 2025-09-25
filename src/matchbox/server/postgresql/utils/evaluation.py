@@ -17,7 +17,6 @@ from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import ModelResolutionName
 from matchbox.common.eval import Judgement, precision_recall
 from matchbox.common.exceptions import (
-    MatchboxResolutionNotFoundError,
     MatchboxUserNotFoundError,
 )
 from matchbox.common.transform import hash_cluster_leaves
@@ -171,15 +170,10 @@ def sample(n: int, resolution: ModelResolutionName, user_id: int):
         raise ValueError("Can only sample 100 entries at a time.")
 
     with MBDB.get_session() as session:
-        # Retrieve metadata of target resolution
-        if resolution_info := session.execute(
-            select(Resolutions.resolution_id, Resolutions.truth).where(
-                Resolutions.name == resolution
-            )
-        ).first():
-            resolution_id, truth = resolution_info
-        else:
-            raise MatchboxResolutionNotFoundError(name=resolution)
+        # Use ORM to get resolution metadata
+        resolution_orm = Resolutions.from_name(name=resolution, session=session)
+        resolution_id = resolution_orm.resolution_id
+        truth = resolution_orm.truth
 
     # Get a list of cluster IDs and features for this resolution and user
     user_judgements = (
@@ -276,8 +270,6 @@ def sample(n: int, resolution: ModelResolutionName, user_id: int):
         return final_samples.with_columns(
             [pl.col("root").cast(pl.UInt64), pl.col("leaf").cast(pl.UInt64)]
         ).to_arrow()
-
-    return final_samples
 
 
 def compare_models(

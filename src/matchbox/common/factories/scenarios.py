@@ -428,6 +428,12 @@ def create_alt_dedupe_scenario(
     """Create a TestkitDAG scenario with two alternative dedupers."""
     dag_testkit = TestkitDAG()
 
+    # Create collection and version
+    backend.create_collection(name=dag_testkit.dag.name)
+    backend.create_version(
+        collection=dag_testkit.dag.name, name=dag_testkit.dag.version
+    )
+
     # Create linked sources
     company_name_feature = FeatureConfig(
         name="company_name", base_generator="company"
@@ -533,6 +539,12 @@ def create_convergent_scenario(
     """
     dag_testkit = TestkitDAG()
 
+    # Create collection and version
+    backend.create_collection(name=dag_testkit.dag.name)
+    backend.create_version(
+        collection=dag_testkit.dag.name, name=dag_testkit.dag.version
+    )
+
     # Create linked sources
     company_name_feature = FeatureConfig(
         name="company_name", base_generator="company"
@@ -572,22 +584,17 @@ def create_convergent_scenario(
             data_hashes=source_testkit.data_hashes,
         )
 
-    # Create and add deduplication models
-    for testkit in dag_testkit.sources.values():
-        resolution = testkit.source.to_resolution()
-        name = f"naive_test_{resolution.name}"
-
         # Query the raw data
-        source_query = backend.query(source=resolution.name)
+        source_query = backend.query(source=source_testkit.qualified_name)
 
         # Build model testkit using query data
         model_testkit = query_to_model_factory(
-            left_query=Query(testkit.source, dag=dag_testkit.dag),
+            left_query=Query(source_testkit.source, dag=dag_testkit.dag),
             left_data=source_query,
-            left_keys={resolution.name: "key"},
+            left_keys={source_testkit.name: "key"},
             true_entities=tuple(linked.true_entities),
-            name=name,
-            description=f"Deduplication of {resolution.name}",
+            name=f"naive_test_{source_testkit.name}",
+            description=f"Deduplication of {source_testkit.name}",
             prob_range=(1.0, 1.0),
             seed=seed,
         )

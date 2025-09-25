@@ -5,7 +5,7 @@ from collections import Counter
 from collections.abc import Hashable
 from functools import cache
 from textwrap import dedent
-from typing import Any, Literal, TypeVar
+from typing import Any, TypeVar
 
 import numpy as np
 import polars as pl
@@ -678,7 +678,7 @@ def model_factory(
     left_testkit: SourceTestkit | ModelTestkit | None = None,
     right_testkit: SourceTestkit | ModelTestkit | None = None,
     true_entities: tuple[SourceEntity, ...] | None = None,
-    model_type: Literal["deduper", "linker"] | None = None,
+    model_type: ModelType | None = None,
     n_true_entities: int | None = None,
     prob_range: tuple[float, float] = (0.8, 1.0),
     seed: int = 42,
@@ -767,7 +767,7 @@ def model_factory(
             dag = DAG("collection")
         # Create default sources
         engine = create_engine("sqlite:///:memory:")
-        resolved_model_type = ModelType(model_type.lower() if model_type else "deduper")
+        resolved_model_type = model_type or ModelType.DEDUPER
 
         # Define common features
         features = {

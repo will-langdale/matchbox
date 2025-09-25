@@ -228,7 +228,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def get_collection(  # noqa: D102
         self, name: CollectionName
-    ) -> dict[VersionName, list[Resolution]]:
+    ) -> Collection:
         with MBDB.get_session() as session:
             collection_orm = Collections.from_name(name, session)
             return collection_orm.to_dto()
@@ -407,14 +407,15 @@ class MatchboxPostgres(MatchboxDBAdapter):
         )
 
     def get_model_data(self, name: ModelResolutionName) -> Table:  # noqa: D102
-        results_query = (
-            select(Results.left_id, Results.right_id, Results.probability)
-            .join(
-                Resolutions,
-                Results.resolution_id == Resolutions.resolution_id,
+        with MBDB.get_session() as session:
+            resolution = Resolutions.from_name(
+                name=name, res_type=ResolutionType.MODEL, session=session
             )
-            .where(Resolutions.name == name, Resolutions.type == ResolutionType.MODEL)
-        )
+
+            results_query = select(
+                Results.left_id, Results.right_id, Results.probability
+            ).where(Results.resolution_id == resolution.resolution_id)
+
         with MBDB.get_adbc_connection() as conn:
             stmt: str = compile_sql(results_query)
             return sql_to_df(
