@@ -331,15 +331,12 @@ class MatchboxPostgres(MatchboxDBAdapter):
     # Resolution management
 
     def insert_resolution(  # noqa: D102
-        self, resolution: Resolution, collection: CollectionName, version: VersionName
+        self, resolution: Resolution, name: ResolutionName
     ) -> None:
-        log_prefix = f"Insert {resolution.name}"
+        log_prefix = f"Insert {name.name}"
         with MBDB.get_session() as session:
             resolution_orm = Resolutions.from_dto(
-                resolution=resolution,
-                collection=collection,
-                version=version,
-                session=session,
+                resolution=resolution, name=name, session=session
             )
             session.commit()
 

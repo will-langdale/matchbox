@@ -550,19 +550,9 @@ class Match(BaseModel):
         return sorted(id_set)
 
 
-class ModelAncestor(BaseModel):
-    """A model's ancestor and its truth value."""
-
-    name: ModelResolutionName = Field(..., description="Name of the ancestor model")
-    truth: int | None = Field(
-        default=None, description="Truth threshold value", ge=0, le=100, strict=True
-    )
-
-
 class Resolution(BaseModel):
     """Unified resolution type with common fields and discriminated config."""
 
-    name: str = Field(description="Unique name of the resolution")
     description: str | None = Field(default=None, description="Description")
     truth: int | None = Field(default=None, ge=0, le=100, strict=True)
 
@@ -571,20 +561,6 @@ class Resolution(BaseModel):
 
     # Type-specific config as discriminated union
     config: SourceConfig | ModelConfig
-
-    @field_validator("name", mode="after")
-    @classmethod
-    def validate_name(cls, value: str) -> str:
-        """Ensure the name is a valid resolution name.
-
-        Raises:
-            ValueError: If the name is not a valid resolution name.
-        """
-        if not re.match(r"^[a-zA-Z0-9_]+$", value):
-            raise ValueError(
-                "Resolution names must be alphanumeric and underscore only."
-            )
-        return value
 
     @field_validator("description", mode="after")
     @classmethod

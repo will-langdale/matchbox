@@ -143,7 +143,6 @@ class TestUploadTracker:
         """Test adding upload to tracker and retrieving."""
         source = source_factory().source.to_resolution()
         model = Resolution(
-            name="name",
             description="description",
             resolution_type=ResolutionType.MODEL,
             truth=100,

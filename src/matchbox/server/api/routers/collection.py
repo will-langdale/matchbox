@@ -24,6 +24,7 @@ from matchbox.common.exceptions import (
     MatchboxCollectionAlreadyExists,
     MatchboxCollectionNotFoundError,
     MatchboxDeletionNotConfirmed,
+    MatchboxResolutionAlreadyExists,
     MatchboxResolutionNotFoundError,
     MatchboxVersionAlreadyExists,
     MatchboxVersionNotFoundError,
@@ -344,8 +345,12 @@ def delete_version(
 
 
 @router.post(
-    "/{collection}/versions/{version}/resolutions",
+    "/{collection}/versions/{version}/resolutions/{resolution_name}",
     responses={
+        409: {
+            "model": ResourceOperationStatus,
+            **ResourceOperationStatus.status_409_examples(),
+        },
         500: {
             "model": ResourceOperationStatus,
             **ResourceOperationStatus.status_500_examples(),
@@ -360,18 +365,20 @@ def create_resolution(
     backend: BackendDependency,
     collection: CollectionName,
     version: VersionName,
+    resolution_name: UnqualifiedResolutionName,
     resolution: Resolution,
 ) -> ResourceOperationStatus:
     """Create a resolution (model or source)."""
     try:
         backend.insert_resolution(
             resolution=resolution,
-            collection=collection,
-            version=version,
+            name=ResolutionName(
+                name=resolution_name, collection=collection, version=version
+            ),
         )
         return ResourceOperationStatus(
             success=True,
-            name=resolution.name,
+            name=resolution_name,
             operation=CRUDOperation.CREATE,
         )
     except (
@@ -379,12 +386,22 @@ def create_resolution(
         MatchboxVersionNotFoundError,
     ):
         raise
+    except MatchboxResolutionAlreadyExists as e:
+        raise HTTPException(
+            status_code=409,
+            detail=ResourceOperationStatus(
+                success=False,
+                name=resolution_name,
+                operation=CRUDOperation.CREATE,
+                details=str(e),
+            ),
+        ) from e
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=ResourceOperationStatus(
                 success=False,
-                name=resolution.name,
+                name=resolution_name,
                 operation=CRUDOperation.CREATE,
                 details=str(e),
             ).model_dump(),

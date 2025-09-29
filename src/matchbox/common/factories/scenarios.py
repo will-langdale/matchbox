@@ -137,8 +137,7 @@ def create_index_scenario(
     for source_testkit in dag_testkit.sources.values():
         backend.insert_resolution(
             resolution=source_testkit.source.to_resolution(),
-            collection=source_testkit.source.dag.name,
-            version=source_testkit.source.dag.version,
+            name=source_testkit.qualified_name,
         )
         backend.insert_source_data(
             name=source_testkit.qualified_name,
@@ -167,8 +166,7 @@ def create_dedupe_scenario(
 
     # Create and add deduplication models
     for testkit in dag_testkit.sources.values():
-        resolution = testkit.source.to_resolution()
-        name = f"naive_test_{resolution.name}"
+        name = f"naive_test_{testkit.name}"
 
         # Query the raw data
         source_data = backend.query(source=testkit.qualified_name)
@@ -177,10 +175,10 @@ def create_dedupe_scenario(
         model_testkit = query_to_model_factory(
             left_query=Query(testkit.source, dag=dag_testkit.dag),
             left_data=source_data,
-            left_keys={resolution.name: "key"},
+            left_keys={testkit.name: "key"},
             true_entities=tuple(linked.true_entities),
             name=name,
-            description=f"Deduplication of {resolution.name}",
+            description=f"Deduplication of {testkit.name}",
             prob_range=(1.0, 1.0),
             seed=seed,
         )
@@ -188,8 +186,7 @@ def create_dedupe_scenario(
         # Add to backend and DAG
         backend.insert_resolution(
             resolution=model_testkit.model.to_resolution(),
-            collection=model_testkit.model.dag.name,
-            version=model_testkit.model.dag.version,
+            name=model_testkit.qualified_name,
         )
         backend.insert_model_data(
             name=model_testkit.qualified_name,
@@ -219,8 +216,7 @@ def create_probabilistic_dedupe_scenario(
 
     # Create and add deduplication models
     for testkit in dag_testkit.sources.values():
-        resolution = testkit.source.to_resolution()
-        name = f"probabilistic_test_{resolution.name}"
+        name = f"probabilistic_test_{testkit.name}"
 
         # Query the raw data
         source_data = backend.query(source=testkit.qualified_name)
@@ -229,10 +225,10 @@ def create_probabilistic_dedupe_scenario(
         model_testkit = query_to_model_factory(
             left_query=Query(testkit.source, dag=dag_testkit.dag),
             left_data=source_data,
-            left_keys={resolution.name: "key"},
+            left_keys={testkit.name: "key"},
             true_entities=tuple(linked.true_entities),
             name=name,
-            description=f"Probabilistic deduplication of {resolution.name}",
+            description=f"Probabilistic deduplication of {testkit.name}",
             prob_range=(0.5, 0.99),
             seed=seed,
         )
@@ -241,8 +237,7 @@ def create_probabilistic_dedupe_scenario(
         # Add to backend and DAG
         backend.insert_resolution(
             resolution=model_testkit.model.to_resolution(),
-            collection=model_testkit.model.dag.name,
-            version=model_testkit.model.dag.version,
+            name=model_testkit.qualified_name,
         )
         backend.insert_model_data(
             name=model_testkit.qualified_name,
@@ -315,8 +310,7 @@ def create_link_scenario(
     # Add to backend and DAG
     backend.insert_resolution(
         resolution=crn_duns_model.model.to_resolution(),
-        collection=crn_duns_model.model.dag.name,
-        version=crn_duns_model.model.dag.version,
+        name=crn_duns_model.qualified_name,
     )
     backend.insert_model_data(
         name=crn_duns_model.qualified_name,
@@ -350,8 +344,7 @@ def create_link_scenario(
     # Add to backend and DAG
     backend.insert_resolution(
         resolution=crn_cdms_model.model.to_resolution(),
-        collection=crn_cdms_model.model.dag.name,
-        version=crn_cdms_model.model.dag.version,
+        name=crn_cdms_model.qualified_name,
     )
     backend.insert_model_data(
         name=crn_cdms_model.qualified_name, results=crn_cdms_model.probabilities
@@ -405,8 +398,7 @@ def create_link_scenario(
     # Add to backend and DAG
     backend.insert_resolution(
         resolution=final_join_model.model.to_resolution(),
-        collection=final_join_model.model.dag.name,
-        version=final_join_model.model.dag.version,
+        name=final_join_model.qualified_name,
     )
     backend.insert_model_data(
         name=final_join_model.qualified_name,
@@ -460,8 +452,7 @@ def create_alt_dedupe_scenario(
     for source_testkit in dag_testkit.sources.values():
         backend.insert_resolution(
             resolution=source_testkit.source.to_resolution(),
-            collection=source_testkit.source.dag.name,
-            version=source_testkit.source.dag.version,
+            name=source_testkit.qualified_name,
         )
         backend.insert_source_data(
             name=source_testkit.qualified_name,
@@ -470,9 +461,8 @@ def create_alt_dedupe_scenario(
 
     # Create and add deduplication models
     for testkit in dag_testkit.sources.values():
-        resolution = testkit.source.to_resolution()
-        model_name1 = f"dedupe_{resolution.name}"
-        model_name2 = f"dedupe2_{resolution.name}"
+        model_name1 = f"dedupe_{testkit.name}"
+        model_name2 = f"dedupe2_{testkit.name}"
 
         # Query the raw data
         source_data = backend.query(source=testkit.qualified_name)
@@ -481,10 +471,10 @@ def create_alt_dedupe_scenario(
         model_testkit1 = query_to_model_factory(
             left_query=Query(testkit.source, dag=dag_testkit.dag),
             left_data=source_data,
-            left_keys={resolution.name: "key"},
+            left_keys={testkit.name: "key"},
             true_entities=tuple(linked.true_entities),
             name=model_name1,
-            description=f"Deduplication of {resolution.name}",
+            description=f"Deduplication of {testkit.name}",
             prob_range=(0.5, 1.0),
             seed=seed,
         )
@@ -492,10 +482,10 @@ def create_alt_dedupe_scenario(
         model_testkit2 = query_to_model_factory(
             left_query=Query(testkit.source, dag=dag_testkit.dag),
             left_data=source_data,
-            left_keys={resolution.name: "key"},
+            left_keys={testkit.name: "key"},
             true_entities=tuple(linked.true_entities),
             name=model_name2,
-            description=f"Deduplication of {resolution.name}",
+            description=f"Deduplication of {testkit.name}",
             prob_range=(0.5, 1.0),
             seed=seed,
         )
@@ -508,9 +498,7 @@ def create_alt_dedupe_scenario(
 
             # Add both models to backend and DAG
             backend.insert_resolution(
-                resolution=model.model.to_resolution(),
-                collection=source_testkit.source.dag.name,
-                version=source_testkit.source.dag.version,
+                resolution=model.model.to_resolution(), name=model.qualified_name
             )
             backend.insert_model_data(
                 name=model.qualified_name, results=model.probabilities
@@ -576,8 +564,7 @@ def create_convergent_scenario(
     for source_testkit in dag_testkit.sources.values():
         backend.insert_resolution(
             resolution=source_testkit.source.to_resolution(),
-            collection=source_testkit.source.dag.name,
-            version=source_testkit.source.dag.version,
+            name=source_testkit.qualified_name,
         )
         backend.insert_source_data(
             name=source_testkit.qualified_name,

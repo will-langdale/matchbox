@@ -77,7 +77,10 @@ def get_samples(
             resolution.config.location_config, client=client
         )
         source = Source.from_resolution(
-            resolution=resolution, dag=dag, location=location
+            resolution=resolution,
+            resolution_name=dag.final_step,
+            dag=dag,
+            location=location,
         )
 
         samples_by_source = samples.filter(pl.col("source") == source_resolution)

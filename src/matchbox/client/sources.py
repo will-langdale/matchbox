@@ -26,10 +26,12 @@ from matchbox.common.dtos import (
     LocationConfig,
     LocationType,
     Resolution,
+    ResolutionName,
     ResolutionType,
     SourceConfig,
     SourceField,
     SourceResolutionName,
+    UnqualifiedResolutionName,
 )
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
@@ -417,7 +419,6 @@ class Source:
     def to_resolution(self) -> Resolution:
         """Convert to Resolution for API calls."""
         return Resolution(
-            name=self.name,
             description=self.description,
             truth=None,
             resolution_type=ResolutionType.SOURCE,
@@ -426,7 +427,11 @@ class Source:
 
     @classmethod
     def from_resolution(
-        cls, resolution: Resolution, dag: DAG, location: Location
+        cls,
+        resolution: Resolution,
+        resolution_name: UnqualifiedResolutionName,
+        dag: DAG,
+        location: Location,
     ) -> "Source":
         """Reconstruct from Resolution."""
         if resolution.resolution_type != ResolutionType.SOURCE:
@@ -435,7 +440,7 @@ class Source:
         return cls(
             dag=dag,
             location=location,
-            name=resolution.name,
+            name=resolution_name,
             extract_transform=resolution.config.extract_transform,
             key_field=resolution.config.key_field,
             index_fields=resolution.config.index_fields,
@@ -631,7 +636,9 @@ class Source:
                 log_prefix = f"Resolution {self.name}"
                 logger.warning("Already exists. Passing.", prefix=log_prefix)
         else:
-            _handler.create_resolution(resolution=resolution)
+            _handler.create_resolution(
+                resolution=resolution, name=ResolutionName(name=self.name)
+            )
 
         if self.hashes:
             _handler.set_data(

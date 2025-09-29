@@ -100,39 +100,6 @@ class Collections(CountMixin, MBDB.MatchboxBase):
 
         return collection
 
-    @classmethod
-    def from_dto(
-        cls,
-        collection: CommonCollection,
-        session: Session,
-    ) -> "Collections":
-        """Create a Collections instance from a Collection DTO object.
-
-        The collection will be added to the session and flushed (but not committed).
-
-        Args:
-            collection: The Collection DTO to convert
-            session: Database session (caller must commit)
-
-        Returns:
-            A Collections ORM instance with ID and relationships established
-        """
-        # Create new collection
-        collection_orm = cls(name=collection.name)
-        session.add(collection_orm)
-        session.flush()  # Get collection_id
-
-        # Create versions
-        for version_dto in collection.versions:
-            version_orm = Versions.from_dto(
-                version=version_dto,
-                collection_id=collection_orm.collection_id,
-                session=session,
-            )
-            collection_orm.versions.append(version_orm)
-
-        return collection_orm
-
     def to_dto(self) -> CommonCollection:
         """Convert ORM collection to a matchbox.common Collection object."""
         versions: dict[VersionName, list[CommonVersion]] = {}
@@ -213,49 +180,6 @@ class Versions(CountMixin, MBDB.MatchboxBase):
 
         if not version_orm:
             raise MatchboxVersionNotFoundError
-
-        return version_orm
-
-    @classmethod
-    def from_dto(
-        cls,
-        version: CommonVersion,
-        collection_id: int,
-        session: Session,
-    ) -> "Versions":
-        """Create a Versions instance from a Version DTO object.
-
-        The version will be added to the session and flushed (but not committed).
-
-        Args:
-            version: The Version DTO to convert
-            collection_id: The ID of the parent collection
-            session: Database session (caller must commit)
-
-        Returns:
-            A Versions ORM instance with ID and relationships established
-        """
-        # Create new version
-        version_orm = cls(
-            collection_id=collection_id,
-            name=version.name,
-            is_default=version.is_default,
-            is_mutable=version.is_mutable,
-        )
-        session.add(version_orm)
-        session.flush()  # Get version_id
-
-        # Create resolutions
-        for resolution_dto in version.resolutions:
-            # We need the collection name for the Resolutions.from_dto method
-            collection = session.get(Collections, collection_id)
-            resolution_orm = Resolutions.from_dto(
-                resolution=resolution_dto,
-                collection=collection.name,
-                version=version.name,
-                session=session,
-            )
-            version_orm.resolutions.append(resolution_orm)
 
         return version_orm
 
@@ -490,11 +414,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
     @classmethod
     def from_dto(
-        cls,
-        resolution: CommonResolution,
-        collection: CollectionName,
-        version: VersionName,
-        session: Session,
+        cls, resolution: CommonResolution, name: ResolutionName, session: Session
     ) -> "Resolutions":
         """Create a Resolutions instance from a Resolution DTO object.
 
@@ -504,34 +424,33 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
         Args:
             resolution: The Resolution DTO to convert
-            collection: The name of the collection to insert to
-            version: The name of the version to insert to
+            name: The full resolution address
             session: Database session (caller must commit)
 
         Returns:
             A Resolutions ORM instance with ID and relationships established
         """
         # Check if resolution already exists. Always an error
-        existing = session.scalar(select(cls).where(cls.name == resolution.name))
+        existing = session.scalar(select(cls).where(cls.name == name.name))
         if existing:
             raise MatchboxResolutionAlreadyExists(
-                f"Resolution {resolution.name} already exists"
+                f"Resolution {name.name} already exists"
             )
 
         # Find the version ID for the given collection and version names
         version_obj = session.execute(
             select(Versions)
             .join(Collections)
-            .where(Collections.name == collection, Versions.name == version)
+            .where(Collections.name == name.collection, Versions.name == name.version)
         ).scalar_one_or_none()
 
         if not version_obj:
-            raise MatchboxVersionNotFoundError(name=version)
+            raise MatchboxVersionNotFoundError(name=name.version)
 
         # Create new resolution
         resolution_orm = cls(
             version_id=version_obj.version_id,
-            name=resolution.name,
+            name=name.name,
             description=resolution.description,
             type=resolution.resolution_type.value,
             truth=resolution.truth,
@@ -566,7 +485,6 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             config = self.model_config.to_dto()
 
         return CommonResolution(
-            name=self.name,
             description=self.description,
             truth=self.truth,
             resolution_type=ResolutionType(self.type),

@@ -545,8 +545,7 @@ class TestMatchboxBackend:
             )
             self.backend.insert_resolution(
                 resolution=dedupe_1_testkit.model.to_resolution(),
-                collection=dag_testkit.dag.name,
-                version=dag_testkit.dag.version,
+                name=dedupe_1_testkit.qualified_name,
             )
 
             dedupe_2_testkit = model_factory(
@@ -558,8 +557,7 @@ class TestMatchboxBackend:
             )
             self.backend.insert_resolution(
                 resolution=dedupe_2_testkit.model.to_resolution(),
-                collection=dag_testkit.dag.name,
-                version=dag_testkit.dag.version,
+                name=dedupe_2_testkit.qualified_name,
             )
 
             assert self.backend.models.count() == models_count + 2
@@ -574,8 +572,7 @@ class TestMatchboxBackend:
             )
             self.backend.insert_resolution(
                 resolution=linker_testkit.model.to_resolution(),
-                collection=dag_testkit.dag.name,
-                version=dag_testkit.dag.version,
+                name=linker_testkit.qualified_name,
             )
 
             assert self.backend.models.count() == models_count + 3
@@ -584,8 +581,7 @@ class TestMatchboxBackend:
             with pytest.raises(MatchboxResolutionAlreadyExists):
                 self.backend.insert_resolution(
                     linker_testkit.model.to_resolution(),
-                    collection=dag_testkit.dag.name,
-                    version=dag_testkit.dag.version,
+                    name=linker_testkit.qualified_name,
                 )
 
             assert self.backend.models.count() == models_count + 3
@@ -611,9 +607,7 @@ class TestMatchboxBackend:
             assert self.backend.clusters.count() == 0
 
             self.backend.insert_resolution(
-                crn_testkit.source.to_resolution(),
-                collection=dag_testkit.dag.name,
-                version=dag_testkit.dag.version,
+                crn_testkit.source.to_resolution(), name=crn_testkit.qualified_name
             )
             self.backend.insert_source_data(
                 crn_testkit.source.qualified_name, crn_testkit.data_hashes
@@ -647,9 +641,7 @@ class TestMatchboxBackend:
 
             assert self.backend.data.count() == 0
             self.backend.insert_resolution(
-                crn_testkit.source.to_resolution(),
-                collection=dag_testkit.dag.name,
-                version=dag_testkit.dag.version,
+                crn_testkit.source.to_resolution(), name=crn_testkit.qualified_name
             )
             self.backend.insert_source_data(
                 crn_testkit.source.qualified_name, data_hashes_halved
@@ -686,9 +678,7 @@ class TestMatchboxBackend:
             )
 
             self.backend.insert_resolution(
-                crn_resolution_1,
-                collection=dag_testkit.dag.name,
-                version=dag_testkit.dag.version,
+                crn_resolution_1, name=crn_testkit.qualified_name
             )
             self.backend.insert_source_data(
                 crn_testkit.source.qualified_name, crn_testkit.data_hashes
@@ -696,9 +686,7 @@ class TestMatchboxBackend:
 
             with pytest.raises(MatchboxResolutionAlreadyExists):
                 self.backend.insert_resolution(
-                    crn_resolution_2,
-                    collection=dag_testkit.dag.name,
-                    version=dag_testkit.dag.version,
+                    crn_resolution_2, name=crn_testkit.qualified_name
                 )
 
             assert self.backend.data.count() == len(crn_testkit.data_hashes)
@@ -711,18 +699,14 @@ class TestMatchboxBackend:
             duns_testkit: SourceTestkit = dag_testkit.sources.get("duns")
 
             self.backend.insert_resolution(
-                crn_testkit.source.to_resolution(),
-                collection=dag_testkit.dag.name,
-                version=dag_testkit.dag.version,
+                crn_testkit.source.to_resolution(), name=crn_testkit.qualified_name
             )
             self.backend.insert_source_data(
                 crn_testkit.source.qualified_name, crn_testkit.data_hashes
             )
             # Different source, same data
             self.backend.insert_resolution(
-                duns_testkit.source.to_resolution(),
-                collection=dag_testkit.dag.name,
-                version=dag_testkit.dag.version,
+                duns_testkit.source.to_resolution(), name=duns_testkit.qualified_name
             )
             self.backend.insert_source_data(
                 duns_testkit.source.qualified_name, crn_testkit.data_hashes
@@ -863,8 +847,7 @@ class TestMatchboxBackend:
             for model_testkit in dag_testkit.models.values():
                 self.backend.insert_resolution(
                     resolution=model_testkit.model.to_resolution(),
-                    collection=dag_testkit.dag.name,
-                    version=dag_testkit.dag.version,
+                    name=model_testkit.qualified_name,
                 )
                 self.backend.insert_model_data(
                     name=model_testkit.qualified_name,

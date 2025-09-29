@@ -18,6 +18,7 @@ from matchbox.common.dtos import (
     Resolution,
     ResolutionName,
     ResolutionType,
+    UnqualifiedResolutionName,
 )
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.logging import logger
@@ -154,7 +155,6 @@ class Model:
     def to_resolution(self) -> Resolution:
         """Convert to Resolution for API calls."""
         return Resolution(
-            name=self.name,
             description=self.description,
             truth=self._truth,
             resolution_type=ResolutionType.MODEL,
@@ -162,14 +162,19 @@ class Model:
         )
 
     @classmethod
-    def from_resolution(cls, resolution: Resolution, dag: DAG) -> "Model":
+    def from_resolution(
+        cls,
+        resolution: Resolution,
+        resolution_name: UnqualifiedResolutionName,
+        dag: DAG,
+    ) -> "Model":
         """Reconstruct from Resolution."""
         if resolution.resolution_type != ResolutionType.MODEL:
             raise ValueError("Resolution must be of type 'model'")
 
         return cls(
             dag=dag,
-            name=resolution.name,
+            name=resolution_name,
             description=resolution.description,
             model_class=resolution.config.model_class,
             model_settings=resolution.config.model_settings,
@@ -269,7 +274,9 @@ class Model:
                 log_prefix = f"Resolution {self.name}"
                 logger.warning("Already exists. Passing.", prefix=log_prefix)
         else:
-            _handler.create_resolution(resolution=resolution)
+            _handler.create_resolution(
+                resolution=resolution, name=ResolutionName(name=self.name)
+            )
 
         _handler.set_truth(name=self.name, truth=self._truth)
 

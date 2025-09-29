@@ -418,18 +418,12 @@ class MatchboxDBAdapter(ABC):
     # Resolution management
 
     @abstractmethod
-    def insert_resolution(
-        self,
-        resolution: "Resolution",
-        collection: CollectionName,
-        version: VersionName,
-    ) -> None:
+    def insert_resolution(self, resolution: Resolution, name: ResolutionName) -> None:
         """Writes a resolution to Matchbox.
 
         Args:
             resolution: Resolution object with a source or model config
-            collection: The name of the collection to insert the resolution into.
-            version: The name of the version to insert the resolution into.
+            name: The resolution name for the source
 
         Raises:
             MatchboxModelConfigError: If the configuration is invalid, such as
@@ -444,7 +438,7 @@ class MatchboxDBAdapter(ABC):
         """Get a resolution from its name.
 
         Args:
-            name: The name resolution name for the source
+            name: The resolution name for the source
             validate: The expected type of the resolution
 
         Returns:

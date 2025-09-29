@@ -11,6 +11,7 @@ from matchbox.common.dtos import (
     BackendResourceType,
     CRUDOperation,
     NotFoundError,
+    ResolutionName,
     ResourceOperationStatus,
     UploadStage,
 )
@@ -79,7 +80,7 @@ def test_insert_model(
     test_client, mock_backend, _ = api_client_and_mocks
 
     response = test_client.post(
-        "/collections/default/versions/v1/resolutions",
+        "/collections/default/versions/v1/resolutions/test_model",
         json=testkit.model.to_resolution().model_dump(),
     )
 
@@ -95,7 +96,8 @@ def test_insert_model(
     )
 
     mock_backend.insert_resolution.assert_called_once_with(
-        resolution=testkit.model.to_resolution(), collection="default", version="v1"
+        resolution=testkit.model.to_resolution(),
+        name=ResolutionName(name="test_model", collection="default", version="v1"),
     )
 
 
@@ -107,7 +109,7 @@ def test_insert_model_error(
     testkit = model_factory()
 
     response = test_client.post(
-        "/collections/default/versions/v1/resolutions",
+        "/collections/default/versions/v1/resolutions/name",
         json=testkit.model.to_resolution().model_dump(),
     )
 
@@ -143,7 +145,7 @@ def test_complete_model_upload_process(
 
     # Step 1: Create model
     response = test_client.post(
-        "/collections/default/versions/v1/resolutions",
+        "/collections/default/versions/v1/resolutions/name",
         json=testkit.model.to_resolution().model_dump(),
     )
     assert response.status_code == 201
@@ -475,7 +477,7 @@ def test_complete_source_upload_process(
 
     # Step 1: Add source
     response = test_client.post(
-        "/collections/default/versions/v1/resolutions",
+        f"/collections/default/versions/v1/resolutions/{source_testkit.name}",
         json=source_testkit.source.to_resolution().model_dump(mode="json"),
     )
     assert response.status_code == 201
@@ -486,8 +488,11 @@ def test_complete_source_upload_process(
     # Assert backend given the config but not yet the data
     mock_backend.insert_resolution.assert_called_once_with(
         resolution=source_testkit.source.to_resolution(),
-        collection="default",
-        version="v1",
+        name=ResolutionName(
+            name=source_testkit.name,
+            collection="default",
+            version="v1",
+        ),
     )
     mock_backend.insert_source_data.assert_not_called()
 

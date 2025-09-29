@@ -285,13 +285,15 @@ def get_collection(name: CollectionName) -> dict[VersionName, list[Resolution]]:
 @http_retry
 def create_resolution(
     resolution: Resolution,
+    name: ResolutionName,
 ) -> ResourceOperationStatus | UploadStatus:
     """Create a resolution (model or source)."""
-    log_prefix = f"Resolution {resolution.name}"
+    log_prefix = f"Resolution {name.name}"
     logger.debug("Creating", prefix=log_prefix)
 
     res = CLIENT.post(
-        "/collections/default/versions/v1/resolutions", json=resolution.model_dump()
+        f"/collections/default/versions/v1/resolutions/{name.name}",
+        json=resolution.model_dump(),
     )
 
     return ResourceOperationStatus.model_validate(res.json())
