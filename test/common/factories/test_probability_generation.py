@@ -604,11 +604,11 @@ def test_complex_entity_recovery():
     )
 
     # There should be edges connecting all entities (n*(n-1))/2 = 10 edges
-    assert table.num_rows == 10
+    assert len(table) == 10
 
     # Use DisjointSet to cluster
     ds = DisjointSet[int]()
-    for row in table.to_pylist():
+    for row in table.to_dicts():
         if row["probability"] >= 90:
             ds.union(row["left_id"], row["right_id"])
 
