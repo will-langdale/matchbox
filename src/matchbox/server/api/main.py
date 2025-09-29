@@ -87,7 +87,12 @@ async def add_security_headers(request: Request, call_next):
     response: Response = await call_next(request)
     response.headers["Cache-control"] = "no-store, no-cache"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; img-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; form-action 'none'; sandbox allow-scripts"  # noqa: E501
+        # Restrict by default
+        "default-src 'none'; frame-ancestors 'none'; form-action 'none';"
+        # Load Swagger CSS, favicon and openapi.json
+        "style-src 'self'; img-src 'self' data:; connect-src 'self'; "
+        # Load Swagger JS, hard-coding the expected file hash
+        "script-src 'self' 'sha256-QOOQu4W1oxGqd2nbXbxiA1Di6OHQOLQD+o+G9oWL8YY='"
     )
     response.headers["Strict-Transport-Security"] = (
         "max-age=31536000; includeSubDomains"
@@ -392,6 +397,7 @@ async def custom_swagger_ui_html():
         oauth2_redirect_url=app.swagger_ui_oauth2_redirect_url,
         swagger_js_url="/static/swagger-ui-bundle.js",
         swagger_css_url="/static/swagger-ui.css",
+        swagger_favicon_url="/static/favicon.png",
     )
 
 
