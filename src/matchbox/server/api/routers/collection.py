@@ -9,13 +9,13 @@ from matchbox.common.dtos import (
     Collection,
     CollectionName,
     CRUDOperation,
+    ModelResolutionName,
     NotFoundError,
     Resolution,
     ResolutionName,
+    ResolutionPath,
     ResolutionType,
     ResourceOperationStatus,
-    UnqualifiedModelResolutionName,
-    UnqualifiedResolutionName,
     UploadStatus,
     Version,
     VersionName,
@@ -365,14 +365,14 @@ def create_resolution(
     backend: BackendDependency,
     collection: CollectionName,
     version: VersionName,
-    resolution_name: UnqualifiedResolutionName,
+    resolution_name: ResolutionName,
     resolution: Resolution,
 ) -> ResourceOperationStatus:
     """Create a resolution (model or source)."""
     try:
         backend.insert_resolution(
             resolution=resolution,
-            name=ResolutionName(
+            name=ResolutionPath(
                 name=resolution_name, collection=collection, version=version
             ),
         )
@@ -409,7 +409,7 @@ def create_resolution(
 
 
 @router.get(
-    "/{collection}/versions/{version}/resolutions/{name}",
+    "/{collection}/versions/{version}/resolutions/{resolution}",
     responses={404: {"model": NotFoundError}},
     summary="Get a resolution",
     description="Retrieve a specific resolution (model or source) from the backend.",
@@ -418,18 +418,18 @@ def get_resolution(
     backend: BackendDependency,
     collection: CollectionName,
     version: VersionName,
-    name: UnqualifiedResolutionName,
+    resolution: ResolutionName,
     validate_type: ResolutionType | None = None,
 ) -> Resolution:
     """Get a resolution (model or source) from the backend."""
     return backend.get_resolution(
-        name=ResolutionName(collection=collection, version=version, name=name),
+        name=ResolutionPath(collection=collection, version=version, name=resolution),
         validate=validate_type,
     )
 
 
 @router.delete(
-    "/{collection}/versions/{version}/resolutions/{name}",
+    "/{collection}/versions/{version}/resolutions/{resolution}",
     responses={
         404: {"model": NotFoundError},
         409: {
@@ -449,7 +449,7 @@ def delete_resolution(
     backend: BackendDependency,
     collection: CollectionName,
     version: VersionName,
-    name: UnqualifiedResolutionName,
+    resolution: ResolutionName,
     certain: Annotated[
         bool, Query(description="Confirm deletion of the resolution")
     ] = False,
@@ -457,12 +457,14 @@ def delete_resolution(
     """Delete a resolution from the backend."""
     try:
         backend.delete_resolution(
-            name=ResolutionName(collection=collection, version=version, name=name),
+            name=ResolutionPath(
+                collection=collection, version=version, name=resolution
+            ),
             certain=certain,
         )
         return ResourceOperationStatus(
             success=True,
-            name=name,
+            name=resolution,
             operation=CRUDOperation.DELETE,
         )
     except (
@@ -477,7 +479,7 @@ def delete_resolution(
             status_code=500,
             detail=ResourceOperationStatus(
                 success=False,
-                name=name,
+                name=resolution,
                 operation=CRUDOperation.DELETE,
                 details=str(e),
             ),
@@ -485,7 +487,7 @@ def delete_resolution(
 
 
 @router.post(
-    "/{collection}/versions/{version}/resolutions/{name}/data",
+    "/{collection}/versions/{version}/resolutions/{resolution}/data",
     responses={404: {"model": NotFoundError}},
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(authorisation_dependencies)],
@@ -497,13 +499,13 @@ def set_data(
     upload_tracker: UploadTrackerDependency,
     collection: CollectionName,
     version: VersionName,
-    name: UnqualifiedModelResolutionName,
+    resolution: ModelResolutionName,
     validate_type: ResolutionType | None = None,
 ) -> UploadStatus:
     """Create an upload task for source hashes or model results."""
     # Get resolution from the specified version
     resolution = backend.get_resolution(
-        name=ResolutionName(collection=collection, version=version, name=name),
+        name=ResolutionPath(collection=collection, version=version, name=resolution),
         validate=validate_type,
     )
 
@@ -516,7 +518,7 @@ def set_data(
 
 
 @router.get(
-    "/{collection}/versions/{version}/resolutions/{name}/data",
+    "/{collection}/versions/{version}/resolutions/{resolution}/data",
     responses={404: {"model": NotFoundError}},
     summary="Get resolution results",
     description="Download results for a model as a parquet file.",
@@ -525,11 +527,11 @@ def get_results(
     backend: BackendDependency,
     collection: CollectionName,
     version: VersionName,
-    name: UnqualifiedModelResolutionName,
+    resolution: ModelResolutionName,
 ) -> ParquetResponse:
     """Download results for a model as a parquet file."""
     res = backend.get_model_data(
-        name=ResolutionName(collection=collection, version=version, name=name)
+        path=ResolutionPath(collection=collection, version=version, name=resolution)
     )
 
     buffer = table_to_buffer(res)
@@ -537,7 +539,7 @@ def get_results(
 
 
 @router.patch(
-    "/{collection}/versions/{version}/resolutions/{name}/truth",
+    "/{collection}/versions/{version}/resolutions/{resolution}/truth",
     responses={
         404: {"model": NotFoundError},
         500: {
@@ -553,18 +555,20 @@ def set_truth(
     backend: BackendDependency,
     collection: CollectionName,
     version: VersionName,
-    name: UnqualifiedModelResolutionName,
+    resolution: ModelResolutionName,
     truth: Annotated[int, Body(ge=0, le=100)],
 ) -> ResourceOperationStatus:
     """Set truth data for a resolution."""
     try:
         backend.set_model_truth(
-            name=ResolutionName(collection=collection, version=version, name=name),
+            path=ResolutionPath(
+                collection=collection, version=version, name=resolution
+            ),
             truth=truth,
         )
         return ResourceOperationStatus(
             success=True,
-            name=name,
+            name=resolution,
             operation=CRUDOperation.UPDATE,
         )
     except (
@@ -578,7 +582,7 @@ def set_truth(
             status_code=500,
             detail=ResourceOperationStatus(
                 success=False,
-                name=name,
+                name=resolution,
                 operation=CRUDOperation.UPDATE,
                 details=str(e),
             ).model_dump(),
@@ -586,7 +590,7 @@ def set_truth(
 
 
 @router.get(
-    "/{collection}/versions/{version}/resolutions/{name}/truth",
+    "/{collection}/versions/{version}/resolutions/{resolution}/truth",
     responses={404: {"model": NotFoundError}},
     summary="Get resolution truth",
     description="Get truth data for a resolution.",
@@ -595,9 +599,9 @@ def get_truth(
     backend: BackendDependency,
     collection: CollectionName,
     version: VersionName,
-    name: UnqualifiedModelResolutionName,
+    resolution: ModelResolutionName,
 ) -> float:
     """Get truth data for a resolution."""
     return backend.get_model_truth(
-        name=ResolutionName(collection=collection, version=version, name=name)
+        path=ResolutionPath(collection=collection, version=version, name=resolution)
     )

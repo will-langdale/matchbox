@@ -19,7 +19,7 @@ from matchbox.common.dtos import (
     LocationType,
     Match,
     Resolution,
-    ResolutionName,
+    ResolutionPath,
     ResolutionType,
 )
 from matchbox.common.eval import Judgement
@@ -469,12 +469,12 @@ class TestMatchboxBackend:
 
             with pytest.raises(MatchboxResolutionNotFoundError):
                 self.backend.get_resolution(
-                    name=ResolutionName(name="foo"), validate=ResolutionType.SOURCE
+                    path=ResolutionPath(name="foo"), validate=ResolutionType.SOURCE
                 )
 
             with pytest.raises(MatchboxResolutionNotFoundError):
                 self.backend.get_resolution(
-                    name=crn_testkit.resolution_path, validate=ResolutionType.MODEL
+                    path=crn_testkit.resolution_path, validate=ResolutionType.MODEL
                 )
 
     def test_delete_resolution(self):
@@ -1119,7 +1119,7 @@ class TestMatchboxBackend:
                 pl.from_arrow(
                     self.backend.sample_for_eval(
                         n=10,
-                        resolution=model_names[0],
+                        path=model_names[0],
                         user_id=user_id,
                     )
                 )
@@ -1153,7 +1153,7 @@ class TestMatchboxBackend:
         ):
             user_id = self.backend.login("alice")
             self.backend.sample_for_eval(
-                n=10, resolution=ResolutionName(name="naive_test_crn"), user_id=user_id
+                n=10, path=ResolutionPath(name="naive_test_crn"), user_id=user_id
             )
 
         with self.scenario(self.backend, "dedupe") as dag_testkit:
@@ -1166,7 +1166,7 @@ class TestMatchboxBackend:
             # So if we sample from a source resolution, we get nothing
             user_id = self.backend.login("alice")
             samples_source = self.backend.sample_for_eval(
-                n=10, resolution=crn_testkit.resolution_path, user_id=user_id
+                n=10, path=crn_testkit.resolution_path, user_id=user_id
             )
             assert len(samples_source) == 0
 
@@ -1185,7 +1185,7 @@ class TestMatchboxBackend:
             assert len(resolution_clusters["id"].unique()) < 99
 
             samples_99 = self.backend.sample_for_eval(
-                n=99, resolution=naive_crn_testkit.resolution_path, user_id=user_id
+                n=99, path=naive_crn_testkit.resolution_path, user_id=user_id
             )
 
             assert samples_99.schema.equals(SCHEMA_EVAL_SAMPLES)
@@ -1208,7 +1208,7 @@ class TestMatchboxBackend:
             # We can request less than available
             assert len(resolution_clusters["id"].unique()) > 5
             samples_5 = self.backend.sample_for_eval(
-                n=5, resolution=naive_crn_testkit.resolution_path, user_id=user_id
+                n=5, path=naive_crn_testkit.resolution_path, user_id=user_id
             )
             assert len(samples_5["root"].unique()) == 5
 
@@ -1228,7 +1228,7 @@ class TestMatchboxBackend:
             )
 
             samples_without_cluster = self.backend.sample_for_eval(
-                n=99, resolution=naive_crn_testkit.resolution_path, user_id=user_id
+                n=99, path=naive_crn_testkit.resolution_path, user_id=user_id
             )
             # Compared to the first query, we should have one fewer cluster
             assert len(samples_99["root"].unique()) - 1 == len(
@@ -1254,6 +1254,6 @@ class TestMatchboxBackend:
                 )
 
             samples_all_done = self.backend.sample_for_eval(
-                n=99, resolution=naive_crn_testkit.resolution_path, user_id=user_id
+                n=99, path=naive_crn_testkit.resolution_path, user_id=user_id
             )
             assert len(samples_all_done) == 0

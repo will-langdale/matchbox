@@ -27,7 +27,7 @@ from matchbox.common.dtos import (
     CollectionName,
     LocationConfig,
     ModelType,
-    ResolutionName,
+    ResolutionPath,
     ResolutionType,
     VersionName,
 )
@@ -369,16 +369,16 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             )
 
     @classmethod
-    def from_name(
+    def from_path(
         cls,
-        name: ResolutionName,
+        path: ResolutionPath,
         res_type: ResolutionType | None = None,
         session: Session | None = None,
     ) -> "Resolutions":
         """Resolves a resolution name to a Resolution object.
 
         Args:
-            name: The qualified name of the resolution to resolve.
+            path: The path of the resolution to resolve.
             res_type: A resolution type to use as filter.
             session: A session to get the resolution for updates.
 
@@ -390,9 +390,9 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             .join(cls.version)
             .join(Versions.collection)
             .where(
-                cls.name == name.name,
-                Versions.name == name.version,
-                Collections.name == name.collection,
+                cls.name == path.name,
+                Versions.name == path.version,
+                Collections.name == path.collection,
             )
         )
 
@@ -409,12 +409,12 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             return resolution
 
         raise MatchboxResolutionNotFoundError(
-            message=f"No resolution {name} of type {res_type or 'any'}."
+            message=f"No resolution {path} of type {res_type or 'any'}."
         )
 
     @classmethod
     def from_dto(
-        cls, resolution: CommonResolution, name: ResolutionName, session: Session
+        cls, resolution: CommonResolution, path: ResolutionPath, session: Session
     ) -> "Resolutions":
         """Create a Resolutions instance from a Resolution DTO object.
 
@@ -424,33 +424,33 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
         Args:
             resolution: The Resolution DTO to convert
-            name: The full resolution address
+            path: The full resolution path
             session: Database session (caller must commit)
 
         Returns:
             A Resolutions ORM instance with ID and relationships established
         """
         # Check if resolution already exists. Always an error
-        existing = session.scalar(select(cls).where(cls.name == name.name))
+        existing = session.scalar(select(cls).where(cls.name == path.name))
         if existing:
             raise MatchboxResolutionAlreadyExists(
-                f"Resolution {name.name} already exists"
+                f"Resolution {path.name} already exists"
             )
 
         # Find the version ID for the given collection and version names
         version_obj = session.execute(
             select(Versions)
             .join(Collections)
-            .where(Collections.name == name.collection, Versions.name == name.version)
+            .where(Collections.name == path.collection, Versions.name == path.version)
         ).scalar_one_or_none()
 
         if not version_obj:
-            raise MatchboxVersionNotFoundError(name=name.version)
+            raise MatchboxVersionNotFoundError(name=path.version)
 
         # Create new resolution
         resolution_orm = cls(
             version_id=version_obj.version_id,
-            name=name.name,
+            name=path.name,
             description=resolution.description,
             type=resolution.resolution_type.value,
             truth=resolution.truth,

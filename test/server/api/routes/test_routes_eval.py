@@ -16,7 +16,7 @@ from matchbox.common.arrow import (
 from matchbox.common.dtos import (
     BackendParameterType,
     BackendResourceType,
-    ModelResolutionName,
+    ModelResolutionPath,
 )
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import (
@@ -100,33 +100,33 @@ def test_get_judgements(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
 
 def test_compare_models_ok(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     test_client, mock_backend, _ = api_client_and_mocks
-    model_a_name = ModelResolutionName(name="a")
-    model_b_name = ModelResolutionName(name="b")
-    mock_pr = {model_a_name: (1, 0.5), model_b_name: (0.5, 1)}
+    model_a_path = ModelResolutionPath(name="a")
+    model_b_path = ModelResolutionPath(name="b")
+    mock_pr = {model_a_path: (1, 0.5), model_b_path: (0.5, 1)}
     mock_backend.compare_models.return_value = mock_pr
 
     response = test_client.post(
         "/eval/compare",
-        json=[m.model_dump() for m in [model_a_name, model_b_name]],
+        json=[m.model_dump() for m in [model_a_path, model_b_path]],
     )
 
     assert response.status_code == 200
     result = response.json()
     assert sorted(result.keys()) == ["default/v1/a", "default/v1/b"]
-    assert tuple(result["default/v1/a"]) == mock_pr[model_a_name]
-    assert tuple(result["default/v1/b"]) == mock_pr[model_b_name]
+    assert tuple(result["default/v1/a"]) == mock_pr[model_a_path]
+    assert tuple(result["default/v1/b"]) == mock_pr[model_b_path]
 
 
 def test_compare_models_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     test_client, mock_backend, _ = api_client_and_mocks
-    model_a_name = ModelResolutionName(name="a")
-    model_b_name = ModelResolutionName(name="b")
-    model_c_name = ModelResolutionName(name="c")
+    model_a_path = ModelResolutionPath(name="a")
+    model_b_path = ModelResolutionPath(name="b")
+    model_c_path = ModelResolutionPath(name="c")
 
     mock_backend.compare_models.side_effect = MatchboxResolutionNotFoundError
     response = test_client.post(
         "/eval/compare",
-        json=[m.model_dump() for m in [model_a_name, model_b_name, model_c_name]],
+        json=[m.model_dump() for m in [model_a_path, model_b_path, model_c_path]],
     )
     assert response.status_code == 404
     assert response.json()["entity"] == BackendResourceType.RESOLUTION
@@ -134,7 +134,7 @@ def test_compare_models_404(api_client_and_mocks: tuple[TestClient, Mock, Mock])
     mock_backend.compare_models.side_effect = MatchboxNoJudgements
     response = test_client.post(
         "/eval/compare",
-        json=[m.model_dump() for m in [model_a_name, model_b_name, model_c_name]],
+        json=[m.model_dump() for m in [model_a_path, model_b_path, model_c_path]],
     )
     assert response.status_code == 404
     assert response.json()["entity"] == BackendResourceType.JUDGEMENT

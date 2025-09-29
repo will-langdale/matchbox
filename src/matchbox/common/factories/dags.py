@@ -4,9 +4,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from matchbox.client.dags import DAG
 from matchbox.common.dtos import (
-    UnqualifiedModelResolutionName,
-    UnqualifiedResolutionName,
-    UnqualifiedSourceResolutionName,
+    ModelResolutionName,
+    ResolutionName,
+    SourceResolutionName,
 )
 from matchbox.common.factories.models import ModelTestkit
 from matchbox.common.factories.sources import LinkedSourcesTestkit, SourceTestkit
@@ -21,8 +21,8 @@ class TestkitDAG(BaseModel):
     dag: DAG = Field(default_factory=lambda: DAG(name="collection", version="draft"))
 
     # Just registries of test data - no complex logic
-    sources: dict[UnqualifiedSourceResolutionName, SourceTestkit] = {}
-    models: dict[UnqualifiedModelResolutionName, ModelTestkit] = {}
+    sources: dict[SourceResolutionName, SourceTestkit] = {}
+    models: dict[ModelResolutionName, ModelTestkit] = {}
     linked: dict[str, LinkedSourcesTestkit] = {}
 
     def add_source(self, testkit: SourceTestkit | LinkedSourcesTestkit) -> None:
@@ -46,9 +46,7 @@ class TestkitDAG(BaseModel):
         self.dag._add_step(testkit.model)
         self.models[testkit.name] = testkit
 
-    def get_linked_testkit(
-        self, name: UnqualifiedResolutionName
-    ) -> LinkedSourcesTestkit | None:
+    def get_linked_testkit(self, name: ResolutionName) -> LinkedSourcesTestkit | None:
         """For a resolution, get the LinkedSourcesTestkit that produced its sources."""
         # Check if it's a source directly
         for linked_testkit in self.linked.values():

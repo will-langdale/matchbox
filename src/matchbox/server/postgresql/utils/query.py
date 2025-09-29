@@ -18,7 +18,7 @@ from sqlalchemy.orm import aliased
 from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.dtos import Match, ResolutionName, SourceResolutionName
+from matchbox.common.dtos import Match, ResolutionPath, SourceResolutionPath
 from matchbox.common.logging import logger
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
@@ -448,8 +448,8 @@ def _build_match_query(
 
 
 def query(
-    source: SourceResolutionName,
-    resolution: ResolutionName | None = None,
+    source_path: SourceResolutionPath,
+    truth_resolution_path: ResolutionPath | None = None,
     threshold: int | None = None,
     return_leaf_id: bool = False,
     limit: int = None,
@@ -469,14 +469,14 @@ def query(
     Returns all records with their final resolved cluster IDs.
     """
     with MBDB.get_session() as session:
-        source_config: SourceConfigs = Resolutions.from_name(
-            name=source, session=session
+        source_config: SourceConfigs = Resolutions.from_path(
+            path=source_path, session=session
         ).source_config
         source_resolution: Resolutions = source_config.source_resolution
 
-        if resolution:
-            truth_resolution: Resolutions = Resolutions.from_name(
-                name=resolution, session=session
+        if truth_resolution_path:
+            truth_resolution: Resolutions = Resolutions.from_path(
+                path=truth_resolution_path, session=session
             )
         else:
             truth_resolution: Resolutions = source_resolution
@@ -566,9 +566,9 @@ def get_parent_clusters_and_leaves(
 
 def match(
     key: str,
-    source: SourceResolutionName,
-    targets: list[SourceResolutionName],
-    resolution: ResolutionName,
+    source: SourceResolutionPath,
+    targets: list[SourceResolutionPath],
+    resolution_path: ResolutionPath,
     threshold: int | None = None,
 ) -> list[Match]:
     """Matches an ID in a source resolution and returns the keys in the targets.
@@ -589,15 +589,15 @@ def match(
     """
     with MBDB.get_session() as session:
         # Get configurations using ORM relationships
-        source_config: SourceConfigs = Resolutions.from_name(
-            name=source, session=session
+        source_config: SourceConfigs = Resolutions.from_path(
+            path=source, session=session
         ).source_config
-        truth_resolution: Resolutions = Resolutions.from_name(
-            name=resolution, session=session
+        truth_resolution: Resolutions = Resolutions.from_path(
+            path=resolution_path, session=session
         )
 
         target_configs: list[SourceConfigs] = [
-            Resolutions.from_name(name=target, session=session).source_config
+            Resolutions.from_path(path=target, session=session).source_config
             for target in targets
         ]
         target_source_config_ids = [tc.source_config_id for tc in target_configs]

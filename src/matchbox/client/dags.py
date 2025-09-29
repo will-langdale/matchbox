@@ -10,7 +10,7 @@ from matchbox.client import _handler
 from matchbox.client.models import Model
 from matchbox.client.queries import Query
 from matchbox.client.sources import Source
-from matchbox.common.dtos import CollectionName, UnqualifiedResolutionName, VersionName
+from matchbox.common.dtos import CollectionName, ResolutionName, VersionName
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.logging import logger
 
@@ -22,7 +22,7 @@ class DAG:
         """Initialises empty DAG."""
         self.name: CollectionName = name
         self.version: VersionName = version
-        self.nodes: dict[UnqualifiedResolutionName, Source | Model] = {}
+        self.nodes: dict[ResolutionName, Source | Model] = {}
         self.graph: dict[str, list[str]] = {}
 
     def _check_dag(self, dag: Self):

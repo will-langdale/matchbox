@@ -30,13 +30,13 @@ from matchbox.common.dtos import (
     LoginAttempt,
     LoginResult,
     Match,
+    ModelResolutionName,
     NotFoundError,
     OKMessage,
-    ResolutionName,
+    ResolutionPath,
     ResourceOperationStatus,
     SourceResolutionName,
-    UnqualifiedModelResolutionName,
-    UnqualifiedSourceResolutionName,
+    SourceResolutionPath,
     UploadStage,
     UploadStatus,
     VersionName,
@@ -333,21 +333,21 @@ def query(
     backend: BackendDependency,
     collection: CollectionName,
     version: VersionName,
-    source: UnqualifiedSourceResolutionName,
+    source: SourceResolutionName,
     return_leaf_id: bool,
-    resolution: UnqualifiedModelResolutionName | None = None,
+    resolution: ModelResolutionName | None = None,
     threshold: int | None = None,
     limit: int | None = None,
 ) -> ParquetResponse:
     """Query Matchbox for matches based on a source resolution name."""
     try:
         res = backend.query(
-            source=SourceResolutionName(
+            source=SourceResolutionPath(
                 collection=collection,
                 version=version,
                 name=source,
             ),
-            resolution=ResolutionName(
+            resolution=ResolutionPath(
                 collection=collection, version=version, name=resolution
             )
             if resolution
@@ -376,27 +376,27 @@ def match(
     backend: BackendDependency,
     collection: CollectionName,
     version: VersionName,
-    targets: Annotated[list[UnqualifiedSourceResolutionName], Query()],
-    source: UnqualifiedSourceResolutionName,
+    targets: Annotated[list[SourceResolutionName], Query()],
+    source: SourceResolutionName,
     key: str,
-    resolution: UnqualifiedModelResolutionName,
+    resolution: ModelResolutionName,
     threshold: int | None = None,
 ) -> list[Match]:
     """Match a source key against a list of target source resolutions."""
     targets = [
-        SourceResolutionName(collection=collection, version=version, name=t)
+        SourceResolutionPath(collection=collection, version=version, name=t)
         for t in targets
     ]
     try:
         res = backend.match(
             key=key,
-            source=SourceResolutionName(
+            source=SourceResolutionPath(
                 collection=collection,
                 version=version,
                 name=source,
             ),
             targets=targets,
-            resolution=ResolutionName(
+            resolution=ResolutionPath(
                 collection=collection,
                 version=version,
                 name=resolution,

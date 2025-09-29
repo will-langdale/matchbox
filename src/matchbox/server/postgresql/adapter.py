@@ -12,11 +12,11 @@ from matchbox.common.dtos import (
     Collection,
     CollectionName,
     Match,
-    ModelResolutionName,
+    ModelResolutionPath,
     Resolution,
-    ResolutionName,
+    ResolutionPath,
     ResolutionType,
-    SourceResolutionName,
+    SourceResolutionPath,
     Version,
     VersionName,
 )
@@ -182,8 +182,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def query(  # noqa: D102
         self,
-        source: SourceResolutionName,
-        resolution: ResolutionName | None = None,
+        source: SourceResolutionPath,
+        resolution: ResolutionPath | None = None,
         threshold: int | None = None,
         return_leaf_id: bool = False,
         limit: int | None = None,
@@ -199,9 +199,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def match(  # noqa: D102
         self,
         key: str,
-        source: SourceResolutionName,
-        targets: list[SourceResolutionName],
-        resolution: ResolutionName,
+        source: SourceResolutionPath,
+        targets: list[SourceResolutionPath],
+        resolution: ResolutionPath,
         threshold: int | None = None,
     ) -> list[Match]:
         return match(
@@ -331,12 +331,12 @@ class MatchboxPostgres(MatchboxDBAdapter):
     # Resolution management
 
     def insert_resolution(  # noqa: D102
-        self, resolution: Resolution, name: ResolutionName
+        self, resolution: Resolution, path: ResolutionPath
     ) -> None:
-        log_prefix = f"Insert {name.name}"
+        log_prefix = f"Insert {path.name}"
         with MBDB.get_session() as session:
             resolution_orm = Resolutions.from_dto(
-                resolution=resolution, name=name, session=session
+                resolution=resolution, path=path, session=session
             )
             session.commit()
 
@@ -345,17 +345,17 @@ class MatchboxPostgres(MatchboxDBAdapter):
             )
 
     def get_resolution(  # noqa: D102
-        self, name: ResolutionName, validate: ResolutionType | None = None
+        self, path: ResolutionPath, validate: ResolutionType | None = None
     ) -> Resolution:
         with MBDB.get_session() as session:
-            resolution = Resolutions.from_name(
-                name=name, res_type=validate, session=session
+            resolution = Resolutions.from_path(
+                path=path, res_type=validate, session=session
             )
             return resolution.to_dto()
 
-    def delete_resolution(self, name: ResolutionName, certain: bool) -> None:  # noqa: D102
+    def delete_resolution(self, path: ResolutionPath, certain: bool) -> None:  # noqa: D102
         with MBDB.get_session() as session:
-            resolution = Resolutions.from_name(name=name, session=session)
+            resolution = Resolutions.from_path(path=path, session=session)
             if certain:
                 delete_stmt = delete(Resolutions).where(
                     Resolutions.resolution_id.in_(
@@ -374,25 +374,19 @@ class MatchboxPostgres(MatchboxDBAdapter):
     # Data insertion
 
     def insert_source_data(  # noqa: D102
-        self, name: SourceResolutionName, data_hashes: Table
+        self, path: SourceResolutionPath, data_hashes: Table
     ) -> None:
         insert_hashes(
-            name=name,
-            data_hashes=data_hashes,
-            batch_size=self.settings.batch_size,
+            path=path, data_hashes=data_hashes, batch_size=self.settings.batch_size
         )
 
-    def insert_model_data(self, name: ModelResolutionName, results: Table) -> None:  # noqa: D102
-        insert_results(
-            name=name,
-            results=results,
-            batch_size=self.settings.batch_size,
-        )
+    def insert_model_data(self, path: ModelResolutionPath, results: Table) -> None:  # noqa: D102
+        insert_results(path=path, results=results, batch_size=self.settings.batch_size)
 
-    def get_model_data(self, name: ModelResolutionName) -> Table:  # noqa: D102
+    def get_model_data(self, path: ModelResolutionPath) -> Table:  # noqa: D102
         with MBDB.get_session() as session:
-            resolution = Resolutions.from_name(
-                name=name, res_type=ResolutionType.MODEL, session=session
+            resolution = Resolutions.from_path(
+                path=path, res_type=ResolutionType.MODEL, session=session
             )
 
             results_query = select(
@@ -405,16 +399,16 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 stmt=stmt, connection=conn.dbapi_connection, return_type="arrow"
             )
 
-    def set_model_truth(self, name: ModelResolutionName, truth: int) -> None:  # noqa: D102
+    def set_model_truth(self, path: ModelResolutionPath, truth: int) -> None:  # noqa: D102
         with MBDB.get_session() as session:
-            resolution = Resolutions.from_name(
-                name=name, res_type=ResolutionType.MODEL, session=session
+            resolution = Resolutions.from_path(
+                path=path, res_type=ResolutionType.MODEL, session=session
             )
             resolution.truth = truth
             session.commit()
 
-    def get_model_truth(self, name: ModelResolutionName) -> int:  # noqa: D102
-        resolution = Resolutions.from_name(name=name, res_type=ResolutionType.MODEL)
+    def get_model_truth(self, path: ModelResolutionPath) -> int:  # noqa: D102
+        resolution = Resolutions.from_path(path=path, res_type=ResolutionType.MODEL)
         return resolution.truth
 
     # Data management
@@ -511,13 +505,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def get_judgements(self) -> tuple[Table, Table]:  # noqa: D102
         return evaluation.get_judgements()
 
-    def compare_models(self, resolutions: list[ModelResolutionName]) -> ModelComparison:  # noqa: D102
+    def compare_models(self, paths: list[ModelResolutionPath]) -> ModelComparison:  # noqa: D102
         judgements, expansion = self.get_judgements()
         if not len(judgements):
             raise MatchboxNoJudgements()
-        return evaluation.compare_models(resolutions, judgements, expansion)
+        return evaluation.compare_models(paths, judgements, expansion)
 
     def sample_for_eval(  # noqa: D102
-        self, n: int, resolution: ModelResolutionName, user_id: int
+        self, n: int, path: ModelResolutionPath, user_id: int
     ) -> ArrowTable:
-        return evaluation.sample(n, resolution, user_id)
+        return evaluation.sample(n, path, user_id)

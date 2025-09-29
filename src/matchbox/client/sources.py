@@ -27,11 +27,11 @@ from matchbox.common.dtos import (
     LocationType,
     Resolution,
     ResolutionName,
+    ResolutionPath,
     ResolutionType,
     SourceConfig,
     SourceField,
-    SourceResolutionName,
-    UnqualifiedResolutionName,
+    SourceResolutionPath,
 )
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
@@ -429,7 +429,7 @@ class Source:
     def from_resolution(
         cls,
         resolution: Resolution,
-        resolution_name: UnqualifiedResolutionName,
+        resolution_name: ResolutionName,
         dag: DAG,
         location: Location,
     ) -> "Source":
@@ -570,9 +570,9 @@ class Source:
     # Note: name, description, truth are now instance variables, not properties
 
     @property
-    def resolution_path(self) -> SourceResolutionName:
+    def resolution_path(self) -> SourceResolutionPath:
         """Returns the source resolution path."""
-        return SourceResolutionName(
+        return SourceResolutionPath(
             collection=self.dag.name,
             version=self.dag.version,
             name=self.name,
@@ -637,7 +637,7 @@ class Source:
                 logger.warning("Already exists. Passing.", prefix=log_prefix)
         else:
             _handler.create_resolution(
-                resolution=resolution, name=ResolutionName(name=self.name)
+                resolution=resolution, name=ResolutionPath(name=self.name)
             )
 
         if self.hashes:

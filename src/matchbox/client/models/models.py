@@ -13,12 +13,12 @@ from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.results import Results
 from matchbox.common.dtos import (
     ModelConfig,
-    ModelResolutionName,
+    ModelResolutionPath,
     ModelType,
     Resolution,
     ResolutionName,
+    ResolutionPath,
     ResolutionType,
-    UnqualifiedResolutionName,
 )
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.logging import logger
@@ -133,7 +133,7 @@ class Model:
         )
 
     @property
-    def dependencies(self) -> list[ResolutionName]:
+    def dependencies(self) -> list[ResolutionPath]:
         """Returns all resolution names this model needs as implied by the queries."""
         if self.right_query:
             return (
@@ -165,7 +165,7 @@ class Model:
     def from_resolution(
         cls,
         resolution: Resolution,
-        resolution_name: UnqualifiedResolutionName,
+        resolution_name: ResolutionName,
         dag: DAG,
     ) -> "Model":
         """Reconstruct from Resolution."""
@@ -184,9 +184,9 @@ class Model:
         )
 
     @property
-    def resolution_path(self) -> ModelResolutionName:
+    def resolution_path(self) -> ModelResolutionPath:
         """Returns the model resolution path."""
-        return ModelResolutionName(
+        return ModelResolutionPath(
             collection=self.dag.name,
             version=self.dag.version,
             name=self.name,
@@ -275,7 +275,7 @@ class Model:
                 logger.warning("Already exists. Passing.", prefix=log_prefix)
         else:
             _handler.create_resolution(
-                resolution=resolution, name=ResolutionName(name=self.name)
+                resolution=resolution, path=ResolutionPath(name=self.name)
             )
 
         _handler.set_truth(name=self.name, truth=self._truth)

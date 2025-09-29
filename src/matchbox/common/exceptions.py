@@ -7,12 +7,12 @@ from pyarrow import Schema
 if TYPE_CHECKING:
     from matchbox.common.dtos import (
         CollectionName,
-        UnqualifiedResolutionName,
+        ResolutionName,
         VersionName,
     )
 else:
     CollectionName = Any
-    UnqualifiedResolutionName = Any
+    ResolutionName = Any
     VersionName = Any
 
 
@@ -192,9 +192,7 @@ class MatchboxUserNotFoundError(MatchboxException):
 class MatchboxResolutionNotFoundError(MatchboxException):
     """Resolution not found."""
 
-    def __init__(
-        self, message: str | None = None, name: UnqualifiedResolutionName | None = None
-    ):
+    def __init__(self, message: str | None = None, name: ResolutionName | None = None):
         """Initialise the exception."""
         if message is None:
             message = "Resolution not found."

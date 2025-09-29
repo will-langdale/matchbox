@@ -15,11 +15,11 @@ from matchbox.common.dtos import (
     Collection,
     CollectionName,
     Match,
-    ModelResolutionName,
+    ModelResolutionPath,
     Resolution,
-    ResolutionName,
+    ResolutionPath,
     ResolutionType,
-    SourceResolutionName,
+    SourceResolutionPath,
     Version,
     VersionName,
 )
@@ -248,8 +248,8 @@ class MatchboxDBAdapter(ABC):
     @abstractmethod
     def query(
         self,
-        source: SourceResolutionName,
-        resolution: ResolutionName | None = None,
+        source: SourceResolutionPath,
+        resolution: ResolutionPath | None = None,
         threshold: int | None = None,
         return_leaf_id: bool = False,
         limit: int | None = None,
@@ -257,8 +257,8 @@ class MatchboxDBAdapter(ABC):
         """Queries the database from an optional point of truth.
 
         Args:
-            source: the `SourceResolutionName` string identifying the source to query
-            resolution (optional): the resolution to use for filtering results
+            source: the resolution pathidentifying the source to query
+            resolution (optional): the resolution path to use for filtering results
                 If not specified, will use the source resolution for the queried source
             threshold (optional): the threshold to use for creating clusters
                 If None, uses the models' default threshold
@@ -276,18 +276,18 @@ class MatchboxDBAdapter(ABC):
     def match(
         self,
         key: str,
-        source: SourceResolutionName,
-        targets: list[SourceResolutionName],
-        resolution: ResolutionName,
+        source: SourceResolutionPath,
+        targets: list[SourceResolutionPath],
+        resolution: ResolutionPath,
         threshold: int | None = None,
     ) -> list[Match]:
         """Matches an ID in a source resolution and returns the keys in the targets.
 
         Args:
             key: The key to match from the source.
-            source: The name of the source resolution.
-            targets: The names of the target source resolutions.
-            resolution: The name of the resolution to use for matching.
+            source: The path of the source resolution.
+            targets: The paths of the target source resolutions.
+            resolution: The path of the resolution to use for matching.
             threshold (optional): the threshold to use for creating clusters
                 If None, uses the resolutions' default threshold
                 If an integer, uses that threshold for the specified resolution, and the
@@ -418,12 +418,12 @@ class MatchboxDBAdapter(ABC):
     # Resolution management
 
     @abstractmethod
-    def insert_resolution(self, resolution: Resolution, name: ResolutionName) -> None:
+    def insert_resolution(self, resolution: Resolution, path: ResolutionPath) -> None:
         """Writes a resolution to Matchbox.
 
         Args:
             resolution: Resolution object with a source or model config
-            name: The resolution name for the source
+            path: The resolution path for the source
 
         Raises:
             MatchboxModelConfigError: If the configuration is invalid, such as
@@ -433,12 +433,12 @@ class MatchboxDBAdapter(ABC):
 
     @abstractmethod
     def get_resolution(
-        self, name: ResolutionName, validate: ResolutionType | None = None
+        self, path: ResolutionPath, validate: ResolutionType | None = None
     ) -> Resolution:
-        """Get a resolution from its name.
+        """Get a resolution from its path.
 
         Args:
-            name: The resolution name for the source
+            path: The resolution path for the source
             validate: The expected type of the resolution
 
         Returns:
@@ -447,11 +447,11 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def delete_resolution(self, name: ResolutionName, certain: bool) -> None:
+    def delete_resolution(self, path: ResolutionPath, certain: bool) -> None:
         """Delete a resolution from the database.
 
         Args:
-            name: The name of the resolution to delete.
+            path: The name of the resolution to delete.
             certain: Whether to delete the model without confirmation.
         """
         ...
@@ -460,33 +460,33 @@ class MatchboxDBAdapter(ABC):
 
     @abstractmethod
     def insert_source_data(
-        self, name: SourceResolutionName, data_hashes: Table
+        self, path: SourceResolutionPath, data_hashes: Table
     ) -> None:
         """Inserts hash data for a source resolution.
 
         Args:
-            name: The name of the source resolution to index.
+            path: The path of the source resolution to index.
             data_hashes: The Arrow table with the hash of each data row
         """
         ...
 
     @abstractmethod
-    def insert_model_data(self, name: ModelResolutionName, results: Table) -> None:
+    def insert_model_data(self, path: ModelResolutionPath, results: Table) -> None:
         """Inserts results data for a model resolution."""
         ...
 
     @abstractmethod
-    def get_model_data(self, name: ModelResolutionName) -> Table:
+    def get_model_data(self, path: ModelResolutionPath) -> Table:
         """Get the results for a model resolution."""
         ...
 
     @abstractmethod
-    def set_model_truth(self, name: ModelResolutionName, truth: int) -> None:
+    def set_model_truth(self, path: ModelResolutionPath, truth: int) -> None:
         """Sets the truth threshold for this model, changing the default clusters."""
         ...
 
     @abstractmethod
-    def get_model_truth(self, name: ModelResolutionName) -> int:
+    def get_model_truth(self, path: ModelResolutionPath) -> int:
         """Gets the current truth threshold for this model."""
         ...
 
@@ -573,11 +573,11 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def compare_models(self, resolutions: list[ModelResolutionName]) -> ModelComparison:
+    def compare_models(self, paths: list[ModelResolutionPath]) -> ModelComparison:
         """Compare metrics of models based on evaluation data.
 
         Args:
-            resolutions: List of names of model resolutions to be compared.
+            paths: List of paths of model resolutions to be compared.
 
         Returns:
             A model comparison object, listing metrics for each model.
@@ -585,14 +585,12 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def sample_for_eval(
-        self, n: int, resolution: ModelResolutionName, user_id: int
-    ) -> Table:
+    def sample_for_eval(self, n: int, path: ModelResolutionPath, user_id: int) -> Table:
         """Sample a cluster to validate.
 
         Args:
             n: Number of clusters to sample
-            resolution: Name of resolution from which to sample
+            path: Path of resolution from which to sample
             user_id: ID of user requesting the sample
 
         Returns:

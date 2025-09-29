@@ -36,15 +36,13 @@ from matchbox.common.dtos import (
     LoginAttempt,
     LoginResult,
     Match,
-    ModelResolutionName,
+    ModelResolutionPath,
     NotFoundError,
     Resolution,
-    ResolutionName,
+    ResolutionPath,
     ResolutionType,
     ResourceOperationStatus,
-    UnqualifiedModelResolutionName,
-    UnqualifiedResolutionName,
-    UnqualifiedSourceResolutionName,
+    SourceResolutionPath,
     UploadStage,
     UploadStatus,
     VersionName,
@@ -182,9 +180,9 @@ def login(user_name: str) -> int:
 
 @http_retry
 def query(
-    source: UnqualifiedSourceResolutionName,
+    source: SourceResolutionPath,
     return_leaf_id: bool,
-    resolution: UnqualifiedResolutionName | None = None,
+    resolution: ResolutionPath | None = None,
     threshold: int | None = None,
     limit: int | None = None,
 ) -> Table:
@@ -226,10 +224,10 @@ def query(
 
 @http_retry
 def match(
-    targets: list[UnqualifiedSourceResolutionName],
-    source: UnqualifiedSourceResolutionName,
+    targets: list[SourceResolutionPath],
+    source: SourceResolutionPath,
     key: str,
-    resolution: UnqualifiedResolutionName,
+    resolution: ResolutionPath,
     threshold: int | None = None,
 ) -> list[Match]:
     """Match a source against a list of targets."""
@@ -285,14 +283,14 @@ def get_collection(name: CollectionName) -> dict[VersionName, list[Resolution]]:
 @http_retry
 def create_resolution(
     resolution: Resolution,
-    name: ResolutionName,
+    path: ResolutionPath,
 ) -> ResourceOperationStatus | UploadStatus:
     """Create a resolution (model or source)."""
-    log_prefix = f"Resolution {name.name}"
+    log_prefix = f"Resolution {path.name}"
     logger.debug("Creating", prefix=log_prefix)
 
     res = CLIENT.post(
-        f"/collections/default/versions/v1/resolutions/{name.name}",
+        f"/collections/default/versions/v1/resolutions/{path.name}",
         json=resolution.model_dump(),
     )
 
@@ -301,14 +299,14 @@ def create_resolution(
 
 @http_retry
 def get_resolution(
-    name: ResolutionName, validate_type: ResolutionType | None = None
+    path: ResolutionPath, validate_type: ResolutionType | None = None
 ) -> Resolution | None:
     """Get a resolution from Matchbox."""
-    log_prefix = f"Resolution {name}"
+    log_prefix = f"Resolution {path}"
     logger.debug("Retrieving metadata", prefix=log_prefix)
 
     res = CLIENT.get(
-        f"/collections/default/versions/v1/resolutions/{name}",
+        f"/collections/default/versions/v1/resolutions/{path.name}",
         params=url_params({"validate_type": validate_type}),
     )
     return Resolution.model_validate(res.json())
@@ -316,17 +314,17 @@ def get_resolution(
 
 @http_retry
 def set_data(
-    name: ResolutionName, data: Table, validate_type: ResolutionType
+    path: ResolutionPath, data: Table, validate_type: ResolutionType
 ) -> UploadStatus:
     """Upload source hashes or model results to server."""
-    log_prefix = f"Resolution {name}"
+    log_prefix = f"Resolution {path}"
     logger.debug("Uploading results", prefix=log_prefix)
 
     buffer = table_to_buffer(table=data)
 
     # Initialise upload
     metadata_res = CLIENT.post(
-        f"/collections/default/versions/v1/resolutions/{name}/data",
+        f"/collections/default/versions/v1/resolutions/{path.name}/data",
         params=url_params({"validate_type": validate_type}),
     )
 
@@ -359,48 +357,48 @@ def set_data(
 
 
 @http_retry
-def get_results(name: ModelResolutionName) -> Table:
+def get_results(path: ModelResolutionPath) -> Table:
     """Get model results from Matchbox."""
-    log_prefix = f"Model {name}"
+    log_prefix = f"Model {path}"
     logger.debug("Retrieving results", prefix=log_prefix)
 
-    res = CLIENT.get(f"/collections/default/versions/v1/resolutions/{name}/data")
+    res = CLIENT.get(f"/collections/default/versions/v1/resolutions/{path.name}/data")
     buffer = BytesIO(res.content)
     return read_table(buffer)
 
 
 @http_retry
-def set_truth(name: ModelResolutionName, truth: int) -> ResourceOperationStatus:
+def set_truth(path: ModelResolutionPath, truth: int) -> ResourceOperationStatus:
     """Set the truth threshold for a model in Matchbox."""
-    log_prefix = f"Model {name}"
+    log_prefix = f"Model {path}"
     logger.debug("Setting truth value", prefix=log_prefix)
 
     res = CLIENT.patch(
-        f"/collections/default/versions/v1/resolutions/{name}/truth", json=truth
+        f"/collections/default/versions/v1/resolutions/{path.name}/truth", json=truth
     )
     return ResourceOperationStatus.model_validate(res.json())
 
 
 @http_retry
-def get_truth(name: ModelResolutionName) -> int:
+def get_truth(path: ModelResolutionPath) -> int:
     """Get the truth threshold for a model in Matchbox."""
-    log_prefix = f"Model {name}"
+    log_prefix = f"Model {path}"
     logger.debug("Retrieving truth value", prefix=log_prefix)
 
-    res = CLIENT.get(f"/collections/default/versions/v1/resolutions/{name}/truth")
+    res = CLIENT.get(f"/collections/default/versions/v1/resolutions/{path.name}/truth")
     return res.json()
 
 
 @http_retry
 def delete_resolution(
-    name: ModelResolutionName, certain: bool = False
+    path: ModelResolutionPath, certain: bool = False
 ) -> ResourceOperationStatus:
     """Delete a resolution in Matchbox."""
-    log_prefix = f"Model {name}"
+    log_prefix = f"Model {path}"
     logger.debug("Deleting", prefix=log_prefix)
 
     res = CLIENT.delete(
-        f"/collections/default/versions/v1/resolutions/{name}",
+        f"/collections/default/versions/v1/resolutions/{path.name}",
         params={"certain": certain},
     )
     return ResourceOperationStatus.model_validate(res.json())
@@ -410,16 +408,14 @@ def delete_resolution(
 
 
 @http_retry
-def sample_for_eval(
-    n: int, resolution: UnqualifiedModelResolutionName, user_id: int
-) -> Table:
+def sample_for_eval(n: int, resolution: ModelResolutionPath, user_id: int) -> Table:
     """Sample model results for evaluation."""
     res = CLIENT.get(
         "/eval/samples",
         params=url_params(
             {
                 "n": n,
-                "resolution": ModelResolutionName(
+                "resolution": ModelResolutionPath(
                     collection="default", version="v1", name=resolution
                 ),
                 "user_id": user_id,
@@ -432,11 +428,11 @@ def sample_for_eval(
 
 @http_retry
 def compare_models(
-    resolutions: list[UnqualifiedModelResolutionName],
+    resolutions: list[ModelResolutionPath],
 ) -> ModelComparison:
     """Get a model comparison for a set of model resolutions."""
     qualified_resolution = [
-        ModelResolutionName(collection="default", version="v1", name=resolution)
+        ModelResolutionPath(collection="default", version="v1", name=resolution)
         for resolution in resolutions
     ]
     res = CLIENT.post(

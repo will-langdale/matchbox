@@ -4,7 +4,7 @@ import pyarrow as pa
 import pytest
 from faker import Faker
 
-from matchbox.common.dtos import DataTypes, UnqualifiedSourceResolutionName
+from matchbox.common.dtos import DataTypes, SourceResolutionName
 from matchbox.common.factories.entities import (
     ClusterEntity,
     EntityReference,
@@ -44,7 +44,7 @@ def make_cluster_entity(id: int, *args) -> ClusterEntity:
 
 
 def make_source_entity(
-    source: UnqualifiedSourceResolutionName, keys: list[str], base_val: str
+    source: SourceResolutionName, keys: list[str], base_val: str
 ) -> SourceEntity:
     """Helper to create a SourceEntity."""
     entity = SourceEntity(base_values={"name": base_val})
@@ -59,9 +59,7 @@ def make_source_entity(
         ("source2", frozenset({"A", "B"})),
     ),
 )
-def test_entity_reference_creation(
-    name: UnqualifiedSourceResolutionName, keys: frozenset[str]
-):
+def test_entity_reference_creation(name: SourceResolutionName, keys: frozenset[str]):
     """Test basic EntityReference creation and access."""
     ref = EntityReference({name: keys})
     assert ref[name] == keys

@@ -23,7 +23,7 @@ from matchbox.common.dtos import (
     SourceConfig,
     SourceField,
     SourceResolutionName,
-    UnqualifiedSourceResolutionName,
+    SourceResolutionPath,
 )
 from matchbox.common.factories.entities import (
     ClusterEntity,
@@ -121,7 +121,7 @@ class SourceTestkit(BaseModel):
         return self.source.name
 
     @property
-    def resolution_path(self) -> SourceResolutionName:
+    def resolution_path(self) -> SourceResolutionPath:
         """Returns the source resolution path."""
         return self.source.resolution_path
 
@@ -165,7 +165,7 @@ class LinkedSourcesTestkit(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     dag: DAG = DAG(name="dag")
     true_entities: set[SourceEntity] = Field(default_factory=set)
-    sources: dict[UnqualifiedSourceResolutionName, SourceTestkit]
+    sources: dict[SourceResolutionName, SourceTestkit]
 
     def find_entities(
         self,
@@ -199,9 +199,7 @@ class LinkedSourcesTestkit(BaseModel):
 
         return result
 
-    def true_entity_subset(
-        self, *sources: UnqualifiedSourceResolutionName
-    ) -> list[ClusterEntity]:
+    def true_entity_subset(self, *sources: SourceResolutionName) -> list[ClusterEntity]:
         """Return a subset of true entities that appear in the given sources."""
         cluster_entities = [
             entity.to_cluster_entity(*sources) for entity in self.true_entities
@@ -211,7 +209,7 @@ class LinkedSourcesTestkit(BaseModel):
     def diff_results(
         self,
         probabilities: pa.Table,
-        sources: list[UnqualifiedSourceResolutionName],
+        sources: list[SourceResolutionName],
         left_clusters: tuple[ClusterEntity, ...],
         right_clusters: tuple[ClusterEntity, ...] | None = None,
         threshold: int | float = 0,
@@ -467,7 +465,7 @@ def generate_source(
 @cache
 def source_factory(
     features: list[FeatureConfig] | list[dict] | None = None,
-    name: UnqualifiedSourceResolutionName | None = None,
+    name: SourceResolutionName | None = None,
     location_name: str = "dbname",
     dag: DAG | None = None,
     engine: Engine | None = None,
@@ -485,7 +483,7 @@ def source_factory(
             the source data. If None, defaults to a set of common features.
         name: Name of the source. If None, a unique name is generated. This will be
             used as the name of the table in the RelationalDBLocation, but also in
-            the UnqualifiedSourceUnqualifiedResolutionName for the source.
+            the SourceResolutionName for the source.
         location_name: Name of the location for the source.
         dag: DAG containing the source.
         engine: SQLAlchemy engine to use for the source's RelationalDBLocation. If

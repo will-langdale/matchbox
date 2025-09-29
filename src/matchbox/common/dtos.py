@@ -217,37 +217,35 @@ CollectionName: TypeAlias = str
 VersionName: TypeAlias = str
 """Type alias for version names."""
 
-UnqualifiedSourceResolutionName: TypeAlias = str
-"""Type alias for unqualified source resolution names."""
+SourceResolutionName: TypeAlias = str
+"""Type alias for source resolution names."""
 
-UnqualifiedModelResolutionName: TypeAlias = str
-"""Type alias for unqualified model resolution names."""
+ModelResolutionName: TypeAlias = str
+"""Type alias for model resolution names."""
 
-UnqualifiedResolutionName: TypeAlias = (
-    UnqualifiedSourceResolutionName | UnqualifiedModelResolutionName
-)
-"""Type alias for any unqualified resolution names."""
+ResolutionName: TypeAlias = SourceResolutionName | ModelResolutionName
+"""Type alias for any resolution names."""
 
 
-class ResolutionName(BaseModel):
+class ResolutionPath(BaseModel):
     """Base resolution identifier with collection, version, and name."""
 
     model_config = ConfigDict(frozen=True)
 
     collection: CollectionName = "default"
     version: VersionName = "v1"
-    name: UnqualifiedResolutionName
+    name: ResolutionName
 
     def __str__(self) -> str:
-        """String representation of the resolution name."""
+        """String representation of the resolution path."""
         return f"{self.collection}/{self.version}/{self.name}"
 
 
-SourceResolutionName: TypeAlias = ResolutionName
-"""Type alias for source resolution names."""
+SourceResolutionPath: TypeAlias = ResolutionPath
+"""Type alias for source resolution paths."""
 
-ModelResolutionName: TypeAlias = ResolutionName
-"""Type alias for model resolution names."""
+ModelResolutionPath: TypeAlias = ResolutionPath
+"""Type alias for model resolution paths."""
 
 
 class ResolutionType(StrEnum):
@@ -419,8 +417,8 @@ class QueryConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    source_resolutions: tuple[SourceResolutionName, ...]
-    model_resolution: ModelResolutionName | None = None
+    source_resolutions: tuple[SourceResolutionPath, ...]
+    model_resolution: ModelResolutionPath | None = None
     combine_type: QueryCombineType = QueryCombineType.CONCAT
     threshold: int | None = None
     cleaning: dict[str, str] | None = None
@@ -460,7 +458,7 @@ class QueryConfig(BaseModel):
         return v
 
     @property
-    def dependencies(self) -> list[ResolutionName]:
+    def dependencies(self) -> list[ResolutionPath]:
         """Return all resolution names that this query needs."""
         deps = list(self.source_resolutions)
         if self.model_resolution:
@@ -528,9 +526,9 @@ class Match(BaseModel):
     """A match between primary keys in the Matchbox database."""
 
     cluster: int | None
-    source: SourceResolutionName
+    source: SourceResolutionPath
     source_id: set[str] = Field(default_factory=set)
-    target: SourceResolutionName
+    target: SourceResolutionPath
     target_id: set[str] = Field(default_factory=set)
 
     @model_validator(mode="after")
@@ -655,7 +653,7 @@ class ResourceOperationStatus(BaseModel):
     """Status response for any resource operation."""
 
     success: bool
-    name: ResolutionName | CollectionName | VersionName
+    name: ResolutionPath | CollectionName | VersionName
     operation: CRUDOperation
     details: str | None = None
 
@@ -670,7 +668,7 @@ class ResourceOperationStatus(BaseModel):
                             "summary": "Delete operation requires confirmation. ",
                             "value": cls(
                                 success=False,
-                                name=ModelResolutionName(
+                                name=ModelResolutionPath(
                                     collection="default",
                                     version="v1",
                                     name="example_model",
@@ -707,7 +705,7 @@ class ResourceOperationStatus(BaseModel):
                             ),
                             "value": cls(
                                 success=False,
-                                name=ModelResolutionName(
+                                name=ModelResolutionPath(
                                     collection="default",
                                     version="v1",
                                     name="example_model",

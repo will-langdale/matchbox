@@ -12,8 +12,8 @@ from matchbox.common.dtos import (
     CollectionName,
     InvalidParameterError,
     ModelResolutionName,
+    ModelResolutionPath,
     NotFoundError,
-    UnqualifiedModelResolutionName,
     VersionName,
 )
 from matchbox.common.eval import Judgement, ModelComparison
@@ -89,7 +89,7 @@ def get_judgements(backend: BackendDependency) -> ParquetResponse:
 )
 def compare_models(
     backend: BackendDependency,
-    resolutions: list[ModelResolutionName],
+    resolutions: list[ModelResolutionPath],
 ) -> ModelComparison:
     """Return comparison of selected models."""
     try:
@@ -113,14 +113,14 @@ def sample(
     backend: BackendDependency,
     collection: CollectionName,
     version: VersionName,
-    resolution: UnqualifiedModelResolutionName,
+    resolution: ModelResolutionName,
     n: int,
     user_id: int,
 ) -> ParquetResponse:
     """Sample n cluster to validate."""
     try:
         sample = backend.sample_for_eval(
-            resolution=ModelResolutionName(
+            path=ModelResolutionPath(
                 collection=collection, version=version, name=resolution
             ),
             n=n,

@@ -11,7 +11,7 @@ from matchbox.common.dtos import (
     BackendResourceType,
     CRUDOperation,
     NotFoundError,
-    ResolutionName,
+    ResolutionPath,
     ResourceOperationStatus,
     UploadStage,
 )
@@ -97,7 +97,7 @@ def test_insert_model(
 
     mock_backend.insert_resolution.assert_called_once_with(
         resolution=testkit.model.to_resolution(),
-        name=ResolutionName(name="test_model", collection="default", version="v1"),
+        path=ResolutionPath(name="test_model", collection="default", version="v1"),
     )
 
 
@@ -488,7 +488,7 @@ def test_complete_source_upload_process(
     # Assert backend given the config but not yet the data
     mock_backend.insert_resolution.assert_called_once_with(
         resolution=source_testkit.source.to_resolution(),
-        name=ResolutionName(
+        path=ResolutionPath(
             name=source_testkit.name,
             collection="default",
             version="v1",

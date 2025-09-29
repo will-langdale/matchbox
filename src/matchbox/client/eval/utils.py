@@ -10,7 +10,7 @@ from matchbox.client import _handler
 from matchbox.client.dags import DAG
 from matchbox.client.results import Results
 from matchbox.client.sources import Location, Source
-from matchbox.common.dtos import ModelResolutionName, ResolutionType
+from matchbox.common.dtos import ModelResolutionPath, ResolutionType
 from matchbox.common.eval import (
     ModelComparison,
     PrecisionRecall,
@@ -136,7 +136,7 @@ class EvalData:
         return precision_recall([root_leaf], self.judgements, self.expansion)[0]
 
 
-def compare_models(resolutions: list[ModelResolutionName]) -> ModelComparison:
+def compare_models(resolutions: list[ModelResolutionPath]) -> ModelComparison:
     """Compare metrics of models based on evaluation data.
 
     Args:

@@ -14,7 +14,7 @@ from matchbox.common.arrow import (
     SCHEMA_JUDGEMENTS,
 )
 from matchbox.common.db import sql_to_df
-from matchbox.common.dtos import ModelResolutionName
+from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.eval import Judgement, precision_recall
 from matchbox.common.exceptions import (
     MatchboxUserNotFoundError,
@@ -161,7 +161,7 @@ def get_judgements() -> tuple[Table, Table]:
     return judgements, cluster_expansion
 
 
-def sample(n: int, resolution: ModelResolutionName, user_id: int):
+def sample(n: int, resolution_path: ModelResolutionPath, user_id: int):
     """Sample some clusters from a resolution."""
     # Not currently checking validity of the user_id
     # If the user ID does not exist, the exclusion by previous judgements breaks
@@ -171,7 +171,7 @@ def sample(n: int, resolution: ModelResolutionName, user_id: int):
 
     with MBDB.get_session() as session:
         # Use ORM to get resolution metadata
-        resolution_orm = Resolutions.from_name(name=resolution, session=session)
+        resolution_orm = Resolutions.from_path(path=resolution_path, session=session)
         resolution_id = resolution_orm.resolution_id
         truth = resolution_orm.truth
 
@@ -273,13 +273,13 @@ def sample(n: int, resolution: ModelResolutionName, user_id: int):
 
 
 def compare_models(
-    resolutions: list[ModelResolutionName], judgements: Table, expansion: Table
+    resolutions: list[ModelResolutionPath], judgements: Table, expansion: Table
 ):
     """Compare models on the basis of precision and recall."""
 
-    def get_root_leaf(resolution_name: ModelResolutionName) -> Table:
+    def get_root_leaf(resolution_path: ModelResolutionPath) -> Table:
         with MBDB.get_session() as session:
-            resolution = Resolutions.from_name(resolution_name, session=session)
+            resolution = Resolutions.from_path(resolution_path, session=session)
             # The session which fetched the resolution needs to be alive while
             # the root-leaf query is built
             root_leaf_query = build_unified_query(

@@ -17,7 +17,7 @@ from matchbox.common.dtos import (
     LoginResult,
     Match,
     OKMessage,
-    SourceResolutionName,
+    SourceResolutionPath,
     UploadStage,
     UploadStatus,
 )
@@ -296,9 +296,9 @@ def test_match(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     mock_matches = [
         Match(
             cluster=1,
-            source=SourceResolutionName(collection="test_collection", name="foo"),
+            source=SourceResolutionPath(collection="test_collection", name="foo"),
             source_id={"1"},
-            target=SourceResolutionName(collection="test_collection", name="bar"),
+            target=SourceResolutionPath(collection="test_collection", name="bar"),
             target_id={"a"},
         )
     ]

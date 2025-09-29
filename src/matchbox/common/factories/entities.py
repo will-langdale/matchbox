@@ -17,7 +17,7 @@ from faker import Faker
 from frozendict import frozendict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from matchbox.common.dtos import DataTypes, UnqualifiedSourceResolutionName
+from matchbox.common.dtos import DataTypes, SourceResolutionName
 from matchbox.common.transform import DisjointSet
 
 if TYPE_CHECKING:
@@ -174,7 +174,7 @@ class EntityReference(frozendict):
 
     def __init__(
         self,
-        mapping: dict[UnqualifiedSourceResolutionName, frozenset[str]] | None = None,
+        mapping: dict[SourceResolutionName, frozenset[str]] | None = None,
     ) -> None:
         """Initialise the EntityReference."""
         super().__init__({} if mapping is None else mapping)
@@ -253,7 +253,7 @@ class SourceKeyMixin:
 
     keys: EntityReference
 
-    def get_keys(self, name: UnqualifiedSourceResolutionName) -> set[str]:
+    def get_keys(self, name: SourceResolutionName) -> set[str]:
         """Get keys for a specific source.
 
         Args:
@@ -265,8 +265,8 @@ class SourceKeyMixin:
         return set(self.keys.get(name, frozenset()))
 
     def get_values(
-        self, sources: dict[UnqualifiedSourceResolutionName, "SourceTestkit"]
-    ) -> dict[UnqualifiedSourceResolutionName, dict[str, list[str]]]:
+        self, sources: dict[SourceResolutionName, "SourceTestkit"]
+    ) -> dict[SourceResolutionName, dict[str, list[str]]]:
         """Get all unique values for this entity across sources.
 
         Each source may have its own variations/transformations of the base data,
@@ -408,9 +408,7 @@ class SourceEntity(BaseModel, EntityIDMixin, SourceKeyMixin):
         """Hash based on sorted base values."""
         return hash(tuple(sorted(self.base_values.items())))
 
-    def add_source_reference(
-        self, name: UnqualifiedSourceResolutionName, keys: list[str]
-    ) -> None:
+    def add_source_reference(self, name: SourceResolutionName, keys: list[str]) -> None:
         """Add or update a source reference.
 
         Args:
@@ -421,9 +419,7 @@ class SourceEntity(BaseModel, EntityIDMixin, SourceKeyMixin):
         mapping[name] = frozenset(keys)
         self.keys = EntityReference(mapping)
 
-    def to_cluster_entity(
-        self, *names: UnqualifiedSourceResolutionName
-    ) -> ClusterEntity | None:
+    def to_cluster_entity(self, *names: SourceResolutionName) -> ClusterEntity | None:
         """Convert this SourceEntity to a ClusterEntity with the specified sources.
 
         This method makes diffing really easy. Testing whether ClusterEntity objects
@@ -464,7 +460,7 @@ class SourceEntity(BaseModel, EntityIDMixin, SourceKeyMixin):
 
 def query_to_cluster_entities(
     data: pa.Table | pd.DataFrame | pl.DataFrame,
-    keys: dict[UnqualifiedSourceResolutionName, str],
+    keys: dict[SourceResolutionName, str],
 ) -> set[ClusterEntity]:
     """Convert a query result to a set of ClusterEntities.
 
