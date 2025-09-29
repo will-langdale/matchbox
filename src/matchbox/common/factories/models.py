@@ -252,7 +252,7 @@ def generate_dummy_probabilities(
     num_components: int,
     total_rows: int | None = None,
     seed: int = 42,
-) -> pa.Table:
+) -> pl.DataFrame:
     """Generate dummy Arrow probabilities data with guaranteed isolated components.
 
     While much of the factory system uses generate_entity_probabilities, this function
@@ -424,9 +424,13 @@ def generate_dummy_probabilities(
     right_array = pa.array(rights, type=pa.uint64())
     prob_array = pa.array(probs, type=pa.uint8())
 
-    return pa.table(
-        [left_array, right_array, prob_array],
-        names=["left_id", "right_id", "probability"],
+    # TODO: provisional workaround as constructing using Polars does not work
+    # InvalidOperation(ErrString("nested objects are not allowed"))
+    return pl.from_arrow(
+        pa.table(
+            [left_array, right_array, prob_array],
+            names=["left_id", "right_id", "probability"],
+        )
     )
 
 
