@@ -121,9 +121,9 @@ class SourceTestkit(BaseModel):
         return self.source.name
 
     @property
-    def qualified_name(self) -> SourceResolutionName:
-        """Returns the source name qualified by collection and version."""
-        return self.source.qualified_name
+    def resolution_path(self) -> SourceResolutionName:
+        """Returns the source resolution path."""
+        return self.source.resolution_path
 
     @property
     def source_config(self) -> SourceConfig:

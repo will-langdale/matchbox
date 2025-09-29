@@ -291,9 +291,9 @@ def test_set_truth(
     test_client, mock_backend, _ = api_client_and_mocks
 
     response = test_client.patch(
-        f"/collections/{testkit.qualified_name.collection}"
-        f"/versions/{testkit.qualified_name.version}"
-        f"/resolutions/{testkit.qualified_name.name}"
+        f"/collections/{testkit.resolution_path.collection}"
+        f"/versions/{testkit.resolution_path.version}"
+        f"/resolutions/{testkit.resolution_path.name}"
         "/truth",
         json=95,
     )
@@ -301,7 +301,7 @@ def test_set_truth(
     assert response.status_code == 200
     assert response.json()["success"] is True
     mock_backend.set_model_truth.assert_called_once_with(
-        name=testkit.qualified_name, truth=95
+        name=testkit.resolution_path, truth=95
     )
 
 

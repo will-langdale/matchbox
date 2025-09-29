@@ -570,8 +570,8 @@ class Source:
     # Note: name, description, truth are now instance variables, not properties
 
     @property
-    def qualified_name(self) -> SourceResolutionName:
-        """Returns the source name qualified by collection and version."""
+    def resolution_path(self) -> SourceResolutionName:
+        """Returns the source resolution path."""
         return SourceResolutionName(
             collection=self.dag.name,
             version=self.dag.version,

@@ -184,8 +184,8 @@ class Model:
         )
 
     @property
-    def qualified_name(self) -> ModelResolutionName:
-        """Returns the model name qualified by collection and version."""
+    def resolution_path(self) -> ModelResolutionName:
+        """Returns the model resolution path."""
         return ModelResolutionName(
             collection=self.dag.name,
             version=self.dag.version,

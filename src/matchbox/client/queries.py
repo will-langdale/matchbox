@@ -79,8 +79,8 @@ class Query:
     def config(self) -> QueryConfig:
         """The query configuration for the current DAG."""
         return QueryConfig(
-            source_resolutions=[source.qualified_name for source in self.sources],
-            model_resolution=self.model.qualified_name if self.model else None,
+            source_resolutions=[source.resolution_path for source in self.sources],
+            model_resolution=self.model.resolution_path if self.model else None,
             combine_type=self.combine_type,
             threshold=int(self.threshold * 100) if self.threshold else None,
             cleaning=self.cleaning,

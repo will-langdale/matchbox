@@ -576,9 +576,9 @@ class ModelTestkit(BaseModel):
         return self.model.name
 
     @property
-    def qualified_name(self) -> ModelResolutionName:
-        """Returns the model name qualified by collection and version."""
-        return self.model.qualified_name
+    def resolution_path(self) -> ModelResolutionName:
+        """Returns the model resolution path."""
+        return self.model.resolution_path
 
     @property
     def data(self) -> pa.Table:
