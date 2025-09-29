@@ -5,8 +5,10 @@ from collections.abc import Callable, Hashable, Iterable
 from typing import Any, Generic, Self, TypeVar
 
 import numpy as np
-import pyarrow as pa
-import pyarrow.compute as pc
+import polars as pl
+
+# import pyarrow as pa
+# import pyarrow.compute as pc
 import rustworkx as rx
 
 from matchbox.common.hash import HASH_FUNC, IntMap, hash_values
@@ -15,46 +17,43 @@ T = TypeVar("T", bound=Hashable)
 
 
 def to_clusters(
-    results: pa.Table,
-    dtype: pa.DataType = pa.large_binary,
+    results: pl.DataFrame,
+    dtype: pl.DataType = pl.Int64,
     hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
-) -> pa.Table:
+) -> pl.DataFrame:
     """Converts probabilities into connected components formed at each threshold.
 
     Args:
-        results: Arrow table with columns ['left_id', 'right_id', 'probability']
-        dtype: Arrow data type for the parent and child columns
+        results: Polars dataframe with columns ['left_id', 'right_id', 'probability']
+        dtype: Polars data type for the parent and child columns
         hash_func: Function to hash the parent and child values
 
     Returns:
-        Arrow table of parent, child, threshold, sorted by probability descending.
+        Polars dataframe of parent, child, threshold, sorted by probability descending.
     """
     G = rx.PyGraph()
     added: dict[bytes, int] = {}
     components: dict[str, list] = {"parent": [], "child": [], "threshold": []}
 
     # Sort probabilities descending and select relevant columns
-    results = results.sort_by([("probability", "descending")])
+    results = results.sort(by="probability", descending=True)
     results = results.select(["left_id", "right_id", "probability"])
 
     # Get unique probability thresholds, sorted
-    thresholds = pc.unique(results.column("probability")).sort(order="descending")
+    thresholds = results["probability"].unique().sort(order="descending")
 
     # Process edges grouped by probability threshold
     for prob in thresholds:
-        threshold_edges = results.filter(pc.equal(results.column("probability"), prob))
+        threshold_edges = results.filter(pl.col("probability"), prob)
 
         # Get state before adding this batch of edges
         old_components = {frozenset(comp) for comp in rx.connected_components(G)}
 
         # Add all nodes and edges at this probability threshold
-        edge_values = list(
-            zip(
-                threshold_edges.column("left_id").to_pylist(),
-                threshold_edges.column("right_id").to_pylist(),
-                strict=True,
-            )
-        )
+        # TODO: check that this implementation is equivalent to the old
+        # Why strict? Do we expect to have lists of different lenghts?
+        edge_values = threshold_edges.rows()
+
         for left, right in edge_values:
             for hash_val in (left, right):
                 if hash_val not in added:
@@ -75,21 +74,19 @@ def to_clusters(
             components["child"].extend(children)
             components["threshold"].extend([prob] * len(children))
 
-    return pa.Table.from_pydict(
+    return pl.from_dict(
         components,
-        schema=pa.schema(
-            [("parent", dtype()), ("child", dtype()), ("threshold", pa.uint8())]
-        ),
+        schema=[("parent", dtype), ("child", dtype), ("threshold", pl.UInt8)],
     )
 
 
 def graph_results(
-    probabilities: pa.Table, all_nodes: Iterable[int] | None = None
+    probabilities: pl.DataFrame, all_nodes: Iterable[int] | None = None
 ) -> tuple[rx.PyDiGraph, np.ndarray, np.ndarray]:
     """Convert probability table to graph representation.
 
     Args:
-        probabilities: PyArrow table with 'left_id', 'right_id' columns
+        probabilities: Polars dataframe with 'left_id', 'right_id' columns
         all_nodes: superset of node identities figuring in probabilities table.
             Used to optionally add isolated nodes to the graph.
 
@@ -100,17 +97,26 @@ def graph_results(
         - A list mapping the 'right_id' probabilities to node indices in the graph
     """
     # Create index to use in graph
-    unique = pc.unique(
-        pa.concat_arrays(
-            [
-                probabilities["left_id"].combine_chunks(),
-                probabilities["right_id"].combine_chunks(),
-            ]
-        )
+    unique = (
+        pl.concat([probabilities["left_id"], probabilities["right_id"]], rechunk=True)
+        .unique()
+        .rename("unique_ids")
+        .to_frame()
+        .with_row_index()
     )
 
-    left_indices = pc.index_in(probabilities["left_id"], unique).to_numpy()
-    right_indices = pc.index_in(probabilities["right_id"], unique).to_numpy()
+    left_indices = (
+        probabilities.select("left_id")
+        .join(unique, left_on="left_id", right_on="unique_ids")
+        .to_series(1)
+        .to_numpy()
+    )
+    right_indices = (
+        probabilities.select("right_id")
+        .join(unique, left_on="left_id", right_on="unique_ids")
+        .to_series(1)
+        .to_numpy()
+    )
 
     # Create and process graph
     n_nodes = len(unique)
