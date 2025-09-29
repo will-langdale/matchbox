@@ -18,7 +18,6 @@ from fastapi import (
 )
 from fastapi.encoders import jsonable_encoder
 from fastapi.openapi.docs import (
-    get_redoc_html,
     get_swagger_ui_html,
     get_swagger_ui_oauth2_redirect_html,
 )
@@ -405,13 +404,3 @@ async def custom_swagger_ui_html():
 async def swagger_ui_redirect():
     """Helper for OAuth2."""
     return get_swagger_ui_oauth2_redirect_html()
-
-
-@app.get("/redoc", include_in_schema=False)
-async def redoc_html():
-    """Get locally hosted docs using redoc."""
-    return get_redoc_html(
-        openapi_url=app.openapi_url,
-        title=app.title + " - ReDoc",
-        redoc_js_url="/static/redoc.standalone.js",
-    )
