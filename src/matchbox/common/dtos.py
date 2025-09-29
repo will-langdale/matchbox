@@ -250,9 +250,6 @@ ModelResolutionName: TypeAlias = ResolutionName
 """Type alias for model resolution names."""
 
 
-DEFAULT_RESOLUTION: ResolutionName = ResolutionName(name="__DEFAULT__")
-
-
 class ResolutionType(StrEnum):
     """Types of nodes in a resolution."""
 

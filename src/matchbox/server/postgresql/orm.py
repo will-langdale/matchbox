@@ -300,7 +300,7 @@ class ResolutionFrom(CountMixin, MBDB.MatchboxBase):
 
 
 class Resolutions(CountMixin, MBDB.MatchboxBase):
-    """Table of resolution points: models, sources and humans.
+    """Table of resolution points corresponding to models, and sources.
 
     Resolutions produce probabilities or own data in the clusters table.
     """
