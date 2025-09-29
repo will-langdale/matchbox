@@ -1,7 +1,6 @@
 from typing import Any
 
 import polars as pl
-import pyarrow as pa
 import pytest
 from faker import Faker
 
@@ -227,7 +226,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
     ],
 )
 def test_probabilities_to_results_entities(
-    probabilities: pa.Table,
+    probabilities: pl.DataFrame,
     left_clusters: tuple[ClusterEntity, ...],
     right_clusters: tuple[ClusterEntity, ...] | None,
     threshold: float,
