@@ -1,5 +1,6 @@
 from typing import Any, Literal
 
+import polars as pl
 import pytest
 
 from matchbox.client.queries import Query
@@ -96,7 +97,7 @@ def test_model_type_creation(
 
     # Verify probabilities were generated
     assert len(model.probabilities) > 0
-    assert model.probabilities.schema.equals(SCHEMA_RESULTS)
+    assert model.probabilities.schema == pl.Schema(SCHEMA_RESULTS)
 
     # Test threshold setting and querying
     initial_threshold = 80
@@ -126,8 +127,8 @@ def test_model_type_creation(
             "Left and right IDs should be disjoint in linker"
         )
 
-        prob_left_ids = set(model.probabilities["left_id"].to_pylist())
-        prob_right_ids = set(model.probabilities["right_id"].to_pylist())
+        prob_left_ids = set(model.probabilities["left_id"].to_list())
+        prob_right_ids = set(model.probabilities["right_id"].to_list())
         assert prob_left_ids <= left_ids, (
             "Probability left IDs should be subset of left IDs"
         )
@@ -638,7 +639,7 @@ def test_query_to_model_factory_creation(
     assert (model.right_clusters is not None) == expected_checks["has_right"]
 
     # Verify probabilities
-    assert model.probabilities.schema.equals(SCHEMA_RESULTS)
+    assert model.probabilities.schema == pl.Schema(SCHEMA_RESULTS)
     if len(model.probabilities) > 0:
         probs = model.probabilities["probability"].to_numpy() / 100
         assert all(p >= expected_checks["prob_min"] for p in probs)
