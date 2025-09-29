@@ -384,7 +384,9 @@ def clear_database(
         ) from e
 
 
-# static docs
+# Swagger UI
+
+
 @app.get("/docs", include_in_schema=False)
 async def custom_swagger_ui_html():
     """Get locally hosted docs."""
