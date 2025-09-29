@@ -1,6 +1,7 @@
 from typing import Any
 
 import numpy as np
+import polars as pl
 import pyarrow.compute as pc
 import pytest
 
@@ -415,13 +416,13 @@ def test_generate_entity_probabilities_scenarios(
     )
 
     # Check schema
-    assert result.schema.equals(SCHEMA_RESULTS)
+    assert result.schema == pl.Schema(SCHEMA_RESULTS)
 
     # Get edges from result
     edges = list(
         zip(
-            result.column("left_id").to_pylist(),
-            result.column("right_id").to_pylist(),
+            result.select("left_id").to_dicts(),
+            result.select("right_id").to_dicts(),
             strict=True,
         )
     )
@@ -431,7 +432,7 @@ def test_generate_entity_probabilities_scenarios(
 
     # For non-empty results, validate probability ranges
     if edges:
-        probs = result.column("probability").to_numpy()
+        probs = result.get_column("probability").to_numpy()
         prob_min, prob_max = expected["prob_range"]
         assert all(prob_min <= p <= prob_max for p in probs)
 
