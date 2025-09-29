@@ -532,10 +532,7 @@ def generate_entity_probabilities(
     if not edges:
         return pl.DataFrame(schema=pl.Schema(SCHEMA_RESULTS))
 
-    # Convert into sequence to pass to dataframe constructor
-    edges_list = zip(*edges, strict=False)
-
-    return pl.DataFrame(edges_list, schema=pl.Schema(SCHEMA_RESULTS))
+    return pl.DataFrame(edges, schema=pl.Schema(SCHEMA_RESULTS))
 
 
 class ModelTestkit(BaseModel):
