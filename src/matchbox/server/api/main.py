@@ -1,5 +1,6 @@
 """API routes for the Matchbox server."""
 
+import os
 from datetime import datetime
 from importlib.metadata import version
 from typing import Annotated
@@ -16,7 +17,13 @@ from fastapi import (
     status,
 )
 from fastapi.encoders import jsonable_encoder
+from fastapi.openapi.docs import (
+    get_redoc_html,
+    get_swagger_ui_html,
+    get_swagger_ui_oauth2_redirect_html,
+)
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from matchbox.common.arrow import table_to_buffer
@@ -54,9 +61,16 @@ app = FastAPI(
     title="matchbox API",
     version=version("matchbox_db"),
     lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
 )
 app.include_router(resolution.router)
 app.include_router(eval.router)
+
+folder = os.path.dirname(__file__)
+app.mount(
+    "/static", StaticFiles(directory=folder + "/../static", html=True), name="static"
+)
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -73,7 +87,7 @@ async def add_security_headers(request: Request, call_next):
     response: Response = await call_next(request)
     response.headers["Cache-control"] = "no-store, no-cache"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; frame-ancestors 'none'; form-action 'none'; sandbox"
+        "default-src 'self'; img-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; form-action 'none'; sandbox allow-scripts"  # noqa: E501
     )
     response.headers["Strict-Transport-Security"] = (
         "max-age=31536000; includeSubDomains"
@@ -366,3 +380,32 @@ def clear_database(
             status_code=409,
             detail=str(e),
         ) from e
+
+
+# static docs
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    """Get locally hosted docs."""
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=app.title + " - Swagger UI",
+        oauth2_redirect_url=app.swagger_ui_oauth2_redirect_url,
+        swagger_js_url="/static/swagger-ui-bundle.js",
+        swagger_css_url="/static/swagger-ui.css",
+    )
+
+
+@app.get(app.swagger_ui_oauth2_redirect_url, include_in_schema=False)
+async def swagger_ui_redirect():
+    """Helper for OAuth2."""
+    return get_swagger_ui_oauth2_redirect_html()
+
+
+@app.get("/redoc", include_in_schema=False)
+async def redoc_html():
+    """Get locally hosted docs using redoc."""
+    return get_redoc_html(
+        openapi_url=app.openapi_url,
+        title=app.title + " - ReDoc",
+        redoc_js_url="/static/redoc.standalone.js",
+    )
