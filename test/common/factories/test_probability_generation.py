@@ -528,7 +528,7 @@ def test_disjoint_set_recovery():
 
     # Use DisjointSet to cluster based on high probabilities
     ds = DisjointSet[int]()
-    for row in table.to_pylist():
+    for row in table.to_dicts():
         if row["probability"] >= 90:  # High confidence matches
             ds.union(row["left_id"], row["right_id"])
 
