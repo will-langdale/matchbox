@@ -1,8 +1,8 @@
 """API routes for the Matchbox server."""
 
-import os
 from datetime import datetime
 from importlib.metadata import version
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import (
@@ -66,10 +66,8 @@ app = FastAPI(
 app.include_router(resolution.router)
 app.include_router(eval.router)
 
-folder = os.path.dirname(__file__)
-app.mount(
-    "/static", StaticFiles(directory=folder + "/../static", html=True), name="static"
-)
+static_dir = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 @app.exception_handler(StarletteHTTPException)
