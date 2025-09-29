@@ -99,6 +99,15 @@ def test_relational_db_location_instantiation(sqlite_in_memory_warehouse: Engine
             False,
             id="non-query-cte",
         ),
+        pytest.param(
+            """
+            SELECT foo, bar FROM baz
+            UNION
+            SELECT foo, bar FROM qux;
+            """,
+            True,
+            id="valid-union",
+        ),
     ],
 )
 def test_relational_db_extract_transform(
