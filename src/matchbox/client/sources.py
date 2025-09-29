@@ -203,7 +203,13 @@ class RelationalDBLocation(Location):
                 "SQL statement is empty or only contains whitespace."
             )
 
-        expressions = sqlglot.parse(extract_transform)
+        match self.client.dialect.name:
+            case "postgresql":
+                dialect = "postgres"
+            case _:
+                logger.warning("Could not validate specific dialect")
+                dialect = None
+        expressions = sqlglot.parse(extract_transform, dialect=dialect)
 
         if len(expressions) > 1:
             raise MatchboxSourceExtractTransformError(
