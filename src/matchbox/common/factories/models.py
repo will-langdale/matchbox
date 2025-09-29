@@ -436,7 +436,7 @@ def generate_entity_probabilities(
     source_entities: frozenset[SourceEntity],
     prob_range: tuple[float, float] = (0.8, 1.0),
     seed: int = 42,
-) -> pa.Table:
+) -> pl.DataFrame:
     """Generate probabilities that will recover entity relationships.
 
     Compares ClusterEntity objects against ground truth SourceEntities by checking
@@ -530,27 +530,12 @@ def generate_entity_probabilities(
 
     # If no edges were generated, return empty table with correct schema
     if not edges:
-        return pa.table(
-            [
-                pa.array([], type=pa.uint64()),
-                pa.array([], type=pa.uint64()),
-                pa.array([], type=pa.uint8()),
-            ],
-            schema=SCHEMA_RESULTS,
-        )
+        return pl.DataFrame(schema=pl.Schema(SCHEMA_RESULTS))
 
-    # Convert to arrays
-    lefts, rights, probs = zip(*edges, strict=False)
+    # Convert into sequence to pass to dataframe constructor
+    edges_list = zip(*edges, strict=False)
 
-    # Create PyArrow arrays
-    left_array = pa.array(lefts, type=pa.uint64())
-    right_array = pa.array(rights, type=pa.uint64())
-    prob_array = pa.array(probs, type=pa.uint8())
-
-    return pa.table(
-        [left_array, right_array, prob_array],
-        schema=SCHEMA_RESULTS,
-    )
+    return pl.DataFrame(edges_list, schema=pl.Schema(SCHEMA_RESULTS))
 
 
 class ModelTestkit(BaseModel):
@@ -565,7 +550,7 @@ class ModelTestkit(BaseModel):
     right_data: pa.Table | None
     right_query: Query | None
     right_clusters: dict[int, ClusterEntity] | None
-    probabilities: pa.Table
+    probabilities: pl.DataFrame
 
     _entities: tuple[ClusterEntity, ...]
     _threshold: int
