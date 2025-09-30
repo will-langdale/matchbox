@@ -8,7 +8,7 @@ from importlib.metadata import version
 from io import BytesIO
 
 import httpx
-from polars import DataFrame
+import polars as pl
 from pyarrow import Table
 from pyarrow.parquet import read_table
 from tenacity import (
@@ -302,15 +302,14 @@ def get_resolution(
 
 @http_retry
 def set_data(
-    name: ResolutionName, data: DataFrame, validate_type: ResolutionType
+    name: ResolutionName, data: pl.DataFrame, validate_type: ResolutionType
 ) -> UploadStatus:
     """Upload source hashes or model results to server."""
     log_prefix = f"Resolution {name}"
     logger.debug("Uploading results", prefix=log_prefix)
 
-    # Data is now Polars, needs to be converted to pyarrow for transfer
-    data_arrow = data.to_arrow()
-
+    # Data may be Polars, needs to be converted to pyarrow for transfer
+    data_arrow = data.to_arrow() if isinstance(data, pl.DataFrame) else data
     buffer = table_to_buffer(table=data_arrow)
 
     # Initialise upload
