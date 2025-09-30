@@ -448,8 +448,8 @@ def _build_match_query(
 
 
 def query(
-    source_path: SourceResolutionPath,
-    truth_resolution_path: ResolutionPath | None = None,
+    source: SourceResolutionPath,
+    point_of_truth: ResolutionPath | None = None,
     threshold: int | None = None,
     return_leaf_id: bool = False,
     limit: int = None,
@@ -470,13 +470,13 @@ def query(
     """
     with MBDB.get_session() as session:
         source_config: SourceConfigs = Resolutions.from_path(
-            path=source_path, session=session
+            path=source, session=session
         ).source_config
         source_resolution: Resolutions = source_config.source_resolution
 
-        if truth_resolution_path:
+        if point_of_truth:
             truth_resolution: Resolutions = Resolutions.from_path(
-                path=truth_resolution_path, session=session
+                path=point_of_truth, session=session
             )
         else:
             truth_resolution: Resolutions = source_resolution

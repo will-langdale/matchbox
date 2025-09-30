@@ -183,14 +183,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def query(  # noqa: D102
         self,
         source: SourceResolutionPath,
-        resolution: ResolutionPath | None = None,
+        point_of_truth: ResolutionPath | None = None,
         threshold: int | None = None,
         return_leaf_id: bool = False,
         limit: int | None = None,
     ) -> ArrowTable:
         return query(
             source=source,
-            resolution=resolution,
+            point_of_truth=point_of_truth,
             threshold=threshold,
             return_leaf_id=return_leaf_id,
             limit=limit,
@@ -259,7 +259,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def create_version(self, collection: CollectionName, name: VersionName) -> Version:  # noqa: D102
         with MBDB.get_session() as session:
-            collection_orm = Collections.from_name(name, session)
+            collection_orm = Collections.from_name(collection, session)
 
             if name in [v.name for v in collection_orm.versions]:
                 raise MatchboxVersionAlreadyExists

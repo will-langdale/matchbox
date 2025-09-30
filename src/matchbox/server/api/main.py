@@ -347,7 +347,7 @@ def query(
                 version=version,
                 name=source,
             ),
-            resolution=ResolutionPath(
+            point_of_truth=ResolutionPath(
                 collection=collection, version=version, name=resolution
             )
             if resolution

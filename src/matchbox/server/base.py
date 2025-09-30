@@ -249,7 +249,7 @@ class MatchboxDBAdapter(ABC):
     def query(
         self,
         source: SourceResolutionPath,
-        resolution: ResolutionPath | None = None,
+        point_of_truth: ResolutionPath | None = None,
         threshold: int | None = None,
         return_leaf_id: bool = False,
         limit: int | None = None,
@@ -258,7 +258,7 @@ class MatchboxDBAdapter(ABC):
 
         Args:
             source: the resolution pathidentifying the source to query
-            resolution (optional): the resolution path to use for filtering results
+            point_of_truth (optional): the resolution path to use for filtering results
                 If not specified, will use the source resolution for the queried source
             threshold (optional): the threshold to use for creating clusters
                 If None, uses the models' default threshold

@@ -116,7 +116,7 @@ class TestMatchboxBackend:
 
             df_crn = self.backend.query(
                 source=crn_testkit.resolution_path,
-                resolution=naive_crn_testkit.resolution_path,
+                point_of_truth=naive_crn_testkit.resolution_path,
             )
 
             assert isinstance(df_crn, pa.Table)
@@ -139,7 +139,7 @@ class TestMatchboxBackend:
 
             df_crn = self.backend.query(
                 source=crn_testkit.resolution_path,
-                resolution=linker_testkit.resolution_path,
+                point_of_truth=linker_testkit.resolution_path,
             )
 
             assert isinstance(df_crn, pa.Table)
@@ -148,7 +148,7 @@ class TestMatchboxBackend:
 
             df_duns = self.backend.query(
                 source=duns_testkit.resolution_path,
-                resolution=linker_testkit.resolution_path,
+                point_of_truth=linker_testkit.resolution_path,
             )
 
             assert isinstance(df_duns, pa.Table)
@@ -175,7 +175,7 @@ class TestMatchboxBackend:
 
             df_crn = self.backend.query(
                 source=crn_testkit.resolution_path,
-                resolution=linker_testkit.resolution_path,
+                point_of_truth=linker_testkit.resolution_path,
             )
 
             assert isinstance(df_crn, pa.Table)
@@ -184,7 +184,7 @@ class TestMatchboxBackend:
 
             df_cdms = self.backend.query(
                 source=cdms_testkit.resolution_path,
-                resolution=linker_testkit.resolution_path,
+                point_of_truth=linker_testkit.resolution_path,
             )
 
             assert isinstance(df_cdms, pa.Table)
@@ -196,12 +196,12 @@ class TestMatchboxBackend:
             # Test query with threshold
             df_crn_threshold = self.backend.query(
                 source=crn_testkit.resolution_path,
-                resolution=linker_testkit.resolution_path,
+                point_of_truth=linker_testkit.resolution_path,
                 threshold=100,
             )
             df_cdms_threshold = self.backend.query(
                 source=cdms_testkit.resolution_path,
-                resolution=linker_testkit.resolution_path,
+                point_of_truth=linker_testkit.resolution_path,
                 threshold=100,
             )
             threshold_ids = pa.concat_arrays(
@@ -724,7 +724,7 @@ class TestMatchboxBackend:
             # that processing was performed accurately
             res = self.backend.query(
                 source=crn_testkit.resolution_path,
-                resolution=naive_crn_testkit.resolution_path,
+                point_of_truth=naive_crn_testkit.resolution_path,
             )
             res_clusters = query_to_cluster_entities(
                 data=res,
@@ -788,7 +788,7 @@ class TestMatchboxBackend:
             # that processing was performed accurately
             res = self.backend.query(
                 source=crn_testkit.resolution_path,
-                resolution=prob_crn_testkit.resolution_path,
+                point_of_truth=prob_crn_testkit.resolution_path,
             )
             res_clusters = query_to_cluster_entities(
                 data=res,
@@ -887,7 +887,7 @@ class TestMatchboxBackend:
 
             df_crn = self.backend.query(
                 source=crn_testkit.source.resolution_path,
-                resolution=naive_crn_testkit.resolution_path,
+                point_of_truth=naive_crn_testkit.resolution_path,
             )
 
             ids = df_crn["id"].to_pylist()
@@ -944,7 +944,7 @@ class TestMatchboxBackend:
             # Get some specific IDs to verify they're restored properly
             df_crn_before = self.backend.query(
                 source=crn_testkit.resolution_path,
-                resolution=naive_crn_testkit.resolution_path,
+                point_of_truth=naive_crn_testkit.resolution_path,
             )
             sample_ids_before = df_crn_before["id"].to_pylist()[:5]  # Take first 5 IDs
 
@@ -964,7 +964,7 @@ class TestMatchboxBackend:
             # Verify specific data was restored correctly
             df_crn_after = self.backend.query(
                 source=crn_testkit.resolution_path,
-                resolution=naive_crn_testkit.resolution_path,
+                point_of_truth=naive_crn_testkit.resolution_path,
             )
             sample_ids_after = df_crn_after["id"].to_pylist()[:5]  # Take first 5 IDs
 
@@ -1002,7 +1002,7 @@ class TestMatchboxBackend:
             deduped_query = pl.from_arrow(
                 self.backend.query(
                     source=crn_testkit.resolution_path,
-                    resolution=naive_crn_testkit.resolution_path,
+                    point_of_truth=naive_crn_testkit.resolution_path,
                 )
             )
             unique_ids = deduped_query["id"].unique()
@@ -1175,7 +1175,7 @@ class TestMatchboxBackend:
             resolution_clusters = pl.from_arrow(
                 self.backend.query(
                     source=crn_testkit.resolution_path,
-                    resolution=naive_crn_testkit.resolution_path,
+                    point_of_truth=naive_crn_testkit.resolution_path,
                 )
             )
             source_clusters = pl.from_arrow(
