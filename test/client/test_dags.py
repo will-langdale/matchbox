@@ -16,7 +16,12 @@ from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.client.sources import Source
 from matchbox.common.arrow import SCHEMA_QUERY, table_to_buffer
-from matchbox.common.dtos import BackendResourceType, Match, NotFoundError
+from matchbox.common.dtos import (
+    BackendResourceType,
+    Match,
+    NotFoundError,
+    ResolutionPath,
+)
 from matchbox.common.exceptions import (
     MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
@@ -338,7 +343,9 @@ def test_extract_lookup(
     expected_foo_mapping = expected_foo_bar_mapping.select(["id", "foo_key"]).unique()
 
     # Mock API
-    matchbox_api.get("/resolutions/root/sources").mock(
+    matchbox_api.get(
+        f"/collections/{dag.name}/versions/{dag.version}/resolutions/root/sources"
+    ).mock(
         return_value=Response(
             200,
             json=[
@@ -470,11 +477,15 @@ def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         model_settings={"comparisons": "l.field=r.field"},
     )
 
+    foo_path = ResolutionPath(name="foo", collection=dag.name, version=dag.version)
+    bar_path = ResolutionPath(name="bar", collection=dag.name, version=dag.version)
+    baz_path = ResolutionPath(name="baz", collection=dag.name, version=dag.version)
+
     mock_match1 = Match(
-        cluster=1, source="foo", source_id={"a"}, target="bar", target_id={"b"}
+        cluster=1, source=foo_path, source_id={"a"}, target=bar_path, target_id={"b"}
     )
     mock_match2 = Match(
-        cluster=1, source="foo", source_id={"a"}, target="baz", target_id={"b"}
+        cluster=1, source=foo_path, source_id={"a"}, target=baz_path, target_id={"b"}
     )
     # The standard JSON serialiser does not handle Pydantic objects
     serialised_matches = json.dumps(

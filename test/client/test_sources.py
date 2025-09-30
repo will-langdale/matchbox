@@ -301,7 +301,7 @@ def test_source_sampling_preserves_original_sql(sqlite_warehouse: Engine):
             text_col,
             INSTR(text_col, 'a') as position_of_a
         FROM
-            "{source_testkit.source.to_resolution().name}"
+            "{source_testkit.name}"
     """
 
     # This should work since INSTR is valid SQLite
@@ -538,7 +538,7 @@ def test_source_sync(matchbox_api: MockRouter, sqlite_warehouse: Engine):
 
     # Mock the routes
     matchbox_api.get(
-        f"/collections/default/versions/v1/resolutions/{testkit.source.name}"
+        f"/collections/{testkit.source.dag.name}/versions/{testkit.source.dag.version}/resolutions/{testkit.source.name}"
     ).mock(
         return_value=Response(
             404,
@@ -548,7 +548,7 @@ def test_source_sync(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         )
     )
     insert_config_route = matchbox_api.post(
-        f"/collections/default/versions/v1/resolutions/{testkit.source.name}"
+        f"/collections/{testkit.source.dag.name}/versions/{testkit.source.dag.version}/resolutions/{testkit.source.name}"
     ).mock(
         return_value=Response(
             201,
@@ -560,7 +560,7 @@ def test_source_sync(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         )
     )
     matchbox_api.post(
-        f"/collections/default/versions/v1/resolutions/{testkit.source.name}/data"
+        f"/collections/{testkit.source.dag.name}/versions/{testkit.source.dag.version}/resolutions/{testkit.source.name}/data"
     ).mock(
         return_value=Response(
             202,
@@ -595,7 +595,6 @@ def test_source_sync(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         insert_config_route.calls.last.request.content.decode("utf-8")
     )
     # Check key fields match (allowing for different descriptions)
-    assert resolution_call.name == testkit.source.to_resolution().name
     assert resolution_call.resolution_type == ResolutionType.SOURCE
     assert resolution_call.config == testkit.source.to_resolution().config
     assert "test-upload-id" in upload_route.calls.last.request.url.path
@@ -623,7 +622,7 @@ def test_source_sync(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     # Mock earlier endpoint generating a name clash
     model = model_factory().model
     matchbox_api.get(
-        f"/collections/default/versions/v1/resolutions/{testkit.source.name}"
+        f"/collections/{testkit.source.dag.name}/versions/{testkit.source.dag.version}/resolutions/{testkit.source.name}"
     ).mock(return_value=Response(200, json=model.to_resolution().model_dump()))
 
     with pytest.raises(ValueError, match="existing resolution"):

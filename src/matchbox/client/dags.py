@@ -10,7 +10,12 @@ from matchbox.client import _handler
 from matchbox.client.models import Model
 from matchbox.client.queries import Query
 from matchbox.client.sources import Source
-from matchbox.common.dtos import CollectionName, ResolutionName, VersionName
+from matchbox.common.dtos import (
+    CollectionName,
+    ResolutionName,
+    ResolutionPath,
+    VersionName,
+)
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.logging import logger
 
@@ -48,7 +53,7 @@ class DAG:
             for resolution in step.dependencies:
                 if resolution.name not in self.nodes:
                     raise ValueError(f"Step {resolution.name} not added to DAG")
-            self.graph[step.name] = step.parents
+            self.graph[step.name] = [parent.name for parent in step.parents]
         else:
             self.graph[step.name] = []
 
@@ -266,6 +271,9 @@ class DAG:
                 If an integer, uses that threshold for the specified resolution, and the
                 resolution's cached thresholds for its ancestors
 
+        Returns:
+            Dictionary mapping source names to list of keys within that source.
+
         Examples:
             ```python
             dag.lookup_key(
@@ -280,13 +288,17 @@ class DAG:
         """
         matches = _handler.match(
             targets=to_sources,
-            source=from_source,
+            source=ResolutionPath(
+                name=from_source, collection=self.name, version=self.version
+            ),
             key=key,
-            resolution=self.final_step,
+            resolution=ResolutionPath(
+                name=self.final_step, collection=self.name, version=self.version
+            ),
             threshold=threshold,
         )
 
-        to_sources_results = {m.target: list(m.target_id) for m in matches}
+        to_sources_results = {m.target.name: list(m.target_id) for m in matches}
         # If no matches, _handler will raise
         return {from_source: list(matches[0].source_id), **to_sources_results}
 

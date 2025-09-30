@@ -10,7 +10,7 @@ from matchbox.client import _handler
 from matchbox.client.dags import DAG
 from matchbox.client.results import Results
 from matchbox.client.sources import Location, Source
-from matchbox.common.dtos import ModelResolutionPath, ResolutionType
+from matchbox.common.dtos import ModelResolutionPath, ResolutionPath, ResolutionType
 from matchbox.common.eval import (
     ModelComparison,
     PrecisionRecall,
@@ -48,7 +48,13 @@ def get_samples(
         clients = {}
 
     samples: pl.DataFrame = pl.from_arrow(
-        _handler.sample_for_eval(n=n, resolution=dag.final_step, user_id=user_id)
+        _handler.sample_for_eval(
+            n=n,
+            resolution=ResolutionPath(
+                name=dag.final_step, collection=dag.name, version=dag.version
+            ),
+            user_id=user_id,
+        )
     )
 
     if not len(samples):
@@ -57,7 +63,10 @@ def get_samples(
     results_by_source = []
     for source_resolution in samples["source"].unique():
         resolution = _handler.get_resolution(
-            source_resolution, validate_type=ResolutionType.SOURCE
+            path=ResolutionPath(
+                name=source_resolution, collection=dag.name, version=dag.version
+            ),
+            validate_type=ResolutionType.SOURCE,
         )
         location_name = resolution.config.location_config.name
 
@@ -78,7 +87,7 @@ def get_samples(
         )
         source = Source.from_resolution(
             resolution=resolution,
-            resolution_name=dag.final_step,
+            resolution_name=source_resolution,
             dag=dag,
             location=location,
         )

@@ -27,7 +27,6 @@ from matchbox.common.dtos import (
     LocationType,
     Resolution,
     ResolutionName,
-    ResolutionPath,
     ResolutionType,
     SourceConfig,
     SourceField,
@@ -627,28 +626,28 @@ class Source:
         """Send the source config and hashes to the server."""
         resolution = self.to_resolution()
         try:
-            existing_resolution = _handler.get_resolution(name=self.name)
+            existing_resolution = _handler.get_resolution(path=self.resolution_path)
         except MatchboxResolutionNotFoundError:
             existing_resolution = None
         # Check if config matches
         if existing_resolution:
             if existing_resolution.config != self.config:
                 raise ValueError(
-                    f"Resolution {self.name} already exists with different "
+                    f"Resolution {self.resolution_path} already exists with different "
                     "configuration. Please delete the existing resolution "
                     "or use a different name. "
                 )
             else:
-                log_prefix = f"Resolution {self.name}"
+                log_prefix = f"Resolution {self.resolution_path}"
                 logger.warning("Already exists. Passing.", prefix=log_prefix)
         else:
-            _handler.create_resolution(
-                resolution=resolution, name=ResolutionPath(name=self.name)
-            )
+            _handler.create_resolution(resolution=resolution, path=self.resolution_path)
 
         if self.hashes:
             _handler.set_data(
-                name=self.name, data=self.hashes, validate_type=ResolutionType.SOURCE
+                path=self.resolution_path,
+                data=self.hashes,
+                validate_type=ResolutionType.SOURCE,
             )
 
     def query(self, **kwargs) -> Query:

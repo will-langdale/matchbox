@@ -134,7 +134,7 @@ class Model:
 
     @property
     def dependencies(self) -> list[ResolutionPath]:
-        """Returns all resolution names this model needs as implied by the queries."""
+        """Returns all resolution paths this model needs as implied by the queries."""
         if self.right_query:
             return (
                 self.left_query.config.dependencies
@@ -143,8 +143,8 @@ class Model:
         return self.left_query.config.dependencies
 
     @property
-    def parents(self) -> list[str]:
-        """Returns all points of truth input to this model."""
+    def parents(self) -> list[ResolutionPath]:
+        """Returns all resolution paths directly input to this model."""
         if self.right_query:
             return [
                 self.left_query.config.point_of_truth,
@@ -206,7 +206,7 @@ class Model:
 
     def delete(self, certain: bool = False) -> bool:
         """Delete the model from the database."""
-        result = _handler.delete_resolution(name=self.name, certain=certain)
+        result = _handler.delete_resolution(path=self.resolution_path, certain=certain)
         return result.success
 
     def run(self, for_validation: bool = False, full_rerun: bool = False) -> Results:
@@ -259,30 +259,28 @@ class Model:
         """Send the model config, truth and results to the server."""
         resolution = self.to_resolution()
         try:
-            existing_resolution = _handler.get_resolution(name=self.name)
+            existing_resolution = _handler.get_resolution(path=self.resolution_path)
         except MatchboxResolutionNotFoundError:
             existing_resolution = None
         # Check if config matches
         if existing_resolution:
             if existing_resolution.config != self.config:
                 raise ValueError(
-                    f"Resolution {self.name} already exists with different "
+                    f"Resolution {self.resolution_path} already exists with different "
                     "configuration. Please delete the existing resolution "
                     "or use a different name. "
                 )
             else:
-                log_prefix = f"Resolution {self.name}"
+                log_prefix = f"Resolution {self.resolution_path}"
                 logger.warning("Already exists. Passing.", prefix=log_prefix)
         else:
-            _handler.create_resolution(
-                resolution=resolution, path=ResolutionPath(name=self.name)
-            )
+            _handler.create_resolution(resolution=resolution, path=self.resolution_path)
 
-        _handler.set_truth(name=self.name, truth=self._truth)
+        _handler.set_truth(path=self.resolution_path, truth=self._truth)
 
         if self.results and len(self.results.probabilities):
             _handler.set_data(
-                name=self.name,
+                path=self.resolution_path,
                 data=self.results.probabilities,
                 validate_type=ResolutionType.MODEL,
             )

@@ -120,8 +120,8 @@ class Query:
         for source in self.sources:
             mb_ids = pl.from_arrow(
                 _handler.query(
-                    source=source.name,
-                    resolution=self.model.name if self.model else None,
+                    source=source.resolution_path,
+                    resolution=self.model.resolution_path if self.model else None,
                     threshold=self.config.threshold,
                     return_leaf_id=return_leaf_id,
                 )
@@ -205,12 +205,13 @@ class Query:
         if self.raw_data is None:
             raise RuntimeError("No raw data is stored in this query.")
 
-        self.config = self.config.model_copy(update={"cleaning": cleaning})
-
         self.data = _convert_df(
             data=clean(data=self.raw_data, cleaning_dict=cleaning),
             return_type=return_type,
         )
+
+        self.cleaning = cleaning
+
         return self.data
 
     def deduper(

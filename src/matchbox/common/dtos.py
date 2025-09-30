@@ -468,7 +468,7 @@ class QueryConfig(BaseModel):
 
     @property
     def point_of_truth(self):
-        """Return name of resolution that will be used as point of truth."""
+        """Return path of resolution that will be used as point of truth."""
         if self.model_resolution:
             return self.model_resolution
         return self.source_resolutions[0]

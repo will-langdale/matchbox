@@ -194,10 +194,10 @@ def query(
         "/query",
         params=url_params(
             {
-                "collection": "default",
-                "version": "v1",
-                "source": source,
-                "resolution": resolution,
+                "collection": source.collection,
+                "version": source.version,
+                "source": source.name,
+                "resolution": resolution.name if resolution else None,
                 "return_leaf_id": return_leaf_id,
                 "threshold": threshold,
                 "limit": limit,
@@ -241,8 +241,8 @@ def match(
         "/match",
         params=url_params(
             {
-                "collection": "default",
-                "version": "v1",
+                "collection": resolution.collection,
+                "version": resolution.version,
                 "targets": targets,
                 "source": source,
                 "key": key,
@@ -290,7 +290,7 @@ def create_resolution(
     logger.debug("Creating", prefix=log_prefix)
 
     res = CLIENT.post(
-        f"/collections/default/versions/v1/resolutions/{path.name}",
+        f"/collections/{path.collection}/versions/{path.version}/resolutions/{path.name}",
         json=resolution.model_dump(),
     )
 
@@ -306,7 +306,7 @@ def get_resolution(
     logger.debug("Retrieving metadata", prefix=log_prefix)
 
     res = CLIENT.get(
-        f"/collections/default/versions/v1/resolutions/{path.name}",
+        f"/collections/{path.collection}/versions/{path.version}/resolutions/{path.name}",
         params=url_params({"validate_type": validate_type}),
     )
     return Resolution.model_validate(res.json())
@@ -324,7 +324,7 @@ def set_data(
 
     # Initialise upload
     metadata_res = CLIENT.post(
-        f"/collections/default/versions/v1/resolutions/{path.name}/data",
+        f"/collections/{path.collection}/versions/{path.version}/resolutions/{path.name}/data",
         params=url_params({"validate_type": validate_type}),
     )
 
@@ -362,7 +362,9 @@ def get_results(path: ModelResolutionPath) -> Table:
     log_prefix = f"Model {path}"
     logger.debug("Retrieving results", prefix=log_prefix)
 
-    res = CLIENT.get(f"/collections/default/versions/v1/resolutions/{path.name}/data")
+    res = CLIENT.get(
+        f"/collections/{path.collection}/versions/{path.version}/resolutions/{path.name}/data"
+    )
     buffer = BytesIO(res.content)
     return read_table(buffer)
 
@@ -374,7 +376,8 @@ def set_truth(path: ModelResolutionPath, truth: int) -> ResourceOperationStatus:
     logger.debug("Setting truth value", prefix=log_prefix)
 
     res = CLIENT.patch(
-        f"/collections/default/versions/v1/resolutions/{path.name}/truth", json=truth
+        f"/collections/{path.collection}/versions/{path.version}/resolutions/{path.name}/truth",
+        json=truth,
     )
     return ResourceOperationStatus.model_validate(res.json())
 
@@ -385,7 +388,9 @@ def get_truth(path: ModelResolutionPath) -> int:
     log_prefix = f"Model {path}"
     logger.debug("Retrieving truth value", prefix=log_prefix)
 
-    res = CLIENT.get(f"/collections/default/versions/v1/resolutions/{path.name}/truth")
+    res = CLIENT.get(
+        f"/collections/{path.collection}/versions/{path.version}/resolutions/{path.name}/truth"
+    )
     return res.json()
 
 
@@ -398,7 +403,7 @@ def delete_resolution(
     logger.debug("Deleting", prefix=log_prefix)
 
     res = CLIENT.delete(
-        f"/collections/default/versions/v1/resolutions/{path.name}",
+        f"/collections/{path.collection}/versions/{path.version}/resolutions/{path.name}",
         params={"certain": certain},
     )
     return ResourceOperationStatus.model_validate(res.json())
@@ -416,7 +421,9 @@ def sample_for_eval(n: int, resolution: ModelResolutionPath, user_id: int) -> Ta
             {
                 "n": n,
                 "resolution": ModelResolutionPath(
-                    collection="default", version="v1", name=resolution
+                    collection=resolution.collection,
+                    version=resolution.version,
+                    name=resolution.name,
                 ),
                 "user_id": user_id,
             }
@@ -432,7 +439,11 @@ def compare_models(
 ) -> ModelComparison:
     """Get a model comparison for a set of model resolutions."""
     qualified_resolution = [
-        ModelResolutionPath(collection="default", version="v1", name=resolution)
+        ModelResolutionPath(
+            collection=resolution.collection,
+            version=resolution.version,
+            name=resolution,
+        )
         for resolution in resolutions
     ]
     res = CLIENT.post(

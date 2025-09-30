@@ -823,7 +823,7 @@ def model_factory(
 
         # Extract source data
         left_data = linked.sources["crn"].data
-        left_query = Query(linked.sources["crn"], dag=dag)
+        left_query = Query(linked.sources["crn"].source, dag=dag)
         left_entities = linked.sources["crn"].entities
 
         right_data = None
@@ -831,7 +831,7 @@ def model_factory(
         right_entities = None
         if resolved_model_type == ModelType.LINKER:
             right_data = linked.sources["cdms"].data
-            right_query = Query(linked.sources["cdms"], dag=dag)
+            right_query = Query(linked.sources["cdms"].source, dag=dag)
             right_entities = linked.sources["cdms"].entities
 
         dummy_true_entities = tuple(linked.true_entities)

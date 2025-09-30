@@ -104,7 +104,7 @@ def test_model_sync(matchbox_api: MockRouter):
 
     # Mock endpoints
     get_route = matchbox_api.get(
-        f"/collections/default/versions/v1/resolutions/{testkit.model.name}"
+        f"/collections/{testkit.model.dag.name}/versions/{testkit.model.dag.version}/resolutions/{testkit.model.name}"
     ).mock(
         return_value=Response(
             404,
@@ -114,7 +114,7 @@ def test_model_sync(matchbox_api: MockRouter):
         )
     )
     insert_config_route = matchbox_api.post(
-        f"/collections/default/versions/v1/resolutions/{testkit.model.name}"
+        f"/collections/{testkit.model.dag.name}/versions/{testkit.model.dag.version}/resolutions/{testkit.model.name}"
     ).mock(
         return_value=Response(
             201,
@@ -127,7 +127,7 @@ def test_model_sync(matchbox_api: MockRouter):
     )
 
     set_truth_route = matchbox_api.patch(
-        f"/collections/default/versions/v1/resolutions/{testkit.model.name}/truth"
+        f"/collections/{testkit.model.dag.name}/versions/{testkit.model.dag.version}/resolutions/{testkit.model.name}/truth"
     ).mock(
         return_value=Response(
             200,
@@ -140,7 +140,7 @@ def test_model_sync(matchbox_api: MockRouter):
     )
 
     insert_results_route = matchbox_api.post(
-        f"/collections/default/versions/v1/resolutions/{testkit.model.name}/data"
+        f"/collections/{testkit.model.dag.name}/versions/{testkit.model.dag.version}/resolutions/{testkit.model.name}/data"
     ).mock(
         return_value=Response(
             202,
@@ -225,7 +225,7 @@ def test_model_sync(matchbox_api: MockRouter):
     # Mock earlier endpoint generating a name clash
     source = source_factory().source
     matchbox_api.get(
-        f"/collections/default/versions/v1/resolutions/{testkit.model.name}"
+        f"/collections/{testkit.model.dag.name}/versions/{testkit.model.dag.version}/resolutions/{testkit.model.name}"
     ).mock(return_value=Response(200, json=source.to_resolution().model_dump()))
 
     with pytest.raises(ValueError, match="existing resolution"):
@@ -262,7 +262,7 @@ def test_delete_resolution(matchbox_api: MockRouter):
 
     # Mock the DELETE endpoint with success response
     route = matchbox_api.delete(
-        f"/collections/default/versions/v1/resolutions/{testkit.model.name}",
+        f"/collections/{testkit.model.dag.name}/versions/{testkit.model.dag.version}/resolutions/{testkit.model.name}",
         params={"certain": True},
     ).mock(
         return_value=Response(
@@ -292,7 +292,7 @@ def test_delete_resolution_needs_confirmation(matchbox_api: MockRouter):
     # Mock the DELETE endpoint with 409 confirmation required response
     error_details = "Cannot delete model with dependent models: dedupe1, dedupe2"
     route = matchbox_api.delete(
-        f"/collections/default/versions/v1/resolutions/{testkit.model.name}"
+        f"/collections/{testkit.model.dag.name}/versions/{testkit.model.dag.version}/resolutions/{testkit.model.name}"
     ).mock(
         return_value=Response(
             409,
