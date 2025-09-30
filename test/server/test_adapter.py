@@ -237,7 +237,7 @@ class TestMatchboxBackend:
                 key=next(iter(source_entity.keys["duns"])),
                 source=duns_testkit.resolution_path,
                 targets=[crn_testkit.resolution_path],
-                resolution=linker_testkit.resolution_path,
+                point_of_truth=linker_testkit.resolution_path,
             )
 
             assert len(res) == 1
@@ -268,7 +268,7 @@ class TestMatchboxBackend:
                 key=next(iter(source_entity.keys["crn"])),
                 source=crn_testkit.resolution_path,
                 targets=[duns_testkit.resolution_path],
-                resolution=linker_testkit.resolution_path,
+                point_of_truth=linker_testkit.resolution_path,
             )
 
             assert len(res) == 1
@@ -299,7 +299,7 @@ class TestMatchboxBackend:
                 key=next(iter(source_entity.keys["crn"])),
                 source=crn_testkit.resolution_path,
                 targets=[duns_testkit.resolution_path],
-                resolution=linker_testkit.resolution_path,
+                point_of_truth=linker_testkit.resolution_path,
             )
 
             assert len(res) == 1
@@ -325,7 +325,7 @@ class TestMatchboxBackend:
                 key=non_existent_key,
                 source=crn_testkit.resolution_path,
                 targets=[duns_testkit.resolution_path],
-                resolution=linker_testkit.resolution_path,
+                point_of_truth=linker_testkit.resolution_path,
             )
 
             assert len(res) == 1
@@ -356,7 +356,7 @@ class TestMatchboxBackend:
                 key=next(iter(source_entity.keys["crn"])),
                 source=crn_testkit.resolution_path,
                 targets=[duns_testkit.resolution_path],
-                resolution=linker_testkit.resolution_path,
+                point_of_truth=linker_testkit.resolution_path,
                 threshold=100,
             )
 
@@ -545,7 +545,7 @@ class TestMatchboxBackend:
             )
             self.backend.insert_resolution(
                 resolution=dedupe_1_testkit.model.to_resolution(),
-                name=dedupe_1_testkit.resolution_path,
+                path=dedupe_1_testkit.resolution_path,
             )
 
             dedupe_2_testkit = model_factory(
@@ -557,7 +557,7 @@ class TestMatchboxBackend:
             )
             self.backend.insert_resolution(
                 resolution=dedupe_2_testkit.model.to_resolution(),
-                name=dedupe_2_testkit.resolution_path,
+                path=dedupe_2_testkit.resolution_path,
             )
 
             assert self.backend.models.count() == models_count + 2
@@ -572,7 +572,7 @@ class TestMatchboxBackend:
             )
             self.backend.insert_resolution(
                 resolution=linker_testkit.model.to_resolution(),
-                name=linker_testkit.resolution_path,
+                path=linker_testkit.resolution_path,
             )
 
             assert self.backend.models.count() == models_count + 3
@@ -581,7 +581,7 @@ class TestMatchboxBackend:
             with pytest.raises(MatchboxResolutionAlreadyExists):
                 self.backend.insert_resolution(
                     linker_testkit.model.to_resolution(),
-                    name=linker_testkit.resolution_path,
+                    path=linker_testkit.resolution_path,
                 )
 
             assert self.backend.models.count() == models_count + 3
@@ -607,7 +607,7 @@ class TestMatchboxBackend:
             assert self.backend.clusters.count() == 0
 
             self.backend.insert_resolution(
-                crn_testkit.source.to_resolution(), name=crn_testkit.resolution_path
+                crn_testkit.source.to_resolution(), path=crn_testkit.resolution_path
             )
             self.backend.insert_source_data(
                 crn_testkit.source.resolution_path, crn_testkit.data_hashes
@@ -641,7 +641,7 @@ class TestMatchboxBackend:
 
             assert self.backend.data.count() == 0
             self.backend.insert_resolution(
-                crn_testkit.source.to_resolution(), name=crn_testkit.resolution_path
+                crn_testkit.source.to_resolution(), path=crn_testkit.resolution_path
             )
             self.backend.insert_source_data(
                 crn_testkit.source.resolution_path, data_hashes_halved
@@ -678,7 +678,7 @@ class TestMatchboxBackend:
             )
 
             self.backend.insert_resolution(
-                crn_resolution_1, name=crn_testkit.resolution_path
+                crn_resolution_1, path=crn_testkit.resolution_path
             )
             self.backend.insert_source_data(
                 crn_testkit.source.resolution_path, crn_testkit.data_hashes
@@ -686,7 +686,7 @@ class TestMatchboxBackend:
 
             with pytest.raises(MatchboxResolutionAlreadyExists):
                 self.backend.insert_resolution(
-                    crn_resolution_2, name=crn_testkit.resolution_path
+                    crn_resolution_2, path=crn_testkit.resolution_path
                 )
 
             assert self.backend.data.count() == len(crn_testkit.data_hashes)
@@ -699,14 +699,14 @@ class TestMatchboxBackend:
             duns_testkit: SourceTestkit = dag_testkit.sources.get("duns")
 
             self.backend.insert_resolution(
-                crn_testkit.source.to_resolution(), name=crn_testkit.resolution_path
+                crn_testkit.source.to_resolution(), path=crn_testkit.resolution_path
             )
             self.backend.insert_source_data(
                 crn_testkit.source.resolution_path, crn_testkit.data_hashes
             )
             # Different source, same data
             self.backend.insert_resolution(
-                duns_testkit.source.to_resolution(), name=duns_testkit.resolution_path
+                duns_testkit.source.to_resolution(), path=duns_testkit.resolution_path
             )
             self.backend.insert_source_data(
                 duns_testkit.source.resolution_path, crn_testkit.data_hashes
@@ -740,7 +740,7 @@ class TestMatchboxBackend:
 
             # Retrieve
             pre_results = self.backend.get_model_data(
-                name=naive_crn_testkit.resolution_path
+                path=naive_crn_testkit.resolution_path
             )
 
             assert isinstance(pre_results, pa.Table)
@@ -765,13 +765,13 @@ class TestMatchboxBackend:
 
             # Set new results
             self.backend.insert_model_data(
-                name=naive_crn_testkit.resolution_path,
+                path=naive_crn_testkit.resolution_path,
                 results=results_truncated.to_arrow(),
             )
 
             # Retrieve again
             post_results = self.backend.get_model_data(
-                name=naive_crn_testkit.resolution_path
+                path=naive_crn_testkit.resolution_path
             )
 
             # Check difference
@@ -803,7 +803,7 @@ class TestMatchboxBackend:
 
             # Retrieve
             pre_results = self.backend.get_model_data(
-                name=prob_crn_testkit.resolution_path
+                path=prob_crn_testkit.resolution_path
             )
 
             assert isinstance(pre_results, pa.Table)
@@ -828,13 +828,13 @@ class TestMatchboxBackend:
 
             # Set new results
             self.backend.insert_model_data(
-                name=prob_crn_testkit.resolution_path,
+                path=prob_crn_testkit.resolution_path,
                 results=results_truncated.to_arrow(),
             )
 
             # Retrieve again
             post_results = self.backend.get_model_data(
-                name=prob_crn_testkit.resolution_path
+                path=prob_crn_testkit.resolution_path
             )
 
             # Check difference
@@ -847,10 +847,10 @@ class TestMatchboxBackend:
             for model_testkit in dag_testkit.models.values():
                 self.backend.insert_resolution(
                     resolution=model_testkit.model.to_resolution(),
-                    name=model_testkit.resolution_path,
+                    path=model_testkit.resolution_path,
                 )
                 self.backend.insert_model_data(
-                    name=model_testkit.resolution_path,
+                    path=model_testkit.resolution_path,
                     results=model_testkit.probabilities,
                 )
 
@@ -861,17 +861,17 @@ class TestMatchboxBackend:
 
             # Retrieve
             pre_truth = self.backend.get_model_truth(
-                name=naive_crn_testkit.resolution_path
+                path=naive_crn_testkit.resolution_path
             )
 
             # Set
             self.backend.set_model_truth(
-                name=naive_crn_testkit.resolution_path, truth=75
+                path=naive_crn_testkit.resolution_path, truth=75
             )
 
             # Retrieve again
             post_truth = self.backend.get_model_truth(
-                name=naive_crn_testkit.resolution_path
+                path=naive_crn_testkit.resolution_path
             )
 
             # Check difference

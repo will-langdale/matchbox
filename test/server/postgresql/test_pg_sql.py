@@ -1239,7 +1239,10 @@ class TestQueryFunction:
     def test_query_source_only(self, populated_postgres_db: MatchboxPostgres):
         """Should query source data without resolution."""
         result = query(
-            _resolution_path("source_a"), resolution=None, threshold=None, limit=None
+            _resolution_path("source_a"),
+            point_of_truth=None,
+            threshold=None,
+            limit=None,
         )
 
         # Should return all keys from source_a with their cluster assignments
@@ -1267,7 +1270,10 @@ class TestQueryFunction:
     def test_query_source_b_only(self, populated_postgres_db: MatchboxPostgres):
         """Should query source_b which has one key per cluster."""
         result = query(
-            _resolution_path("source_b"), resolution=None, threshold=None, limit=None
+            _resolution_path("source_b"),
+            point_of_truth=None,
+            threshold=None,
+            limit=None,
         )
 
         # Should return all keys from source_b
@@ -1289,7 +1295,7 @@ class TestQueryFunction:
         """Should query source through its deduper resolution."""
         result = query(
             _resolution_path("source_a"),
-            resolution=_resolution_path("dedupe_a"),
+            point_of_truth=_resolution_path("dedupe_a"),
             threshold=None,
             limit=None,
         )
@@ -1315,7 +1321,7 @@ class TestQueryFunction:
         # Test with threshold=90 (higher than dedupe_a's clusters)
         result = query(
             _resolution_path("source_a"),
-            resolution=_resolution_path("dedupe_a"),
+            point_of_truth=_resolution_path("dedupe_a"),
             threshold=90,
             limit=None,
         )
@@ -1335,7 +1341,7 @@ class TestQueryFunction:
         """Should query source through complex linker resolution."""
         result = query(
             _resolution_path("source_a"),
-            resolution=_resolution_path("linker_ab"),
+            point_of_truth=_resolution_path("linker_ab"),
             threshold=None,
             limit=None,
         )
@@ -1373,13 +1379,13 @@ class TestQueryFunction:
         """Should query both sources through linker with consistent results."""
         result_a = query(
             _resolution_path("source_a"),
-            resolution=_resolution_path("linker_ab"),
+            point_of_truth=_resolution_path("linker_ab"),
             threshold=80,
             limit=None,
         )
         result_b = query(
             _resolution_path("source_b"),
-            resolution=_resolution_path("linker_ab"),
+            point_of_truth=_resolution_path("linker_ab"),
             threshold=80,
             limit=None,
         )
@@ -1426,7 +1432,7 @@ class TestQueryFunction:
     def test_query_with_limit(self, populated_postgres_db: MatchboxPostgres):
         """Should respect limit parameter."""
         result = query(
-            _resolution_path("source_a"), resolution=None, threshold=None, limit=3
+            _resolution_path("source_a"), point_of_truth=None, threshold=None, limit=3
         )
 
         # Should return only 3 rows
@@ -1441,7 +1447,7 @@ class TestQueryFunction:
         # This tests the scenario causing your test failure
         result = query(
             _resolution_path("source_a"),
-            resolution=_resolution_path("dedupe_a"),
+            point_of_truth=_resolution_path("dedupe_a"),
             threshold=80,
             limit=None,
         )
@@ -1480,7 +1486,7 @@ class TestMatchFunction:
             key="src_a_key1",
             source=_resolution_path("source_a"),
             targets=[_resolution_path("source_a"), _resolution_path("source_b")],
-            resolution=_resolution_path("dedupe_a"),
+            point_of_truth=_resolution_path("dedupe_a"),
             threshold=80,
         )
 
@@ -1502,7 +1508,7 @@ class TestMatchFunction:
             key="src_a_key6",
             source=_resolution_path("source_a"),
             targets=[_resolution_path("source_b")],
-            resolution=_resolution_path("dedupe_a"),
+            point_of_truth=_resolution_path("dedupe_a"),
             threshold=80,
         )
 
@@ -1516,7 +1522,7 @@ class TestMatchFunction:
             key="nonexistent_key",
             source=_resolution_path("source_a"),
             targets=[_resolution_path("source_b")],
-            resolution=_resolution_path("dedupe_a"),
+            point_of_truth=_resolution_path("dedupe_a"),
             threshold=80,
         )
 
@@ -1534,7 +1540,7 @@ class TestMatchFunction:
             key="src_a_key1",
             source=_resolution_path("source_a"),
             targets=[_resolution_path("source_b")],
-            resolution=_resolution_path("linker_ab"),
+            point_of_truth=_resolution_path("linker_ab"),
             threshold=80,
         )
 
@@ -1559,7 +1565,7 @@ class TestMatchFunction:
             key="src_a_key1",  # One key from C101
             source=_resolution_path("source_a"),
             targets=[_resolution_path("source_b")],  # Cross-source target
-            resolution=_resolution_path("linker_ab"),
+            point_of_truth=_resolution_path("linker_ab"),
             threshold=80,
         )
 
@@ -1585,7 +1591,7 @@ class TestMatchFunction:
             key="src_a_key5",
             source=_resolution_path("source_a"),
             targets=[_resolution_path("source_b")],
-            resolution=_resolution_path("linker_ab"),
+            point_of_truth=_resolution_path("linker_ab"),
             threshold=80,
         )
 
@@ -1603,7 +1609,7 @@ class TestMatchFunction:
             key="completely_nonexistent_key",
             source=_resolution_path("source_a"),
             targets=[_resolution_path("source_b")],
-            resolution=_resolution_path("linker_ab"),
+            point_of_truth=_resolution_path("linker_ab"),
             threshold=80,
         )
 
@@ -1624,7 +1630,7 @@ class TestMatchFunction:
             key="src_a_key4",  # cluster 103, part of C504
             source=_resolution_path("source_a"),
             targets=[_resolution_path("source_b")],
-            resolution=_resolution_path("linker_ab"),
+            point_of_truth=_resolution_path("linker_ab"),
             threshold=90,
         )
 
@@ -1645,7 +1651,7 @@ class TestMatchFunction:
                 _resolution_path("source_a"),
                 _resolution_path("source_b"),
             ],  # Multiple targets
-            resolution=_resolution_path("linker_ab"),
+            point_of_truth=_resolution_path("linker_ab"),
             threshold=80,
         )
 
@@ -1675,7 +1681,7 @@ class TestMatchFunction:
             key="src_a_key1",
             source=_resolution_path("source_a"),
             targets=[_resolution_path("source_b")],
-            resolution=_resolution_path("dedupe_a"),
+            point_of_truth=_resolution_path("dedupe_a"),
             threshold=80,
         )
 

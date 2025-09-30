@@ -257,7 +257,7 @@ def upload_file(
                 tracker=upload_tracker,
                 s3_client=client,
                 upload_type=upload_entry.status.entity,
-                resolution_name=upload_entry.metadata.name,
+                resolution_name=upload_entry.path.name,
                 upload_id=upload_id,
                 bucket=bucket,
                 filename=key,
@@ -265,7 +265,7 @@ def upload_file(
         case "celery":
             process_upload_celery.delay(
                 upload_type=upload_entry.status.entity,
-                resolution_name=upload_entry.metadata.name,
+                resolution_name=upload_entry.path.name,
                 upload_id=upload_id,
                 bucket=bucket,
                 filename=key,
@@ -396,7 +396,7 @@ def match(
                 name=source,
             ),
             targets=targets,
-            resolution=ResolutionPath(
+            point_of_truth=ResolutionPath(
                 collection=collection,
                 version=version,
                 name=resolution,

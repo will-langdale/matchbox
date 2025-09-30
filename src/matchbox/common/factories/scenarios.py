@@ -528,9 +528,9 @@ def create_convergent_scenario(
     dag_testkit = TestkitDAG()
 
     # Create collection and version
-    backend.create_collection(path=dag_testkit.dag.name)
+    backend.create_collection(name=dag_testkit.dag.name)
     backend.create_version(
-        collection=dag_testkit.dag.name, path=dag_testkit.dag.version
+        collection=dag_testkit.dag.name, name=dag_testkit.dag.version
     )
 
     # Create linked sources

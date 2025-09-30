@@ -39,7 +39,6 @@ def test_get_source(
 
     response = test_client.get("/collections/default/versions/v1/resolutions/foo")
     assert response.status_code == 200
-    assert response.json()["name"] == "foo"
     assert response.json()["resolution_type"] == "source"
 
 
@@ -55,7 +54,6 @@ def test_get_model(
     )
 
     assert response.status_code == 200
-    assert response.json()["name"] == testkit.model.name
     assert response.json()["description"] == testkit.model.description
 
 
@@ -143,9 +141,12 @@ def test_complete_model_upload_process(
     mock_backend.get_resolution = Mock(return_value=testkit.model.to_resolution())
     mock_backend.get_model_data = Mock(return_value=testkit.probabilities)
 
+    collection = testkit.resolution_path.collection
+    version = testkit.resolution_path.version
+
     # Step 1: Create model
     response = test_client.post(
-        "/collections/default/versions/v1/resolutions/name",
+        f"/collections/{collection}/versions/{version}/resolutions/{testkit.model.name}",
         json=testkit.model.to_resolution().model_dump(),
     )
     assert response.status_code == 201
@@ -154,7 +155,7 @@ def test_complete_model_upload_process(
 
     # Step 2: Initialize results upload
     response = test_client.post(
-        f"/collections/default/versions/v1/resolutions/{testkit.model.name}/data"
+        f"/collections/{collection}/versions/{version}/resolutions/{testkit.model.name}/data"
     )
     assert response.status_code == 202
     upload_id = response.json()["id"]
@@ -205,7 +206,7 @@ def test_complete_model_upload_process(
     mock_backend.insert_model_data.assert_called_once()
     call_args = mock_backend.insert_model_data.call_args
     assert (
-        call_args[1]["name"] == testkit.model.name
+        call_args[1]["path"] == testkit.resolution_path
     )  # Check model resolution name matches
     assert call_args[1]["results"].equals(
         testkit.probabilities
@@ -301,7 +302,7 @@ def test_set_truth(
     assert response.status_code == 200
     assert response.json()["success"] is True
     mock_backend.set_model_truth.assert_called_once_with(
-        name=testkit.resolution_path, truth=95
+        path=testkit.resolution_path, truth=95
     )
 
 

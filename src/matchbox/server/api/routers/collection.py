@@ -372,7 +372,7 @@ def create_resolution(
     try:
         backend.insert_resolution(
             resolution=resolution,
-            name=ResolutionPath(
+            path=ResolutionPath(
                 name=resolution_name, collection=collection, version=version
             ),
         )
@@ -504,16 +504,16 @@ def set_data(
 ) -> UploadStatus:
     """Create an upload task for source hashes or model results."""
     # Get resolution from the specified version
-    resolution = backend.get_resolution(
-        name=ResolutionPath(collection=collection, version=version, name=resolution),
-        validate=validate_type,
+    resolution_path = ResolutionPath(
+        collection=collection, version=version, name=resolution
     )
+    resolution = backend.get_resolution(path=resolution_path, validate=validate_type)
 
     if resolution.resolution_type == ResolutionType.SOURCE:
-        upload_id = upload_tracker.add_source(metadata=resolution)
+        upload_id = upload_tracker.add_source(path=resolution_path)
         return upload_tracker.get(upload_id=upload_id).status
 
-    upload_id = upload_tracker.add_model(metadata=resolution)
+    upload_id = upload_tracker.add_model(path=resolution_path)
     return upload_tracker.get(upload_id=upload_id).status
 
 

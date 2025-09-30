@@ -201,14 +201,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
         key: str,
         source: SourceResolutionPath,
         targets: list[SourceResolutionPath],
-        resolution: ResolutionPath,
+        point_of_truth: ResolutionPath,
         threshold: int | None = None,
     ) -> list[Match]:
         return match(
             key=key,
             source=source,
             targets=targets,
-            resolution=resolution,
+            point_of_truth=point_of_truth,
             threshold=threshold,
         )
 

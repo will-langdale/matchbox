@@ -568,7 +568,7 @@ def match(
     key: str,
     source: SourceResolutionPath,
     targets: list[SourceResolutionPath],
-    resolution_path: ResolutionPath,
+    point_of_truth: ResolutionPath,
     threshold: int | None = None,
 ) -> list[Match]:
     """Matches an ID in a source resolution and returns the keys in the targets.
@@ -593,7 +593,7 @@ def match(
             path=source, session=session
         ).source_config
         truth_resolution: Resolutions = Resolutions.from_path(
-            path=resolution_path, session=session
+            path=point_of_truth, session=session
         )
 
         target_configs: list[SourceConfigs] = [

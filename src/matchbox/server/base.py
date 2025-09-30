@@ -278,7 +278,7 @@ class MatchboxDBAdapter(ABC):
         key: str,
         source: SourceResolutionPath,
         targets: list[SourceResolutionPath],
-        resolution: ResolutionPath,
+        point_of_truth: ResolutionPath,
         threshold: int | None = None,
     ) -> list[Match]:
         """Matches an ID in a source resolution and returns the keys in the targets.
@@ -287,7 +287,7 @@ class MatchboxDBAdapter(ABC):
             key: The key to match from the source.
             source: The path of the source resolution.
             targets: The paths of the target source resolutions.
-            resolution: The path of the resolution to use for matching.
+            point_of_truth: The path of the resolution to use for matching.
             threshold (optional): the threshold to use for creating clusters
                 If None, uses the resolutions' default threshold
                 If an integer, uses that threshold for the specified resolution, and the

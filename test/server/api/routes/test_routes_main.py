@@ -85,7 +85,7 @@ def test_upload(
 
     source_testkit = source_factory()
 
-    update_id = mock_tracker.add_source(source_testkit.source.to_resolution())
+    update_id = mock_tracker.add_source(source_testkit.resolution_path)
 
     # Make request with mocked background task
     response = test_client.post(
@@ -129,7 +129,7 @@ def test_upload_wrong_schema(
 
     # Create source with results schema instead of index
     source_testkit = source_factory()
-    update_id = mock_tracker.add_source(source_testkit.source.to_resolution())
+    update_id = mock_tracker.add_source(source_testkit.resolution_path)
 
     response = test_client.post(
         f"/upload/{update_id}",
@@ -153,7 +153,7 @@ def test_upload_status_check(api_client_and_mocks: tuple[TestClient, Mock, Mock]
     """Test checking status of an upload using the status endpoint."""
     test_client, _, mock_tracker = api_client_and_mocks
     source_testkit = source_factory()
-    update_id = mock_tracker.add_source(source_testkit.source.to_resolution())
+    update_id = mock_tracker.add_source(source_testkit.resolution_path)
     mock_tracker.update(update_id, UploadStage.PROCESSING)
     mock_tracker.reset_mock()
 
@@ -169,7 +169,7 @@ def test_upload_already_processing(api_client_and_mocks: tuple[TestClient, Mock,
     """Test attempting to upload when status is already processing."""
     test_client, _, mock_tracker = api_client_and_mocks
     source_testkit = source_factory()
-    update_id = mock_tracker.add_source(source_testkit.source.to_resolution())
+    update_id = mock_tracker.add_source(source_testkit.resolution_path)
     mock_tracker.update(update_id, UploadStage.PROCESSING)
 
     response = test_client.post(
@@ -186,7 +186,7 @@ def test_upload_already_queued(api_client_and_mocks: tuple[TestClient, Mock, Moc
     """Test attempting to upload when status is already queued."""
     test_client, _, mock_tracker = api_client_and_mocks
     source_testkit = source_factory()
-    update_id = mock_tracker.add_source(source_testkit.source.to_resolution())
+    update_id = mock_tracker.add_source(source_testkit.resolution_path)
     mock_tracker.update(update_id, UploadStage.QUEUED)
 
     response = test_client.post(
