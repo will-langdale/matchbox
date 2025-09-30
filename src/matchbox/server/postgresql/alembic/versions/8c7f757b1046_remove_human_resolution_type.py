@@ -24,7 +24,16 @@ def upgrade() -> None:
         "resolution_type_constraints", "resolutions", type_="check", schema="mb"
     )
 
-    # Create the new constraint
+    # Update existing rows from 'dataset' to 'source'
+    op.execute(
+        """
+        UPDATE mb.resolutions
+        SET type = 'source'
+        WHERE type = 'dataset'
+        """
+    )
+
+    # Create the new constraint with only 'model' and 'source'
     op.create_check_constraint(
         "resolution_type_constraints",
         "resolutions",
@@ -35,11 +44,20 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
+    # Drop the new constraint
     op.drop_constraint(
         "resolution_type_constraints", "resolutions", type_="check", schema="mb"
     )
 
-    # Recreate the old constraint
+    # Revert 'source' back to 'dataset'
+    op.execute(
+        """
+        UPDATE mb.resolutions
+        SET type = 'dataset'
+        WHERE type = 'source'
+        """
+    )
+    # Recreate the old constraint with 'model', 'dataset', and 'human'
     op.create_check_constraint(
         "resolution_type_constraints",
         "resolutions",
