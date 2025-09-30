@@ -607,8 +607,9 @@ class Version(BaseModel):
     is_mutable: bool = Field(
         default=False, description="Whether this version can be modified"
     )
-    resolutions: list[Resolution] = Field(
-        default_factory=list, description="List of resolutions in this version"
+    resolutions: dict[ResolutionName, Resolution] = Field(
+        default_factory=list,
+        description="Dict of resolution objects by name within this version",
     )
 
     @field_validator("name", mode="after")

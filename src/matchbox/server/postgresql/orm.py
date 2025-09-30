@@ -27,6 +27,7 @@ from matchbox.common.dtos import (
     CollectionName,
     LocationConfig,
     ModelType,
+    ResolutionName,
     ResolutionPath,
     ResolutionType,
     VersionName,
@@ -185,9 +186,11 @@ class Versions(CountMixin, MBDB.MatchboxBase):
 
     def to_dto(self) -> CommonVersion:
         """Convert ORM version to a matchbox.common Version object."""
-        resolutions: list[CommonResolution] = []
+        resolutions: dict[ResolutionName, CommonResolution] = {}
         if self.resolutions:
-            resolutions = [resolution.to_dto() for resolution in self.resolutions]
+            resolutions = {
+                resolution.name: resolution.to_dto() for resolution in self.resolutions
+            }
 
         return CommonVersion(
             name=self.name,

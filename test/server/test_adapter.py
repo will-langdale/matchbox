@@ -421,7 +421,7 @@ class TestMatchboxBackend:
             assert v1.name == "v1"
             assert v1.is_default is False  # New versions aren't default by default
             assert v1.is_mutable is True  # New versions are mutable by default
-            assert v1.resolutions == []  # No resolutions yet
+            assert v1.resolutions == {}  # No resolutions yet
 
             test_collection_post = self.backend.get_collection("test_collection")
             assert "v1" in test_collection_post.versions

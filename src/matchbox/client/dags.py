@@ -14,6 +14,7 @@ from matchbox.common.dtos import (
     CollectionName,
     ResolutionName,
     ResolutionPath,
+    ResolutionType,
     VersionName,
 )
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
@@ -313,56 +314,72 @@ class DAG:
             source_filter: An optional list of source resolution names to filter by.
             location_names: An optional list of location names to filter by.
         """
-        # Get all sources in scope of the resolution
-        point_of_truth = self.final_step
-        source_resolutions = _handler.get_leaf_source_resolutions(name=point_of_truth)
+        # Get all sources in scope of the DAG version
+        version = _handler.get_version(collection=self.name, name=self.version)
+        source_resolutions = {
+            res_name: resolution
+            for res_name, resolution in version.resolutions.items()
+            if resolution.resolution_type == ResolutionType.SOURCE
+        }
+
+        filtered_res_names = list(source_resolutions.keys())
 
         if source_filter:
-            source_resolutions = [
-                s for s in source_resolutions if s.name in source_filter
-            ]
+            filtered_res_names = [s for s in filtered_res_names if s in source_filter]
 
         if location_names:
-            source_resolutions = [
+            filtered_res_names = [
                 s
-                for s in source_resolutions
-                if s.config.location_config.name in location_names
+                for s in filtered_res_names
+                if source_resolutions[s].config.location_config.name in location_names
             ]
 
-        if not source_resolutions:
+        if not filtered_res_names:
             raise MatchboxResolutionNotFoundError("No compatible source was found")
 
         source_mb_ids: list[ArrowTable] = []
         source_to_key_field: dict[str, str] = {}
 
-        for s in source_resolutions:
+        for res_name in filtered_res_names:
             # Get Matchbox IDs from backend
             source_mb_ids.append(
                 _handler.query(
-                    source=s.name, resolution=point_of_truth, return_leaf_id=False
+                    source=ResolutionPath(
+                        name=res_name, collection=self.name, version=self.version
+                    ),
+                    resolution=ResolutionPath(
+                        name=self.final_step, collection=self.name, version=self.version
+                    ),
+                    return_leaf_id=False,
                 )
             )
 
-            source_to_key_field[s.name] = s.config.key_field.name
+            source_to_key_field[res_name] = source_resolutions[
+                res_name
+            ].config.key_field.name
 
         # Join Matchbox IDs to form mapping table
         mapping = source_mb_ids[0]
         mapping = mapping.rename_columns(
             {
-                "key": source_resolutions[0].config.qualified_key(
-                    source_resolutions[0].name
+                "key": source_resolutions[filtered_res_names[0]].config.qualified_key(
+                    filtered_res_names[0]
                 )
             }
         )
-        if len(source_resolutions) > 1:
-            for s, mb_ids in zip(
-                source_resolutions[1:], source_mb_ids[1:], strict=True
+        if len(filtered_res_names) > 1:
+            for source_name, mb_ids in zip(
+                filtered_res_names[1:], source_mb_ids[1:], strict=True
             ):
                 mapping = mapping.join(
                     right_table=mb_ids, keys="id", join_type="full outer"
                 )
                 mapping = mapping.rename_columns(
-                    {"key": s.config.qualified_key(s.name)}
+                    {
+                        "key": source_resolutions[source_name].config.qualified_key(
+                            source_name
+                        )
+                    }
                 )
 
         return mapping

@@ -21,6 +21,7 @@ from matchbox.common.dtos import (
     Match,
     NotFoundError,
     ResolutionPath,
+    Version,
 )
 from matchbox.common.exceptions import (
     MatchboxEmptyServerResponse,
@@ -343,15 +344,16 @@ def test_extract_lookup(
     expected_foo_mapping = expected_foo_bar_mapping.select(["id", "foo_key"]).unique()
 
     # Mock API
-    matchbox_api.get(
-        f"/collections/{dag.name}/versions/{dag.version}/resolutions/root/sources"
-    ).mock(
+    matchbox_api.get(f"/collections/{dag.name}/versions/{dag.version}").mock(
         return_value=Response(
             200,
-            json=[
-                foo.source.to_resolution().model_dump(mode="json"),
-                bar.source.to_resolution().model_dump(mode="json"),
-            ],
+            json=Version(
+                name="v1",
+                resolutions={
+                    foo.name: foo.source.to_resolution(),
+                    bar.name: bar.source.to_resolution(),
+                },
+            ).model_dump(),
         )
     )
 

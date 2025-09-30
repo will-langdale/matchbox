@@ -40,19 +40,25 @@ def test_get_collection(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     test_client, mock_backend, _ = api_client_and_mocks
 
     # Mock collection data with versions and resolutions
-    source_resolution = source_factory().source.to_resolution()
-    model_resolution = model_factory().model.to_resolution()
+    source = source_factory().source
+    model = model_factory().model
     collection = Collection(
         name="test_collection",
         versions={
             "v1": Version(
                 name="v1",
-                resolutions=[source_resolution, model_resolution],
+                resolutions={
+                    source.name: source.to_resolution(),
+                    model.name: model.to_resolution(),
+                },
                 mutable=False,
                 default=True,
             ),
             "v2": Version(
-                name="v2", resolutions=[source_resolution], mutable=True, default=False
+                name="v2",
+                resolutions={source.name: source.to_resolution()},
+                mutable=True,
+                default=False,
             ),
         },
     )
@@ -181,9 +187,12 @@ def test_get_version(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     """Test retrieving a specific version."""
     test_client, mock_backend, _ = api_client_and_mocks
 
-    source_resolution = source_factory().source.to_resolution()
+    source = source_factory().source
     version = Version(
-        name="v1", resolutions=[source_resolution], is_default=True, is_mutable=False
+        name="v1",
+        resolutions={source.name: source.to_resolution()},
+        is_default=True,
+        is_mutable=False,
     )
 
     mock_backend.get_version = Mock(return_value=version)
@@ -276,7 +285,7 @@ def test_create_version(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     """Test creating a new version."""
     test_client, mock_backend, _ = api_client_and_mocks
 
-    new_version = Version(name="v2", is_default=False, is_mutable=True, resolutions=[])
+    new_version = Version(name="v2", is_default=False, is_mutable=True, resolutions={})
     mock_backend.create_version = Mock(return_value=new_version)
 
     response = test_client.post(
@@ -323,7 +332,7 @@ def test_set_version_mutable(api_client_and_mocks: tuple[TestClient, Mock, Mock]
     test_client, mock_backend, _ = api_client_and_mocks
 
     updated_version = Version(
-        name="v1", is_default=False, is_mutable=False, resolutions=[]
+        name="v1", is_default=False, is_mutable=False, resolutions={}
     )
     mock_backend.set_version_mutable = Mock(return_value=updated_version)
 
@@ -357,7 +366,7 @@ def test_set_version_default(api_client_and_mocks: tuple[TestClient, Mock, Mock]
     test_client, mock_backend, _ = api_client_and_mocks
 
     updated_version = Version(
-        name="v1", is_default=True, is_mutable=False, resolutions=[]
+        name="v1", is_default=True, is_mutable=False, resolutions={}
     )
     mock_backend.set_version_default = Mock(return_value=updated_version)
 

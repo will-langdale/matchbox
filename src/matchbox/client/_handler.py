@@ -45,6 +45,7 @@ from matchbox.common.dtos import (
     SourceResolutionPath,
     UploadStage,
     UploadStatus,
+    Version,
     VersionName,
 )
 from matchbox.common.eval import Judgement, ModelComparison
@@ -275,6 +276,16 @@ def get_collection(name: CollectionName) -> dict[VersionName, list[Resolution]]:
     return {
         v: [Resolution.model_validate(r) for r in vs] for v, vs in res.json().items()
     }
+
+
+@http_retry
+def get_version(collection: CollectionName, name: VersionName) -> Version:
+    """Get all versions and resolutions in a collection."""
+    log_prefix = f"Collection {name}"
+    logger.debug("Retrieving", prefix=log_prefix)
+
+    res = CLIENT.get(f"/collections/{collection}/versions/{name}")
+    return Version.model_validate(res.json())
 
 
 # Resolution management
