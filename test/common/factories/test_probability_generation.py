@@ -2,7 +2,6 @@ from typing import Any
 
 import numpy as np
 import polars as pl
-import pyarrow.compute as pc
 import pytest
 
 from matchbox.common.arrow import SCHEMA_RESULTS
@@ -159,8 +158,8 @@ def test_generate_dummy_probabilities(parameters: dict[str, Any]):
         total_rows=total_rows,
     )
     report = component_report(table=probabilities, all_nodes=rand_vals)
-    p_left = probabilities["left_id"].to_pylist()
-    p_right = probabilities["right_id"].to_pylist()
+    p_left = probabilities["left_id"].to_list()
+    p_right = probabilities["right_id"].to_list()
 
     assert report["num_components"] == n_components
 
@@ -172,14 +171,8 @@ def test_generate_dummy_probabilities(parameters: dict[str, Any]):
     else:
         assert set(p_left) | set(p_right) <= set(left_values)
 
-    assert (
-        pc.max(probabilities["probability"]).as_py() / 100
-        <= parameters["prob_range"][1]
-    )
-    assert (
-        pc.min(probabilities["probability"]).as_py() / 100
-        >= parameters["prob_range"][0]
-    )
+    assert probabilities["probability"].max() / 100 <= parameters["prob_range"][1]
+    assert probabilities["probability"].min() / 100 >= parameters["prob_range"][0]
 
     assert len(probabilities) == total_rows
 
@@ -207,8 +200,8 @@ def test_generate_dummy_probabilities_no_self_references():
         return
 
     # If no ValueError was raised, continue with the rest of the checks
-    p_left = probabilities["left_id"].to_pylist()
-    p_right = probabilities["right_id"].to_pylist()
+    p_left = probabilities["left_id"].to_list()
+    p_right = probabilities["right_id"].to_list()
 
     # Check for self-references
     self_references = [
@@ -421,8 +414,8 @@ def test_generate_entity_probabilities_scenarios(
     # Get edges from result
     edges = list(
         zip(
-            result.select("left_id").to_dicts(),
-            result.select("right_id").to_dicts(),
+            result["left_id"].to_list(),
+            result["right_id"].to_list(),
             strict=True,
         )
     )
@@ -432,7 +425,7 @@ def test_generate_entity_probabilities_scenarios(
 
     # For non-empty results, validate probability ranges
     if edges:
-        probs = result.get_column("probability").to_numpy()
+        probs = result["probability"].to_numpy()
         prob_min, prob_max = expected["prob_range"]
         assert all(prob_min <= p <= prob_max for p in probs)
 
