@@ -96,7 +96,7 @@ def graph_results(
     # Create index to use in graph
     unique = (
         pl.concat([probabilities["left_id"], probabilities["right_id"]], rechunk=True)
-        .unique()
+        .unique(maintain_order=True)
         .rename("unique_ids")
         .to_frame()
         .with_row_index()
@@ -104,13 +104,13 @@ def graph_results(
 
     left_indices = (
         probabilities.select("left_id")
-        .join(unique, left_on="left_id", right_on="unique_ids")
+        .join(unique, left_on="left_id", right_on="unique_ids", maintain_order="left")
         .to_series(1)
         .to_numpy()
     )
     right_indices = (
         probabilities.select("right_id")
-        .join(unique, left_on="right_id", right_on="unique_ids")
+        .join(unique, left_on="right_id", right_on="unique_ids", maintain_order="left")
         .to_series(1)
         .to_numpy()
     )
