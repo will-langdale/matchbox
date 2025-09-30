@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import pyarrow as pa
+from polars.testing import assert_frame_equal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Engine
 
@@ -171,7 +172,9 @@ def create_dedupe_scenario(
 
         # Add to backend and DAG
         backend.insert_resolution(resolution=model_testkit.model.to_resolution())
-        backend.insert_model_data(name=name, results=model_testkit.probabilities)
+        backend.insert_model_data(
+            name=name, results=model_testkit.probabilities.to_arrow()
+        )
         dag.add_model(model_testkit)
 
     return dag
@@ -216,7 +219,9 @@ def create_probabilistic_dedupe_scenario(
 
         # Add to backend and DAG
         backend.insert_resolution(resolution=model_testkit.model.to_resolution())
-        backend.insert_model_data(name=name, results=model_testkit.probabilities)
+        backend.insert_model_data(
+            name=name, results=model_testkit.probabilities.to_arrow()
+        )
         backend.set_model_truth(name=name, truth=50)
         dag.add_model(model_testkit)
 
@@ -271,7 +276,9 @@ def create_link_scenario(
 
     # Add to backend and DAG
     backend.insert_resolution(resolution=crn_duns_model.model.to_resolution())
-    backend.insert_model_data(name=crn_duns_name, results=crn_duns_model.probabilities)
+    backend.insert_model_data(
+        name=crn_duns_name, results=crn_duns_model.probabilities.to_arrow()
+    )
     dag.add_model(crn_duns_model)
 
     # Create CRN-CDMS link
@@ -299,7 +306,9 @@ def create_link_scenario(
 
     # Add to backend and DAG
     backend.insert_resolution(resolution=crn_cdms_model.model.to_resolution())
-    backend.insert_model_data(name=crn_cdms_name, results=crn_cdms_model.probabilities)
+    backend.insert_model_data(
+        name=crn_cdms_name, results=crn_cdms_model.probabilities.to_arrow()
+    )
     backend.set_model_truth(name=crn_cdms_name, truth=75)
     dag.add_model(crn_cdms_model)
 
@@ -344,7 +353,7 @@ def create_link_scenario(
     # Add to backend and DAG
     backend.insert_resolution(resolution=final_join_model.model.to_resolution())
     backend.insert_model_data(
-        name=final_join_name, results=final_join_model.probabilities
+        name=final_join_name, results=final_join_model.probabilities.to_arrow()
     )
     dag.add_model(final_join_model)
 
@@ -422,15 +431,17 @@ def create_alt_dedupe_scenario(
             seed=seed,
         )
 
-        assert model_testkit1.probabilities.num_rows > 0
-        assert model_testkit1.probabilities == model_testkit2.probabilities
+        assert len(model_testkit1.probabilities) > 0
+        assert_frame_equal(model_testkit1.probabilities, model_testkit2.probabilities)
 
         for model, threshold in ((model_testkit1, 50), (model_testkit2, 75)):
             model.threshold = threshold
 
             # Add both models to backend and DAG
             backend.insert_resolution(resolution=model.model.to_resolution())
-            backend.insert_model_data(name=model.name, results=model.probabilities)
+            backend.insert_model_data(
+                name=model.name, results=model.probabilities.to_arrow()
+            )
             backend.set_model_truth(name=model.name, truth=threshold)
 
             # Add to DAG
@@ -509,7 +520,7 @@ def create_convergent_scenario(
             seed=seed,
         )
 
-        assert model_testkit.probabilities.num_rows > 0
+        assert len(model_testkit.probabilities) > 0
 
         # Add to DAG
         dag.add_model(model_testkit)
