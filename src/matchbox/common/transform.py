@@ -37,19 +37,17 @@ def to_clusters(
     results = results.select(["left_id", "right_id", "probability"])
 
     # Get unique probability thresholds, sorted
-    thresholds = results["probability"].unique().sort(order="descending")
+    thresholds = results["probability"].unique().sort(descending=True)
 
     # Process edges grouped by probability threshold
     for prob in thresholds:
-        threshold_edges = results.filter(pl.col("probability"), prob)
+        threshold_edges = results.filter(pl.col("probability") == prob)
 
         # Get state before adding this batch of edges
         old_components = {frozenset(comp) for comp in rx.connected_components(G)}
 
         # Add all nodes and edges at this probability threshold
-        # TODO: check that this implementation is equivalent to the old
-        # Why strict? Do we expect to have lists of different lenghts?
-        edge_values = threshold_edges.rows()
+        edge_values = threshold_edges.select(["left_id", "right_id"]).rows()
 
         for left, right in edge_values:
             for hash_val in (left, right):
