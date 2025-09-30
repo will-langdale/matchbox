@@ -90,7 +90,7 @@ class Results:
     @property
     def clusters(self):
         """Retrieve new clusters implied by these results."""
-        if not self._clusters:
+        if self._clusters is None:
             im = IntMap()
             self._clusters = to_clusters(
                 results=self.probabilities, dtype=pl.Int64, hash_func=im.index
