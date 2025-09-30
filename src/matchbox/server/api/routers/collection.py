@@ -70,7 +70,7 @@ def get_collection(
 
 
 @router.post(
-    "",
+    "/{collection}",
     responses={
         409: {
             "model": ResourceOperationStatus,
@@ -84,17 +84,20 @@ def get_collection(
 )
 def create_collection(
     backend: BackendDependency,
-    collection: Collection,
-) -> Collection:
+    collection: CollectionName,
+) -> ResourceOperationStatus:
     """Create a new collection."""
     try:
-        return backend.create_collection(name=collection.name)
+        backend.create_collection(name=collection)
+        return ResourceOperationStatus(
+            success=True, name=collection, operation=CRUDOperation.CREATE
+        )
     except MatchboxCollectionAlreadyExists as e:
         raise HTTPException(
             status_code=409,
             detail=ResourceOperationStatus(
                 success=False,
-                name=collection.name,
+                name=collection,
                 operation=CRUDOperation.CREATE,
                 details=str(e),
             ),
@@ -167,7 +170,7 @@ def get_version(
 
 
 @router.post(
-    "/{collection}/versions",
+    "/{collection}/versions/{version}",
     responses={
         404: {"model": NotFoundError},
         409: {
@@ -183,17 +186,22 @@ def get_version(
 def create_version(
     backend: BackendDependency,
     collection: CollectionName,
-    version: Version,
-) -> Version:
+    version: VersionName,
+) -> ResourceOperationStatus:
     """Create a new version in a collection."""
     try:
-        return backend.create_version(collection=collection, name=version.name)
-    except MatchboxVersionAlreadyExists as e:
+        backend.create_version(collection=collection, name=version)
+        return ResourceOperationStatus(
+            success=True,
+            name=version,
+            operation=CRUDOperation.CREATE,
+        )
+    except (MatchboxVersionAlreadyExists, MatchboxCollectionNotFoundError) as e:
         raise HTTPException(
             status_code=409,
             detail=ResourceOperationStatus(
                 success=False,
-                name=version.name,
+                name=version,
                 operation=CRUDOperation.CREATE,
                 details=str(e),
             ),
@@ -370,7 +378,7 @@ def create_resolution(
 ) -> ResourceOperationStatus:
     """Create a resolution (model or source)."""
     try:
-        backend.insert_resolution(
+        backend.create_resolution(
             resolution=resolution,
             path=ResolutionPath(
                 name=resolution_name, collection=collection, version=version
@@ -423,7 +431,7 @@ def get_resolution(
 ) -> Resolution:
     """Get a resolution (model or source) from the backend."""
     return backend.get_resolution(
-        name=ResolutionPath(collection=collection, version=version, name=resolution),
+        path=ResolutionPath(collection=collection, version=version, name=resolution),
         validate=validate_type,
     )
 

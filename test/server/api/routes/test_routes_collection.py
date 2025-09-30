@@ -1,5 +1,6 @@
 """Unit tests for collection and version management endpoints."""
 
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -109,13 +110,12 @@ def test_create_collection(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     """Test creating a new collection."""
     test_client, mock_backend, _ = api_client_and_mocks
 
-    new_collection = Collection(name="new_collection", versions={})
-    mock_backend.create_collection = Mock(return_value=new_collection)
+    mock_backend.create_collection = Mock()
 
-    response = test_client.post("/collections", json=new_collection.model_dump())
+    response = test_client.post("/collections/new_collection")
 
     assert response.status_code == 201
-    assert Collection.model_validate(response.json())
+    assert response.json()["success"] is True
     mock_backend.create_collection.assert_called_once_with(name="new_collection")
 
 
@@ -126,23 +126,12 @@ def test_create_collection_already_exists(
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.create_collection = Mock(side_effect=MatchboxCollectionAlreadyExists())
 
-    response = test_client.post("/collections", json={"name": "existing_collection"})
+    response = test_client.post("/collections/existing_collection")
 
     assert response.status_code == 409
     assert response.json()["success"] is False
     assert response.json()["operation"] == "create"
     assert response.json()["details"] == "Collection already exists."
-
-
-def test_create_collection_missing_name(
-    api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
-    """Test creating a collection without providing a name."""
-    test_client, _, _ = api_client_and_mocks
-
-    response = test_client.post("/collections", json={})
-
-    assert response.status_code == 422
 
 
 def test_delete_collection(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
@@ -235,14 +224,6 @@ def test_get_version(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
         pytest.param(
             MatchboxCollectionNotFoundError,
             BackendResourceType.COLLECTION,
-            "POST",
-            "/collections/nonexistent/versions",
-            "create_version",
-            {},
-        ),
-        pytest.param(
-            MatchboxCollectionNotFoundError,
-            BackendResourceType.COLLECTION,
             "DELETE",
             "/collections/nonexistent/versions/v1",
             "delete_version",
@@ -264,7 +245,7 @@ def test_version_endpoints_404(
     method: str,
     endpoint: str,
     backend_method: str,
-    extra_params: dict[str, bool],
+    extra_params: dict[str, Any],
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
 ):
     """Test 404 responses for version endpoints when resources don't exist."""
@@ -285,15 +266,12 @@ def test_create_version(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     """Test creating a new version."""
     test_client, mock_backend, _ = api_client_and_mocks
 
-    new_version = Version(name="v2", is_default=False, is_mutable=True, resolutions={})
-    mock_backend.create_version = Mock(return_value=new_version)
+    mock_backend.create_version = Mock()
 
-    response = test_client.post(
-        "/collections/test_collection/versions", json=new_version.model_dump()
-    )
+    response = test_client.post("/collections/test_collection/versions/v2")
 
     assert response.status_code == 201
-    assert Version.model_validate(response.json())
+    assert response.json()["success"] is True
     mock_backend.create_version.assert_called_once_with(
         collection="test_collection", name="v2"
     )
@@ -306,25 +284,12 @@ def test_create_version_already_exists(
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.create_version = Mock(side_effect=MatchboxVersionAlreadyExists())
 
-    response = test_client.post(
-        "/collections/test_collection/versions", json={"name": "v1"}
-    )
+    response = test_client.post("/collections/test_collection/versions/v1")
 
     assert response.status_code == 409
     assert response.json()["success"] is False
     assert response.json()["operation"] == "create"
     assert response.json()["details"] == "Version already exists."
-
-
-def test_create_version_missing_name(
-    api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
-    """Test creating a version without providing a name."""
-    test_client, _, _ = api_client_and_mocks
-
-    response = test_client.post("/collections/test_collection/versions", json={})
-
-    assert response.status_code == 422
 
 
 def test_set_version_mutable(api_client_and_mocks: tuple[TestClient, Mock, Mock]):

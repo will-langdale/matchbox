@@ -543,7 +543,7 @@ class TestMatchboxBackend:
                 left_testkit=crn_testkit,
                 true_entities=linked.true_entities,
             )
-            self.backend.insert_resolution(
+            self.backend.create_resolution(
                 resolution=dedupe_1_testkit.model.to_resolution(),
                 path=dedupe_1_testkit.resolution_path,
             )
@@ -555,7 +555,7 @@ class TestMatchboxBackend:
                 left_testkit=duns_testkit,
                 true_entities=linked.true_entities,
             )
-            self.backend.insert_resolution(
+            self.backend.create_resolution(
                 resolution=dedupe_2_testkit.model.to_resolution(),
                 path=dedupe_2_testkit.resolution_path,
             )
@@ -570,7 +570,7 @@ class TestMatchboxBackend:
                 right_testkit=dedupe_2_testkit,
                 true_entities=linked.true_entities,
             )
-            self.backend.insert_resolution(
+            self.backend.create_resolution(
                 resolution=linker_testkit.model.to_resolution(),
                 path=linker_testkit.resolution_path,
             )
@@ -579,7 +579,7 @@ class TestMatchboxBackend:
 
             # Test can't insert duplicate
             with pytest.raises(MatchboxResolutionAlreadyExists):
-                self.backend.insert_resolution(
+                self.backend.create_resolution(
                     linker_testkit.model.to_resolution(),
                     path=linker_testkit.resolution_path,
                 )
@@ -606,7 +606,7 @@ class TestMatchboxBackend:
 
             assert self.backend.clusters.count() == 0
 
-            self.backend.insert_resolution(
+            self.backend.create_resolution(
                 crn_testkit.source.to_resolution(), path=crn_testkit.resolution_path
             )
             self.backend.insert_source_data(
@@ -640,7 +640,7 @@ class TestMatchboxBackend:
             )
 
             assert self.backend.data.count() == 0
-            self.backend.insert_resolution(
+            self.backend.create_resolution(
                 crn_testkit.source.to_resolution(), path=crn_testkit.resolution_path
             )
             self.backend.insert_source_data(
@@ -677,7 +677,7 @@ class TestMatchboxBackend:
                 update={"config": crn_source_config_2}
             )
 
-            self.backend.insert_resolution(
+            self.backend.create_resolution(
                 crn_resolution_1, path=crn_testkit.resolution_path
             )
             self.backend.insert_source_data(
@@ -685,7 +685,7 @@ class TestMatchboxBackend:
             )
 
             with pytest.raises(MatchboxResolutionAlreadyExists):
-                self.backend.insert_resolution(
+                self.backend.create_resolution(
                     crn_resolution_2, path=crn_testkit.resolution_path
                 )
 
@@ -698,14 +698,14 @@ class TestMatchboxBackend:
             crn_testkit: SourceTestkit = dag_testkit.sources.get("crn")
             duns_testkit: SourceTestkit = dag_testkit.sources.get("duns")
 
-            self.backend.insert_resolution(
+            self.backend.create_resolution(
                 crn_testkit.source.to_resolution(), path=crn_testkit.resolution_path
             )
             self.backend.insert_source_data(
                 crn_testkit.source.resolution_path, crn_testkit.data_hashes
             )
             # Different source, same data
-            self.backend.insert_resolution(
+            self.backend.create_resolution(
                 duns_testkit.source.to_resolution(), path=duns_testkit.resolution_path
             )
             self.backend.insert_source_data(
@@ -845,7 +845,7 @@ class TestMatchboxBackend:
         """Test that model results data can be inserted when clusters are shared."""
         with self.scenario(self.backend, "convergent") as dag_testkit:
             for model_testkit in dag_testkit.models.values():
-                self.backend.insert_resolution(
+                self.backend.create_resolution(
                     resolution=model_testkit.model.to_resolution(),
                     path=model_testkit.resolution_path,
                 )

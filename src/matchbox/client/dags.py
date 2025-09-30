@@ -17,7 +17,11 @@ from matchbox.common.dtos import (
     ResolutionType,
     VersionName,
 )
-from matchbox.common.exceptions import MatchboxResolutionNotFoundError
+from matchbox.common.exceptions import (
+    MatchboxCollectionNotFoundError,
+    MatchboxResolutionNotFoundError,
+    MatchboxVersionNotFoundError,
+)
 from matchbox.common.logging import logger
 
 
@@ -186,6 +190,20 @@ class DAG:
 
         return "\n".join(result)
 
+    def connect(self) -> Self:
+        """Create collection and version if they don't exist."""
+        try:
+            _handler.get_collection(self.name)
+        except MatchboxCollectionNotFoundError:
+            _handler.create_collection(self.name)
+
+        try:
+            _handler.get_version(collection=self.name, name=self.version)
+        except MatchboxVersionNotFoundError:
+            _handler.create_version(collection=self.name, name=self.version)
+
+        return self
+
     def run_and_sync(
         self,
         full_rerun: bool = False,
@@ -194,6 +212,9 @@ class DAG:
     ):
         """Run entire DAG and send results to server."""
         start_time = datetime.datetime.now()
+
+        # TODO: this is a temporary and undocumented interface
+        self.connect()
 
         # Determine order of execution steps
         root_node = self.final_step
@@ -288,7 +309,10 @@ class DAG:
             ```
         """
         matches = _handler.match(
-            targets=to_sources,
+            targets=[
+                ResolutionPath(name=target, collection=self.name, version=self.version)
+                for target in to_sources
+            ],
             source=ResolutionPath(
                 name=from_source, collection=self.name, version=self.version
             ),

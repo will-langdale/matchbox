@@ -30,6 +30,7 @@ from matchbox.common.exceptions import (
 from matchbox.common.factories.sources import source_factory, source_from_tuple
 
 
+@patch.object(DAG, "connect")
 @patch.object(Source, "run")
 @patch.object(Model, "run")
 @patch.object(Source, "sync")
@@ -39,6 +40,7 @@ def test_dag_run_and_sync(
     source_sync_mock: Mock,
     model_run_mock: Mock,
     source_run_mock: Mock,
+    dag_connect_mock: Mock,
     sqlite_warehouse: Engine,
 ):
     """A legal DAG can be built and run."""
@@ -91,6 +93,7 @@ def test_dag_run_and_sync(
     # Run DAG
     dag.run_and_sync()
 
+    assert dag_connect_mock.call_count == 1
     assert source_run_mock.call_count == 3
     assert source_sync_mock.call_count == 3
     assert model_run_mock.call_count == 3

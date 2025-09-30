@@ -93,7 +93,7 @@ def test_insert_model(
         ).model_dump()
     )
 
-    mock_backend.insert_resolution.assert_called_once_with(
+    mock_backend.create_resolution.assert_called_once_with(
         resolution=testkit.model.to_resolution(),
         path=ResolutionPath(name="test_model", collection="default", version="v1"),
     )
@@ -103,7 +103,7 @@ def test_insert_model_error(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
 ):
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.insert_resolution = Mock(side_effect=Exception("Test error"))
+    mock_backend.create_resolution = Mock(side_effect=Exception("Test error"))
     testkit = model_factory()
 
     response = test_client.post(
@@ -467,7 +467,7 @@ def test_complete_source_upload_process(
     mock_backend.get_resolution = Mock(
         return_value=source_testkit.source.to_resolution()
     )
-    mock_backend.insert_resolution = Mock(return_value=None)
+    mock_backend.create_resolution = Mock(return_value=None)
     mock_backend.insert_source_data = Mock(return_value=None)
 
     # Create test bucket
@@ -487,7 +487,7 @@ def test_complete_source_upload_process(
     assert status.name == source_testkit.name
 
     # Assert backend given the config but not yet the data
-    mock_backend.insert_resolution.assert_called_once_with(
+    mock_backend.create_resolution.assert_called_once_with(
         resolution=source_testkit.source.to_resolution(),
         path=ResolutionPath(
             name=source_testkit.name,

@@ -259,6 +259,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def create_version(self, collection: CollectionName, name: VersionName) -> Version:  # noqa: D102
         with MBDB.get_session() as session:
+            # Can raise MatchboxCollectionNotFoundError
             collection_orm = Collections.from_name(collection, session)
 
             if name in [v.name for v in collection_orm.versions]:
@@ -330,7 +331,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     # Resolution management
 
-    def insert_resolution(  # noqa: D102
+    def create_resolution(  # noqa: D102
         self, resolution: Resolution, path: ResolutionPath
     ) -> None:
         log_prefix = f"Insert {path.name}"

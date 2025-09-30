@@ -418,7 +418,7 @@ class MatchboxDBAdapter(ABC):
     # Resolution management
 
     @abstractmethod
-    def insert_resolution(self, resolution: Resolution, path: ResolutionPath) -> None:
+    def create_resolution(self, resolution: Resolution, path: ResolutionPath) -> None:
         """Writes a resolution to Matchbox.
 
         Args:

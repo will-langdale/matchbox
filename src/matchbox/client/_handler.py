@@ -32,6 +32,7 @@ from matchbox.common.dtos import (
     BackendCountableType,
     BackendParameterType,
     BackendResourceType,
+    Collection,
     CollectionName,
     LoginAttempt,
     LoginResult,
@@ -50,6 +51,7 @@ from matchbox.common.dtos import (
 )
 from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.exceptions import (
+    MatchboxCollectionNotFoundError,
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
     MatchboxEmptyServerResponse,
@@ -59,6 +61,7 @@ from matchbox.common.exceptions import (
     MatchboxUnhandledServerResponse,
     MatchboxUnparsedClientRequest,
     MatchboxUserNotFoundError,
+    MatchboxVersionNotFoundError,
 )
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.logging import logger
@@ -118,6 +121,10 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
     if res.status_code == 404:
         error = NotFoundError.model_validate(res.json())
         match error.entity:
+            case BackendResourceType.COLLECTION:
+                raise MatchboxCollectionNotFoundError(error.details)
+            case BackendResourceType.VERSION:
+                raise MatchboxVersionNotFoundError(error.details)
             case BackendResourceType.RESOLUTION:
                 raise MatchboxResolutionNotFoundError(error.details)
             case BackendResourceType.CLUSTER:
@@ -234,7 +241,7 @@ def match(
     """Match a source against a list of targets."""
     log_prefix = f"Query {source}"
     logger.debug(
-        f"{key} to {', '.join(targets)} using {resolution}",
+        f"{key} to {', '.join(str(targets))} using {resolution}",
         prefix=log_prefix,
     )
 
@@ -244,10 +251,10 @@ def match(
             {
                 "collection": resolution.collection,
                 "version": resolution.version,
-                "targets": targets,
-                "source": source,
+                "targets": [t.name for t in targets],
+                "source": source.name,
                 "key": key,
-                "resolution": resolution,
+                "resolution": resolution.name,
                 "threshold": threshold,
             }
         ),
@@ -267,15 +274,26 @@ def match(
 
 
 @http_retry
-def get_collection(name: CollectionName) -> dict[VersionName, list[Resolution]]:
+def get_collection(name: CollectionName) -> Collection:
     """Get all versions and resolutions in a collection."""
     log_prefix = f"Collection {name}"
     logger.debug("Retrieving", prefix=log_prefix)
 
     res = CLIENT.get(f"/collections/{name}")
-    return {
-        v: [Resolution.model_validate(r) for r in vs] for v, vs in res.json().items()
-    }
+    return Collection.model_validate(res.json())
+
+
+@http_retry
+def create_collection(name: CollectionName) -> ResourceOperationStatus:
+    """Create a new collection."""
+    log_prefix = f"Collection {name}"
+    logger.debug("Creating", prefix=log_prefix)
+
+    res = CLIENT.post(
+        f"/collections/{name}",
+    )
+
+    return ResourceOperationStatus.model_validate(res.json())
 
 
 @http_retry
@@ -288,6 +306,21 @@ def get_version(collection: CollectionName, name: VersionName) -> Version:
     return Version.model_validate(res.json())
 
 
+@http_retry
+def create_version(
+    collection: CollectionName, name: VersionName
+) -> ResourceOperationStatus:
+    """Create a new version."""
+    log_prefix = f"Version {name} in collection {collection}"
+    logger.debug("Creating", prefix=log_prefix)
+
+    res = CLIENT.post(
+        f"/collections/{collection}/versions/{name}",
+    )
+
+    return ResourceOperationStatus.model_validate(res.json())
+
+
 # Resolution management
 
 
@@ -295,7 +328,7 @@ def get_version(collection: CollectionName, name: VersionName) -> Version:
 def create_resolution(
     resolution: Resolution,
     path: ResolutionPath,
-) -> ResourceOperationStatus | UploadStatus:
+) -> ResourceOperationStatus:
     """Create a resolution (model or source)."""
     log_prefix = f"Resolution {path.name}"
     logger.debug("Creating", prefix=log_prefix)
@@ -431,11 +464,9 @@ def sample_for_eval(n: int, resolution: ModelResolutionPath, user_id: int) -> Ta
         params=url_params(
             {
                 "n": n,
-                "resolution": ModelResolutionPath(
-                    collection=resolution.collection,
-                    version=resolution.version,
-                    name=resolution.name,
-                ),
+                "collection": resolution.collection,
+                "version": resolution.version,
+                "resolution": resolution.name,
                 "user_id": user_id,
             }
         ),

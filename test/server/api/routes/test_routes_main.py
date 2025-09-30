@@ -76,7 +76,7 @@ def test_upload(
 
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
-    mock_backend.insert_resolution = Mock(return_value=None)
+    mock_backend.create_resolution = Mock(return_value=None)
     mock_backend.insert_source_data = Mock(return_value=None)
     s3.create_bucket(
         Bucket="test-bucket",
@@ -109,7 +109,7 @@ def test_upload(
     assert mock_tracker.update.call_args_list == [
         call(update_id, UploadStage.QUEUED),
     ]
-    mock_backend.insert_resolution.assert_not_called()  # Index happens in background
+    mock_backend.create_resolution.assert_not_called()  # Index happens in background
     mock_backend.insert_source_data.assert_not_called()
     mock_add_task.assert_called_once()  # Verify task was queued
 
