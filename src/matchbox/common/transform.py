@@ -6,9 +6,6 @@ from typing import Any, Generic, Self, TypeVar
 
 import numpy as np
 import polars as pl
-
-# import pyarrow as pa
-# import pyarrow.compute as pc
 import rustworkx as rx
 
 from matchbox.common.hash import HASH_FUNC, IntMap, hash_values
@@ -113,7 +110,7 @@ def graph_results(
     )
     right_indices = (
         probabilities.select("right_id")
-        .join(unique, left_on="left_id", right_on="unique_ids")
+        .join(unique, left_on="right_id", right_on="unique_ids")
         .to_series(1)
         .to_numpy()
     )
@@ -126,7 +123,7 @@ def graph_results(
     graph.add_nodes_from(range(n_nodes))
 
     if all_nodes is not None:
-        isolated_nodes = len(set(all_nodes) - set(unique.to_pylist()))
+        isolated_nodes = len(set(all_nodes) - set(unique["unique_ids"].to_list()))
         graph.add_nodes_from(range(isolated_nodes))
 
     edges = tuple(zip(left_indices, right_indices, strict=True))
