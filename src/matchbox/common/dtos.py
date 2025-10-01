@@ -8,17 +8,19 @@ from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
 from json import JSONDecodeError
-from typing import Self, TypeAlias
+from typing import Any, Self, TypeAlias
 
 import polars as pl
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    GetCoreSchemaHandler,
     field_serializer,
     field_validator,
     model_validator,
 )
+from pydantic_core import core_schema
 from sqlglot import errors, expressions, parse_one
 
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
@@ -211,16 +213,44 @@ class LocationType(StrEnum):
     RDBMS = "rdbms"
 
 
-CollectionName: TypeAlias = str
+class MatchboxName(str):
+    """Sub-class of string which validates names for the Matchbox DB."""
+
+    def __new__(cls, value: str):
+        """Creates new instance of validated name."""
+        if not isinstance(value, str):
+            raise TypeError("Name must be a string")
+        if not re.match(r"^[a-zA-Z0-9_.-]+$", value):
+            raise TypeError(
+                f"Name {value} invalid. It can only include "
+                "alphanumeric characters, underscores, dots or hyphens."
+            )
+
+        return super().__new__(cls, value)
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> core_schema.CoreSchema:
+        """Generate core schema for Pydantic compatibility."""
+        return core_schema.no_info_plain_validator_function(
+            cls,
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                lambda x: x, return_schema=core_schema.str_schema()
+            ),
+        )
+
+
+CollectionName: TypeAlias = MatchboxName
 """Type alias for collection names."""
 
-VersionName: TypeAlias = str
+VersionName: TypeAlias = MatchboxName
 """Type alias for version names."""
 
-SourceResolutionName: TypeAlias = str
+SourceResolutionName: TypeAlias = MatchboxName
 """Type alias for source resolution names."""
 
-ModelResolutionName: TypeAlias = str
+ModelResolutionName: TypeAlias = MatchboxName
 """Type alias for model resolution names."""
 
 ResolutionName: TypeAlias = SourceResolutionName | ModelResolutionName
@@ -599,7 +629,7 @@ class Resolution(BaseModel):
 class Version(BaseModel):
     """A version within a collection."""
 
-    name: str = Field(description="Unique name of the version")
+    name: VersionName = Field(description="Unique name of the version")
     is_default: bool = Field(
         default=False,
         description="Whether this version is the default in its collection",
@@ -611,20 +641,6 @@ class Version(BaseModel):
         default_factory=list,
         description="Dict of resolution objects by name within this version",
     )
-
-    @field_validator("name", mode="after")
-    @classmethod
-    def validate_name(cls, value: str) -> str:
-        """Ensure the name is a valid version name.
-
-        Raises:
-            ValueError: If the name is not a valid version name.
-        """
-        if not re.match(r"^[a-zA-Z0-9_.-]+$", value):
-            raise ValueError(
-                "Version names must be alphanumeric, underscore, dot or hyphen only."
-            )
-        return value
 
 
 class Collection(BaseModel):

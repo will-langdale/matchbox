@@ -30,13 +30,13 @@ class DAG:
 
     def __init__(
         self,
-        name: CollectionName,
-        version: VersionName | None = None,
+        name: str,
+        version: str | None = None,
         new: bool = False,
     ):
         """Initialises empty DAG."""
-        self.name: CollectionName = name
-        self.version: VersionName = version or "v1"
+        self.name: CollectionName = CollectionName(name)
+        self.version: VersionName = VersionName(version or "v1")
         self.nodes: dict[ResolutionName, Source | Model] = {}
         self.graph: dict[str, list[str]] = {}
 

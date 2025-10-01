@@ -1,6 +1,30 @@
 import pytest
 
-from matchbox.common.dtos import Match, ResolutionPath
+from matchbox.common.dtos import (
+    CollectionName,
+    Match,
+    ModelResolutionName,
+    ResolutionName,
+    ResolutionPath,
+    SourceResolutionName,
+    VersionName,
+)
+
+
+def test_validate_names():
+    name_classes = [
+        CollectionName,
+        ModelResolutionName,
+        ResolutionName,
+        SourceResolutionName,
+        VersionName,
+    ]
+
+    [NameClass("Valid.name_-") for NameClass in name_classes]
+
+    for NameClass in name_classes:
+        with pytest.raises(TypeError):
+            NameClass("invalid name")
 
 
 def test_match_validates():

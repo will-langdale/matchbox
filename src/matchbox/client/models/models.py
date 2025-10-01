@@ -13,10 +13,10 @@ from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.results import Results
 from matchbox.common.dtos import (
     ModelConfig,
+    ModelResolutionName,
     ModelResolutionPath,
     ModelType,
     Resolution,
-    ResolutionName,
     ResolutionPath,
     ResolutionType,
 )
@@ -165,7 +165,7 @@ class Model:
     def from_resolution(
         cls,
         resolution: Resolution,
-        resolution_name: ResolutionName,
+        resolution_name: str,
         dag: DAG,
     ) -> "Model":
         """Reconstruct from Resolution."""
@@ -174,7 +174,7 @@ class Model:
 
         return cls(
             dag=dag,
-            name=resolution_name,
+            name=ModelResolutionName(resolution_name),
             description=resolution.description,
             model_class=resolution.config.model_class,
             model_settings=resolution.config.model_settings,

@@ -26,10 +26,10 @@ from matchbox.common.dtos import (
     LocationConfig,
     LocationType,
     Resolution,
-    ResolutionName,
     ResolutionType,
     SourceConfig,
     SourceField,
+    SourceResolutionName,
     SourceResolutionPath,
 )
 from matchbox.common.exceptions import (
@@ -434,7 +434,7 @@ class Source:
     def from_resolution(
         cls,
         resolution: Resolution,
-        resolution_name: ResolutionName,
+        resolution_name: str,
         dag: DAG,
         location: Location,
     ) -> "Source":
@@ -445,7 +445,7 @@ class Source:
         return cls(
             dag=dag,
             location=location,
-            name=resolution_name,
+            name=SourceResolutionName(resolution_name),
             extract_transform=resolution.config.extract_transform,
             key_field=resolution.config.key_field,
             index_fields=resolution.config.index_fields,
