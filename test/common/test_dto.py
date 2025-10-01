@@ -1,6 +1,7 @@
 import pytest
 
 from matchbox.common.dtos import (
+    Collection,
     CollectionName,
     Match,
     ModelResolutionName,
@@ -51,3 +52,15 @@ def test_match_validates():
     # Missing source_id with cluster
     with pytest.raises(ValueError):
         Match(cluster=1, source=source_path, target=target_path)
+
+
+def test_validate_collection():
+    """Default version name needs to be within all versions."""
+    # No default
+    Collection(versions=["v1", "v2"])
+
+    # Valid default
+    Collection(default_version="v2", versions=["v1", "v2"])
+
+    with pytest.raises(ValueError):
+        Collection(default_version="v2", versions=["v1"])

@@ -648,9 +648,22 @@ class Version(BaseModel):
 class Collection(BaseModel):
     """A collection of versions."""
 
+    default_version: VersionName | None = Field(
+        default=None, description="Name of default version for this collection"
+    )
     versions: list[VersionName] = Field(
         default_factory=list, description="List of version names in this collection"
     )
+
+    @model_validator(mode="after")
+    def validate_default_version(self) -> Self:
+        """Check default version is within all versions."""
+        if self.default_version and self.default_version not in self.versions:
+            raise ValueError(
+                "The default version needs to be included in the list of all versions."
+            )
+
+        return self
 
 
 class ResourceOperationStatus(BaseModel):

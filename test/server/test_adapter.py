@@ -428,12 +428,16 @@ class TestMatchboxBackend:
             with pytest.raises(MatchboxVersionAlreadyExists):
                 self.backend.create_version("test_collection", "v1")
 
-            _ = self.backend.create_version("test_collection", "v2")
-            _ = self.backend.set_version_mutable("test_collection", "v1", False)
-            _ = self.backend.set_version_default("test_collection", "v1", True)
+            self.backend.create_version("test_collection", "v2")
+            self.backend.set_version_mutable("test_collection", "v1", False)
+            self.backend.set_version_default("test_collection", "v1", True)
+
+            # Default version info also available on collection DTO
+            collection = self.backend.get_collection("test_collection")
+            assert collection.default_version == "v1"
 
             # Setting v2 as default should automatically unset v1 as default
-            _ = self.backend.set_version_default("test_collection", "v2", True)
+            self.backend.set_version_default("test_collection", "v2", True)
 
             v1 = self.backend.get_version("test_collection", "v1")
             v2 = self.backend.get_version("test_collection", "v2")

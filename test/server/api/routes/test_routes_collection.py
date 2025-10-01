@@ -40,7 +40,7 @@ def test_get_collection(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     test_client, mock_backend, _ = api_client_and_mocks
 
     # Mock collection data with versions and resolutions
-    collection = Collection(versions=["v1", "v2"])
+    collection = Collection(default_version="v1", versions=["v1", "v2"])
 
     mock_backend.get_collection = Mock(return_value=collection)
 
