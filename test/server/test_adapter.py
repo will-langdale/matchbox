@@ -429,6 +429,10 @@ class TestMatchboxBackend:
                 self.backend.create_version("test_collection", "v1")
 
             self.backend.create_version("test_collection", "v2")
+
+            with pytest.raises(ValueError, match="mutable"):
+                self.backend.set_version_default("test_collection", "v1", True)
+
             self.backend.set_version_mutable("test_collection", "v1", False)
             self.backend.set_version_default("test_collection", "v1", True)
 
@@ -437,6 +441,7 @@ class TestMatchboxBackend:
             assert collection.default_version == "v1"
 
             # Setting v2 as default should automatically unset v1 as default
+            self.backend.set_version_mutable("test_collection", "v2", False)
             self.backend.set_version_default("test_collection", "v2", True)
 
             v1 = self.backend.get_version("test_collection", "v1")
@@ -445,7 +450,7 @@ class TestMatchboxBackend:
             assert v1.is_mutable is False
             assert v1.is_default is False
 
-            assert v2.is_mutable is True
+            assert v2.is_mutable is False
             assert v2.is_default is True
 
             self.backend.delete_version("test_collection", "v1", certain=True)

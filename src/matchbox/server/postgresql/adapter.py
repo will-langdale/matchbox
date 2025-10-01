@@ -292,6 +292,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
         with MBDB.get_session() as session:
             version_orm = Versions.from_name(collection, name, session)
             if default:
+                if version_orm.is_mutable:
+                    raise ValueError("Cannot set as default a mutable version")
                 # Unset any existing default version for the collection
                 session.execute(
                     update(Versions)
