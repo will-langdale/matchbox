@@ -308,7 +308,6 @@ def set_data(
     log_prefix = f"Resolution {name}"
     logger.debug("Uploading results", prefix=log_prefix)
 
-    # Data may be Polars, needs to be converted to pyarrow for transfer
     data_arrow = data.to_arrow() if isinstance(data, pl.DataFrame) else data
     buffer = table_to_buffer(table=data_arrow)
 
@@ -435,7 +434,6 @@ def download_eval_data() -> tuple[Table, Table]:
     check_schema(SCHEMA_JUDGEMENTS, judgements.schema)
     check_schema(SCHEMA_CLUSTER_EXPANSION, expansion.schema)
 
-    # Convert to Polars so `Results.root_leaf` can run
     return pl.from_arrow(judgements), pl.from_arrow(expansion)
 
 
