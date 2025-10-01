@@ -30,6 +30,14 @@ class MatchboxException(Exception):
 # -- Common data objects exceptions --
 
 
+class MatchboxNameError(MatchboxException):
+    """Name did not pass validation."""
+
+    def __init__(self, message: str):
+        """Initialise the exception."""
+        super().__init__(message)
+
+
 class MatchboxArrowSchemaMismatch(MatchboxException):
     """Arrow schema mismatch."""
 

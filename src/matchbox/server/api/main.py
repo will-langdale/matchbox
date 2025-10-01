@@ -22,11 +22,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendCountableType,
+    BackendParameterType,
     BackendResourceType,
     BackendUploadType,
     CollectionName,
     CountResult,
     CRUDOperation,
+    InvalidParameterError,
     LoginAttempt,
     LoginResult,
     Match,
@@ -44,6 +46,7 @@ from matchbox.common.dtos import (
 from matchbox.common.exceptions import (
     MatchboxCollectionNotFoundError,
     MatchboxDeletionNotConfirmed,
+    MatchboxNameError,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
     MatchboxVersionNotFoundError,
@@ -102,6 +105,20 @@ async def version_not_found_handler(
     ).model_dump()
     return JSONResponse(
         status_code=404,
+        content=jsonable_encoder(detail),
+    )
+
+
+@app.exception_handler(MatchboxNameError)
+async def invalid_name_handler(
+    request: Request, exc: MatchboxResolutionNotFoundError
+) -> JSONResponse:
+    """Handle errors for invalid names."""
+    detail = InvalidParameterError(
+        details=str(exc), parameter=BackendParameterType.NAME
+    ).model_dump()
+    return JSONResponse(
+        status_code=422,
         content=jsonable_encoder(detail),
     )
 

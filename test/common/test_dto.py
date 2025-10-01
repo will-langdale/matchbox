@@ -9,6 +9,7 @@ from matchbox.common.dtos import (
     SourceResolutionName,
     VersionName,
 )
+from matchbox.common.exceptions import MatchboxNameError
 
 
 def test_validate_names():
@@ -23,7 +24,7 @@ def test_validate_names():
     [NameClass("Valid.name_-") for NameClass in name_classes]
 
     for NameClass in name_classes:
-        with pytest.raises(TypeError):
+        with pytest.raises(MatchboxNameError):
             NameClass("invalid name")
 
 

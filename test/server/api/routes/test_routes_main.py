@@ -12,7 +12,9 @@ from matchbox.client.authorisation import (
 )
 from matchbox.common.arrow import SCHEMA_QUERY, table_to_buffer
 from matchbox.common.dtos import (
+    BackendParameterType,
     BackendResourceType,
+    InvalidParameterError,
     LoginAttempt,
     LoginResult,
     Match,
@@ -470,3 +472,16 @@ def test_api_key_authorisation(api_client_and_mocks: tuple[TestClient, Mock, Moc
         response = method(url)
         assert response.status_code == 401
         assert response.content == b'"JWT required but not provided."'
+
+
+#  Error handling
+
+
+def test_handles_name_errors(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+    test_client, _, _ = api_client_and_mocks
+
+    response = test_client.get("/collections/companies,")
+    assert response.status_code == 422
+    error = InvalidParameterError.model_validate(response.json())
+    assert error.parameter == BackendParameterType.NAME
+    assert "companies," in error.details

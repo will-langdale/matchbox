@@ -24,6 +24,7 @@ from pydantic_core import core_schema
 from sqlglot import errors, expressions, parse_one
 
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
+from matchbox.common.exceptions import MatchboxNameError
 
 
 class DataTypes(StrEnum):
@@ -179,9 +180,10 @@ class BackendResourceType(StrEnum):
 
 
 class BackendParameterType(StrEnum):
-    """Enumeration of parameters passable to the API."""
+    """Enumeration of parameter types passable to the API."""
 
     SAMPLE_SIZE = "sample_size"
+    NAME = "name"
 
 
 class BackendUploadType(StrEnum):
@@ -219,10 +221,10 @@ class MatchboxName(str):
     def __new__(cls, value: str):
         """Creates new instance of validated name."""
         if not isinstance(value, str):
-            raise TypeError("Name must be a string")
+            raise MatchboxNameError("Name must be a string")
         if not re.match(r"^[a-zA-Z0-9_.-]+$", value):
-            raise TypeError(
-                f"Name {value} invalid. It can only include "
+            raise MatchboxNameError(
+                f"Name '{value}' is invalid. It can only include "
                 "alphanumeric characters, underscores, dots or hyphens."
             )
 
@@ -811,4 +813,4 @@ class InvalidParameterError(BaseModel):
     """API error for a custom 422 status code."""
 
     details: str
-    parameter: BackendParameterType
+    parameter: BackendParameterType | None
