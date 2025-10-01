@@ -419,18 +419,9 @@ def generate_dummy_probabilities(
     # Convert to arrays
     lefts, rights, probs = zip(*all_edges, strict=True)
 
-    # Create PyArrow arrays
-    left_array = pa.array(lefts, type=pa.uint64())
-    right_array = pa.array(rights, type=pa.uint64())
-    prob_array = pa.array(probs, type=pa.uint8())
-
-    # TODO: provisional workaround as constructing using Polars does not work
-    # InvalidOperation(ErrString("nested objects are not allowed"))
-    return pl.from_arrow(
-        pa.table(
-            [left_array, right_array, prob_array],
-            names=["left_id", "right_id", "probability"],
-        )
+    return pl.DataFrame(
+        {"left_id": lefts, "right_id": rights, "probability": probs},
+        schema={"left_id": pl.UInt64, "right_id": pl.UInt64, "probability": pl.UInt8},
     )
 
 
