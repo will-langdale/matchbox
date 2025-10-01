@@ -486,4 +486,4 @@ def test_no_matching_entities_linking(
     )
 
     assert not identical
-    assert results.probabilities.num_rows == 0
+    assert len(results.probabilities) == 0

@@ -1,5 +1,4 @@
 import polars as pl
-import pyarrow as pa
 import pytest
 
 from matchbox.common.arrow import SCHEMA_CLUSTER_EXPANSION, SCHEMA_JUDGEMENTS
@@ -21,9 +20,9 @@ def test_judgement_validation():
 def test_precision_recall_fails():
     """Test instances where PR computation raises."""
     # No judgements
-    model = pa.Table.from_pylist([{"root": 12, "leaf": 1}, {"root": 12, "leaf": 2}])
-    empty_judgements = pa.Table.from_pylist([], schema=SCHEMA_JUDGEMENTS)
-    empty_expansion = pa.Table.from_pylist([], schema=SCHEMA_CLUSTER_EXPANSION)
+    model = pl.DataFrame([{"root": 12, "leaf": 1}, {"root": 12, "leaf": 2}])
+    empty_judgements = pl.DataFrame([], schema=pl.Schema(SCHEMA_JUDGEMENTS))
+    empty_expansion = pl.DataFrame([], schema=pl.Schema(SCHEMA_CLUSTER_EXPANSION))
 
     with pytest.raises(ValueError, match="Judgements data"):
         precision_recall(
@@ -33,9 +32,9 @@ def test_precision_recall_fails():
         )
 
     # No model root-leaf
-    empty_model = pa.Table.from_pylist([])
-    judgements = pa.Table.from_pylist([{"shown": 12, "endorsed": 12}])
-    expansion = pa.Table.from_pylist([{"root": 12, "leaves": [1, 2]}])
+    empty_model = pl.DataFrame([])
+    judgements = pl.DataFrame([{"shown": 12, "endorsed": 12}])
+    expansion = pl.DataFrame([{"root": 12, "leaves": [1, 2]}])
 
     with pytest.raises(ValueError, match="Model data"):
         precision_recall(
@@ -48,7 +47,7 @@ def test_precision_recall():
     # In this test, one-digit cluster IDs are for source clusters.
     # Multiple-digit cluster IDs decompose to source cluster IDs.
     # For example, 123 maps to 1,2,3
-    model1 = pa.Table.from_pylist(
+    model1 = pl.DataFrame(
         [
             # (1,2,3)
             {"root": 123, "leaf": 1},
@@ -66,7 +65,7 @@ def test_precision_recall():
         ]
     )
 
-    model2 = pa.Table.from_pylist(
+    model2 = pl.DataFrame(
         [
             # (1,3)
             {"root": 13, "leaf": 1},
@@ -83,7 +82,7 @@ def test_precision_recall():
         ]
     )
 
-    judgement_cluster_expansion = pa.Table.from_pylist(
+    judgement_cluster_expansion = pl.DataFrame(
         [
             {"root": 123, "leaves": [1, 2, 3]},
             {"root": 67, "leaves": [6, 7]},
@@ -92,7 +91,7 @@ def test_precision_recall():
         ]
     )
 
-    judgements = pa.Table.from_pylist(
+    judgements = pl.DataFrame(
         [
             # Ambiguous but more positive than negative
             {"shown": 123, "endorsed": 12},

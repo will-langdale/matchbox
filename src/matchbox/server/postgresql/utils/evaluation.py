@@ -99,7 +99,7 @@ def insert_judgement(judgement: Judgement):
             session.commit()
 
 
-def get_judgements() -> tuple[Table, Table]:
+def get_judgements() -> tuple[pl.DataFrame, pl.DataFrame]:
     """Get all judgements from server."""
     judgements_stmt = select(
         EvalJudgements.user_id,
@@ -116,8 +116,8 @@ def get_judgements() -> tuple[Table, Table]:
 
         if not len(judgements):
             return (
-                pa.Table.from_pylist([], schema=SCHEMA_JUDGEMENTS),
-                pa.Table.from_pylist([], schema=SCHEMA_CLUSTER_EXPANSION),
+                pl.DataFrame([], schema=pl.Schema(SCHEMA_JUDGEMENTS)),
+                pl.DataFrame([], schema=pl.Schema(SCHEMA_CLUSTER_EXPANSION)),
             )
 
         shown_clusters = set(judgements["shown"].to_pylist())
@@ -218,9 +218,9 @@ def sample(n: int, resolution: ModelResolutionName, user_id: int):
 
     # Return early if nothing to sample from
     if not len(to_sample):
-        return Table.from_pydict(
+        return pl.DataFrame(
             {"root": [], "leaf": [], "key": [], "source": []},
-            schema=SCHEMA_EVAL_SAMPLES,
+            schema=pl.Schema(SCHEMA_EVAL_SAMPLES),
         )
 
     # Sample proportionally to distance from the truth, and get 1D array
@@ -281,7 +281,9 @@ def sample(n: int, resolution: ModelResolutionName, user_id: int):
 
 
 def compare_models(
-    resolutions: list[ModelResolutionName], judgements: Table, expansion: Table
+    resolutions: list[ModelResolutionName],
+    judgements: pl.DataFrame,
+    expansion: pl.DataFrame,
 ):
     """Compare models on the basis of precision and recall."""
 
@@ -304,7 +306,7 @@ def compare_models(
                 {"root_id": "root", "leaf_id": "leaf"}
             ).select(["root", "leaf"])
 
-    models_root_leaf = [get_root_leaf(res) for res in resolutions]
+    models_root_leaf = [pl.from_arrow(get_root_leaf(res)) for res in resolutions]
 
     pr_values = precision_recall(
         models_root_leaf=models_root_leaf,

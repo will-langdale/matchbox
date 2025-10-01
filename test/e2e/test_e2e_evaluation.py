@@ -1,3 +1,4 @@
+import polars as pl
 import pytest
 from httpx import Client
 from matplotlib.figure import Figure
@@ -161,8 +162,8 @@ class TestE2EModelEvaluation:
 
         # We can download judgements locally
         eval_data = EvalData()
-        assert SCHEMA_JUDGEMENTS.equals(eval_data.judgements.schema)
-        assert SCHEMA_CLUSTER_EXPANSION.equals(eval_data.expansion.schema)
+        assert pl.Schema(SCHEMA_JUDGEMENTS) == eval_data.judgements.schema
+        assert pl.Schema(SCHEMA_CLUSTER_EXPANSION) == eval_data.expansion.schema
 
         # We can evaluate local model with cached judgements
         assert isinstance(eval_data.pr_curve(results), Figure)

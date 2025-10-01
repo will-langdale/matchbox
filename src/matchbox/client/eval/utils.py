@@ -128,11 +128,7 @@ class EvalData:
 
         threshold = int(threshold * 100)
 
-        root_leaf = (
-            results.root_leaf()
-            .rename({"root_id": "root", "leaf_id": "leaf"})
-            .to_arrow()
-        )
+        root_leaf = results.root_leaf().rename({"root_id": "root", "leaf_id": "leaf"})
         return precision_recall([root_leaf], self.judgements, self.expansion)[0]
 
     def pr_curve(self, results: Results) -> Figure:
@@ -140,7 +136,7 @@ class EvalData:
         all_p = []
         all_r = []
 
-        probs = pl.from_arrow(results.probabilities)
+        probs = results.probabilities
         thresholds = probs.select("probability").unique().to_series()
         for i, t in enumerate(sorted(thresholds)):
             float_thresh = t / 100

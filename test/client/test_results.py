@@ -1,7 +1,6 @@
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
-from pyarrow import Table
 
 from matchbox.client.results import Results
 
@@ -33,7 +32,7 @@ def test_clusters_and_root_leaf():
         ]
     )
 
-    probabilities = Table.from_pylist(
+    probabilities = pl.DataFrame(
         [
             # simple left-right merge
             {"left_id": 4, "right_id": 5, "probability": 100},
@@ -45,12 +44,12 @@ def test_clusters_and_root_leaf():
 
     results = Results(
         probabilities=probabilities,
-        left_root_leaf=left_root_leaf.to_arrow(),
-        right_root_leaf=right_root_leaf.to_arrow(),
+        left_root_leaf=left_root_leaf,
+        right_root_leaf=right_root_leaf,
     )
 
     # Check two ways of representing clusters
-    clusters = pl.from_arrow(results.clusters)
+    clusters = results.clusters
     grouped_children = {
         tuple(sorted(group))
         for group in clusters.group_by("parent").agg("child")["child"]
@@ -68,11 +67,9 @@ def test_clusters_and_root_leaf():
 
     # To check edge cases, look at no probabilities returned
     empty_results = Results(
-        probabilities=Table.from_pydict(
-            {"left_id": [], "right_id": [], "probability": []}
-        ),
-        left_root_leaf=left_root_leaf.to_arrow(),
-        right_root_leaf=right_root_leaf.to_arrow(),
+        probabilities=pl.DataFrame({"left_id": [], "right_id": [], "probability": []}),
+        left_root_leaf=left_root_leaf,
+        right_root_leaf=right_root_leaf,
     )
 
     assert len(empty_results.clusters) == 0
