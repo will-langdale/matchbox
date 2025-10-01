@@ -380,7 +380,6 @@ class TestMatchboxBackend:
             # Create new collection and verify its initial properties
             test_collection_created = self.backend.create_collection("test_collection")
 
-            assert test_collection_created.name == "test_collection"
             assert test_collection_created.versions == {}  # No versions yet
 
             collections_post = self.backend.list_collections()

@@ -630,24 +630,9 @@ class Version(BaseModel):
 class Collection(BaseModel):
     """A collection of versions."""
 
-    name: str = Field(description="Unique name of the collection")
     versions: dict[VersionName, Version] = Field(
         default_factory=dict, description="Dictionary of versions in this collection"
     )
-
-    @field_validator("name", mode="after")
-    @classmethod
-    def validate_name(cls, value: str) -> str:
-        """Ensure the name is a valid collection name.
-
-        Raises:
-            ValueError: If the name is not a valid collection name.
-        """
-        if not re.match(r"^[a-zA-Z0-9_.-]+$", value):
-            raise ValueError(
-                "Collection names must be alphanumeric, underscore, dot or hyphen only."
-            )
-        return value
 
 
 class ResourceOperationStatus(BaseModel):

@@ -107,10 +107,7 @@ class Collections(CountMixin, MBDB.MatchboxBase):
         if self.versions:
             versions = {version.name: version.to_dto() for version in self.versions}
 
-        return CommonCollection(
-            name=self.name,
-            versions=versions,
-        )
+        return CommonCollection(versions=versions)
 
 
 class Versions(CountMixin, MBDB.MatchboxBase):

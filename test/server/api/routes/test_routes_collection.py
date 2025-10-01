@@ -44,7 +44,6 @@ def test_get_collection(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     source = source_factory().source
     model = model_factory().model
     collection = Collection(
-        name="test_collection",
         versions={
             "v1": Version(
                 name="v1",
