@@ -4,7 +4,8 @@ from itertools import chain, combinations
 from typing import TypeAlias
 
 import polars as pl
-from pyarrow import Table
+
+# from pyarrow import Table
 from pydantic import BaseModel, Field, field_validator
 
 from matchbox.common.graph import ModelResolutionName
@@ -39,7 +40,9 @@ class Judgement(BaseModel):
 
 
 def precision_recall(
-    models_root_leaf: list[Table], judgements: Table, expansion: Table
+    models_root_leaf: list[pl.DataFrame],
+    judgements: pl.DataFrame,
+    expansion: pl.DataFrame,
 ) -> list[PrecisionRecall]:
     """From models and eval data, compute scores inspired by precision-recall.
 
@@ -78,10 +81,9 @@ def precision_recall(
     for root_leaf in models_root_leaf:
         if not len(root_leaf):
             raise ValueError("Model data cannot be empty.")
-        leaves_per_set.append(set(root_leaf["leaf"].to_pylist()))
+        leaves_per_set.append(set(root_leaf["leaf"].to_list()))
         clusters = (
-            pl.from_arrow(root_leaf)
-            .group_by("root")
+            root_leaf.group_by("root")
             .agg(pl.col("leaf").alias("leaves"))
             .select("leaves")
             .to_series()
@@ -93,7 +95,7 @@ def precision_recall(
         pairs_per_model.append(model_pairs)
 
     validation_pairs, validation_net_count, validation_leaves = process_judgements(
-        pl.from_arrow(judgements), pl.from_arrow(expansion)
+        judgements, expansion
     )
     leaves_per_set.append(validation_leaves)
 

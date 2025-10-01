@@ -435,7 +435,8 @@ def download_eval_data() -> tuple[Table, Table]:
     check_schema(SCHEMA_JUDGEMENTS, judgements.schema)
     check_schema(SCHEMA_CLUSTER_EXPANSION, expansion.schema)
 
-    return judgements, expansion
+    # Convert to Polars so `Results.root_leaf` can run
+    return pl.from_arrow(judgements), pl.from_arrow(expansion)
 
 
 # Admin
