@@ -227,8 +227,10 @@ def test_model_pipeline_with_dummy_methodology(
 
     # Test with imperfect methodology
     random_probabilities = generate_dummy_probabilities(
-        left_values=model_entities[0],
-        right_values=model_entities[1],
+        left_values=tuple(c.id for c in model_entities[0]),
+        right_values=tuple(c.id for c in model_entities[1])
+        if model_entities[1] is not None
+        else None,
         prob_range=(0.0, 1.0),
         num_components=len(all_true_sources) - 1,  # Intentionally wrong
     )
