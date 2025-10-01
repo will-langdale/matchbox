@@ -4,8 +4,6 @@ from itertools import chain, combinations
 from typing import TypeAlias
 
 import polars as pl
-
-# from pyarrow import Table
 from pydantic import BaseModel, Field, field_validator
 
 from matchbox.common.graph import ModelResolutionName
