@@ -29,6 +29,7 @@ from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxNoJudgements,
     MatchboxVersionAlreadyExists,
+    MatchboxVersionNotWriteable,
 )
 from matchbox.common.logging import logger
 from matchbox.server.base import MatchboxDBAdapter, MatchboxSnapshot
@@ -334,9 +335,17 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     # Resolution management
 
+    def _check_writeable(self, path: ResolutionPath):
+        version = Versions.from_name(name=path.version, collection=path.collection)
+        if not version.is_mutable:
+            raise MatchboxVersionNotWriteable(
+                f"Version {path.version} in collection {path.collection} is immutable"
+            )
+
     def create_resolution(  # noqa: D102
         self, resolution: Resolution, path: ResolutionPath
     ) -> None:
+        self._check_writeable(path)
         log_prefix = f"Insert {path.name}"
         with MBDB.get_session() as session:
             resolution_orm = Resolutions.from_dto(
@@ -358,6 +367,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             return resolution.to_dto()
 
     def delete_resolution(self, path: ResolutionPath, certain: bool) -> None:  # noqa: D102
+        self._check_writeable(path)
         with MBDB.get_session() as session:
             resolution = Resolutions.from_path(path=path, session=session)
             if certain:
@@ -380,11 +390,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def insert_source_data(  # noqa: D102
         self, path: SourceResolutionPath, data_hashes: Table
     ) -> None:
+        self._check_writeable(path)
         insert_hashes(
             path=path, data_hashes=data_hashes, batch_size=self.settings.batch_size
         )
 
     def insert_model_data(self, path: ModelResolutionPath, results: Table) -> None:  # noqa: D102
+        self._check_writeable(path)
         insert_results(path=path, results=results, batch_size=self.settings.batch_size)
 
     def get_model_data(self, path: ModelResolutionPath) -> Table:  # noqa: D102
@@ -405,6 +417,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def set_model_truth(self, path: ModelResolutionPath, truth: int) -> None:  # noqa: D102
         with MBDB.get_session() as session:
+            self._check_writeable(path)
             resolution = Resolutions.from_path(
                 path=path, res_type=ResolutionType.MODEL, session=session
             )

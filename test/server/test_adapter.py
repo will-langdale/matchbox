@@ -32,6 +32,7 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxVersionAlreadyExists,
     MatchboxVersionNotFoundError,
+    MatchboxVersionNotWriteable,
 )
 from matchbox.common.factories.entities import (
     SourceEntity,
@@ -461,6 +462,45 @@ class TestMatchboxBackend:
 
             with pytest.raises(MatchboxVersionNotFoundError):
                 self.backend.delete_version("test_collection", "v1", certain=False)
+
+    def test_version_immutable(self):
+        """Nothing in an immutable version can be changed."""
+        with self.scenario(self.backend, "dedupe") as dag_testkit:
+            source_testkit = dag_testkit.sources["crn"]
+            model_testkit = dag_testkit.models["naive_test_crn"]
+
+            self.backend.set_version_mutable(
+                collection=dag_testkit.dag.name,
+                name=dag_testkit.dag.version,
+                mutable=False,
+            )
+
+            with pytest.raises(MatchboxVersionNotWriteable):
+                self.backend.create_resolution(
+                    path=source_testkit.resolution_path.model_copy(
+                        update={"name": "new_source"}
+                    ),
+                    resolution=source_testkit.source.to_resolution(),
+                )
+
+            with pytest.raises(MatchboxVersionNotWriteable):
+                self.backend.delete_resolution(
+                    source_testkit.resolution_path, certain=True
+                )
+
+            with pytest.raises(MatchboxVersionNotWriteable):
+                self.backend.insert_source_data(
+                    source_testkit.resolution_path, source_testkit.data_hashes
+                )
+
+            with pytest.raises(MatchboxVersionNotWriteable):
+                self.backend.insert_model_data(
+                    model_testkit.resolution_path,
+                    model_testkit.probabilities.to_arrow(),
+                )
+
+            with pytest.raises(MatchboxVersionNotWriteable):
+                self.backend.set_model_truth(model_testkit.resolution_path, 50)
 
     # Resolution management
 

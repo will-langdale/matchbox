@@ -301,6 +301,10 @@ class MatchboxVersionAlreadyExists(MatchboxException):
     """Version already exists."""
 
 
+class MatchboxVersionNotWriteable(MatchboxException):
+    """Version is not mutable."""
+
+
 class MatchboxTooManySamplesRequested(MatchboxException):
     """Too many samples have been requested from the server."""
 
