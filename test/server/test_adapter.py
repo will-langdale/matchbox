@@ -854,12 +854,12 @@ class TestMatchboxBackend:
         with self.scenario(self.backend, "convergent") as dag_testkit:
             for model_testkit in dag_testkit.models.values():
                 self.backend.create_resolution(
-                    resolution=model_testkit.model.to_resolution(),
                     path=model_testkit.resolution_path,
+                    resolution=model_testkit.model.to_resolution(),
                 )
                 self.backend.insert_model_data(
                     path=model_testkit.resolution_path,
-                    results=model_testkit.probabilities,
+                    results=model_testkit.probabilities.to_arrow(),
                 )
 
     def test_model_truth(self):

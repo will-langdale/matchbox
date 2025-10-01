@@ -139,7 +139,7 @@ def test_complete_model_upload_process(
 
     # Set up the mock to return the actual model metadata and data
     mock_backend.get_resolution = Mock(return_value=testkit.model.to_resolution())
-    mock_backend.get_model_data = Mock(return_value=testkit.probabilities)
+    mock_backend.get_model_data = Mock(return_value=testkit.probabilities.to_arrow())
 
     collection = testkit.resolution_path.collection
     version = testkit.resolution_path.version
@@ -167,7 +167,7 @@ def test_complete_model_upload_process(
         files={
             "file": (
                 "results.parquet",
-                table_to_buffer(testkit.probabilities),
+                table_to_buffer(testkit.probabilities.to_arrow()),
                 "application/octet-stream",
             ),
         },
@@ -209,7 +209,7 @@ def test_complete_model_upload_process(
         call_args[1]["path"] == testkit.resolution_path
     )  # Check model resolution name matches
     assert call_args[1]["results"].equals(
-        testkit.probabilities
+        testkit.probabilities.to_arrow()
     )  # Check results data matches
 
     # Step 6: Verify we can retrieve the results
@@ -275,7 +275,7 @@ def test_get_results(
 ):
     testkit = model_factory()
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_model_data = Mock(return_value=testkit.probabilities)
+    mock_backend.get_model_data = Mock(return_value=testkit.probabilities.to_arrow())
 
     response = test_client.get(
         f"/collections/default/versions/v1/resolutions/{testkit.model.name}/data"

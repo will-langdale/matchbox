@@ -165,7 +165,19 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
     assert dag.graph["d_foo"] == [foo.name]
 
 
-def test_dag_disconnected(sqlite_warehouse: Engine):
+@patch.object(DAG, "connect")
+@patch.object(Source, "run")
+@patch.object(Model, "run")
+@patch.object(Source, "sync")
+@patch.object(Model, "sync")
+def test_dag_disconnected(
+    model_sync_mock: Mock,
+    source_sync_mock: Mock,
+    model_run_mock: Mock,
+    source_run_mock: Mock,
+    dag_connect_mock: Mock,
+    sqlite_warehouse: Engine,
+):
     """Nodes cannot be disconnected."""
     dag = DAG("collection")
 

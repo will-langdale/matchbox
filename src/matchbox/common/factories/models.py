@@ -75,12 +75,12 @@ add_model_class(MockDeduper)
 add_model_class(MockLinker)
 
 
-def component_report(all_nodes: list[Any], table: pa.Table) -> dict:
+def component_report(all_nodes: list[Any], table: pl.DataFrame) -> dict:
     """Fast reporting on connected components using rustworkx.
 
     Args:
         all_nodes: list of identities of inputs being matched
-        table: PyArrow table with 'left', 'right' columns
+        table: Polars dataframe with 'left', 'right' columns
 
     Returns:
         dictionary containing basic component statistics
@@ -251,7 +251,7 @@ def generate_dummy_probabilities(
     num_components: int,
     total_rows: int | None = None,
     seed: int = 42,
-) -> pa.Table:
+) -> pl.DataFrame:
     """Generate dummy Arrow probabilities data with guaranteed isolated components.
 
     While much of the factory system uses generate_entity_probabilities, this function
@@ -268,7 +268,7 @@ def generate_dummy_probabilities(
         seed: Random seed for reproducibility
 
     Returns:
-        PyArrow Table with 'left_id', 'right_id', and 'probability' columns
+        Polars dataframe with 'left_id', 'right_id', and 'probability' columns
     """
     # Validate inputs
     deduplicate = False
@@ -418,14 +418,9 @@ def generate_dummy_probabilities(
     # Convert to arrays
     lefts, rights, probs = zip(*all_edges, strict=True)
 
-    # Create PyArrow arrays
-    left_array = pa.array(lefts, type=pa.uint64())
-    right_array = pa.array(rights, type=pa.uint64())
-    prob_array = pa.array(probs, type=pa.uint8())
-
-    return pa.table(
-        [left_array, right_array, prob_array],
-        names=["left_id", "right_id", "probability"],
+    return pl.DataFrame(
+        {"left_id": lefts, "right_id": rights, "probability": probs},
+        schema={"left_id": pl.UInt64, "right_id": pl.UInt64, "probability": pl.UInt8},
     )
 
 
@@ -435,7 +430,7 @@ def generate_entity_probabilities(
     source_entities: frozenset[SourceEntity],
     prob_range: tuple[float, float] = (0.8, 1.0),
     seed: int = 42,
-) -> pa.Table:
+) -> pl.DataFrame:
     """Generate probabilities that will recover entity relationships.
 
     Compares ClusterEntity objects against ground truth SourceEntities by checking
@@ -529,27 +524,9 @@ def generate_entity_probabilities(
 
     # If no edges were generated, return empty table with correct schema
     if not edges:
-        return pa.table(
-            [
-                pa.array([], type=pa.uint64()),
-                pa.array([], type=pa.uint64()),
-                pa.array([], type=pa.uint8()),
-            ],
-            schema=SCHEMA_RESULTS,
-        )
+        return pl.DataFrame(schema=pl.Schema(SCHEMA_RESULTS))
 
-    # Convert to arrays
-    lefts, rights, probs = zip(*edges, strict=False)
-
-    # Create PyArrow arrays
-    left_array = pa.array(lefts, type=pa.uint64())
-    right_array = pa.array(rights, type=pa.uint64())
-    prob_array = pa.array(probs, type=pa.uint8())
-
-    return pa.table(
-        [left_array, right_array, prob_array],
-        schema=SCHEMA_RESULTS,
-    )
+    return pl.DataFrame(edges, orient="row", schema=pl.Schema(SCHEMA_RESULTS))
 
 
 class ModelTestkit(BaseModel):
@@ -564,7 +541,7 @@ class ModelTestkit(BaseModel):
     right_data: pa.Table | None
     right_query: Query | None
     right_clusters: dict[int, ClusterEntity] | None
-    probabilities: pa.Table
+    probabilities: pl.DataFrame
 
     _entities: tuple[ClusterEntity, ...]
     _threshold: int

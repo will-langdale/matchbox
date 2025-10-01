@@ -137,11 +137,7 @@ class EvalData:
 
         threshold = int(threshold * 100)
 
-        root_leaf = (
-            results.root_leaf()
-            .rename({"root_id": "root", "leaf_id": "leaf"})
-            .to_arrow()
-        )
+        root_leaf = results.root_leaf().rename({"root_id": "root", "leaf_id": "leaf"})
         return precision_recall([root_leaf], self.judgements, self.expansion)[0]
 
 

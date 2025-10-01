@@ -244,8 +244,8 @@ class Model:
         if for_validation:
             self.results = Results(
                 probabilities=results,
-                left_root_leaf=self.left_query.leaf_id.to_arrow(),
-                right_root_leaf=self.right_query.leaf_id.to_arrow()
+                left_root_leaf=self.left_query.leaf_id,
+                right_root_leaf=self.right_query.leaf_id
                 if right_df is not None
                 else None,
             )

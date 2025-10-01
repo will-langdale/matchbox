@@ -8,6 +8,7 @@ from importlib.metadata import version
 from io import BytesIO
 
 import httpx
+import polars as pl
 from pyarrow import Table
 from pyarrow.parquet import read_table
 from tenacity import (
@@ -358,13 +359,14 @@ def get_resolution(
 
 @http_retry
 def set_data(
-    path: ResolutionPath, data: Table, validate_type: ResolutionType
+    path: ResolutionPath, data: pl.DataFrame | Table, validate_type: ResolutionType
 ) -> UploadStatus:
     """Upload source hashes or model results to server."""
     log_prefix = f"Resolution {path}"
     logger.debug("Uploading results", prefix=log_prefix)
 
-    buffer = table_to_buffer(table=data)
+    data_arrow = data.to_arrow() if isinstance(data, pl.DataFrame) else data
+    buffer = table_to_buffer(table=data_arrow)
 
     # Initialise upload
     metadata_res = CLIENT.post(
@@ -524,7 +526,7 @@ def download_eval_data() -> tuple[Table, Table]:
     check_schema(SCHEMA_JUDGEMENTS, judgements.schema)
     check_schema(SCHEMA_CLUSTER_EXPANSION, expansion.schema)
 
-    return judgements, expansion
+    return pl.from_arrow(judgements), pl.from_arrow(expansion)
 
 
 # Admin

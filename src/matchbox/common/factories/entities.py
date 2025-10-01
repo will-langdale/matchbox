@@ -522,7 +522,7 @@ def generate_entities(
 
 
 def probabilities_to_results_entities(
-    probabilities: pa.Table,
+    probabilities: pl.DataFrame,
     left_clusters: tuple[ClusterEntity, ...],
     right_clusters: tuple[ClusterEntity, ...] | None = None,
     threshold: float | int = 0,
@@ -548,7 +548,7 @@ def probabilities_to_results_entities(
             djs.add(entity)
 
     # Add edges to the disjoint set
-    for record in probabilities.to_pylist():
+    for record in probabilities.to_dicts():
         if record["probability"] >= threshold:
             djs.union(
                 left_lookup[record["left_id"]],

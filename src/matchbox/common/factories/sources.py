@@ -208,7 +208,7 @@ class LinkedSourcesTestkit(BaseModel):
 
     def diff_results(
         self,
-        probabilities: pa.Table,
+        probabilities: pl.DataFrame,
         sources: list[SourceResolutionName],
         left_clusters: tuple[ClusterEntity, ...],
         right_clusters: tuple[ClusterEntity, ...] | None = None,

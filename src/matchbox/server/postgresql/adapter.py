@@ -3,6 +3,7 @@
 from itertools import chain
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
+import polars as pl
 from pyarrow import Table
 from pydantic import BaseModel
 from sqlalchemy import and_, bindparam, delete, func, or_, select, update
@@ -512,7 +513,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
         judgements, expansion = self.get_judgements()
         if not len(judgements):
             raise MatchboxNoJudgements()
-        return evaluation.compare_models(paths, judgements, expansion)
+        return evaluation.compare_models(
+            paths, pl.from_arrow(judgements), pl.from_arrow(expansion)
+        )
 
     def sample_for_eval(  # noqa: D102
         self, n: int, path: ModelResolutionPath, user_id: int

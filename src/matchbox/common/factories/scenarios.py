@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import pyarrow as pa
+from polars.testing import assert_frame_equal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Engine
 
@@ -190,7 +191,7 @@ def create_dedupe_scenario(
         )
         backend.insert_model_data(
             path=model_testkit.resolution_path,
-            results=model_testkit.probabilities,
+            results=model_testkit.probabilities.to_arrow(),
         )
         dag_testkit.add_model(model_testkit)
 
@@ -241,7 +242,7 @@ def create_probabilistic_dedupe_scenario(
         )
         backend.insert_model_data(
             path=model_testkit.resolution_path,
-            results=model_testkit.probabilities,
+            results=model_testkit.probabilities.to_arrow(),
         )
         backend.set_model_truth(path=model_testkit.resolution_path, truth=50)
         dag_testkit.add_model(model_testkit)
@@ -314,7 +315,7 @@ def create_link_scenario(
     )
     backend.insert_model_data(
         path=crn_duns_model.resolution_path,
-        results=crn_duns_model.probabilities,
+        results=crn_duns_model.probabilities.to_arrow(),
     )
     dag_testkit.add_model(crn_duns_model)
 
@@ -343,11 +344,12 @@ def create_link_scenario(
 
     # Add to backend and DAG
     backend.create_resolution(
-        resolution=crn_cdms_model.model.to_resolution(),
         path=crn_cdms_model.resolution_path,
+        resolution=crn_cdms_model.model.to_resolution(),
     )
     backend.insert_model_data(
-        path=crn_cdms_model.resolution_path, results=crn_cdms_model.probabilities
+        path=crn_cdms_model.resolution_path,
+        results=crn_cdms_model.probabilities.to_arrow(),
     )
     backend.set_model_truth(path=crn_cdms_model.resolution_path, truth=75)
     dag_testkit.add_model(crn_cdms_model)
@@ -402,7 +404,7 @@ def create_link_scenario(
     )
     backend.insert_model_data(
         path=final_join_model.resolution_path,
-        results=final_join_model.probabilities,
+        results=final_join_model.probabilities.to_arrow(),
     )
     dag_testkit.add_model(final_join_model)
 
@@ -490,18 +492,18 @@ def create_alt_dedupe_scenario(
             seed=seed,
         )
 
-        assert model_testkit1.probabilities.num_rows > 0
-        assert model_testkit1.probabilities == model_testkit2.probabilities
+        assert len(model_testkit1.probabilities) > 0
+        assert_frame_equal(model_testkit1.probabilities, model_testkit2.probabilities)
 
         for model, threshold in ((model_testkit1, 50), (model_testkit2, 75)):
             model.threshold = threshold
 
             # Add both models to backend and DAG
             backend.create_resolution(
-                resolution=model.model.to_resolution(), path=model.resolution_path
+                path=model.resolution_path, resolution=model.model.to_resolution()
             )
             backend.insert_model_data(
-                path=model.resolution_path, results=model.probabilities
+                path=model.resolution_path, results=model.probabilities.to_arrow()
             )
             backend.set_model_truth(path=model.resolution_path, truth=threshold)
 
@@ -586,7 +588,7 @@ def create_convergent_scenario(
             seed=seed,
         )
 
-        assert model_testkit.probabilities.num_rows > 0
+        assert len(model_testkit.probabilities) > 0
 
         # Add to DAG
         dag_testkit.add_model(model_testkit)
