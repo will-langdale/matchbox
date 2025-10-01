@@ -6,7 +6,6 @@ from typing import ParamSpec, TypeVar
 import polars as pl
 from pydantic import ConfigDict
 
-# TODO: SCHEMA_RESULTS requires pyarrow import, should we refactor?
 from matchbox.common.arrow import SCHEMA_RESULTS
 from matchbox.common.hash import IntMap
 from matchbox.common.transform import to_clusters
@@ -61,7 +60,6 @@ class Results:
 
         # Handle empty tables
         if probabilities.height == 0:
-            # SCHEMA_RESULTS is pyarrow, so need to convert
             probabilities = pl.DataFrame(schema=pl.Schema(SCHEMA_RESULTS))
 
         # Process probability field if it contains floating-point or decimal values
