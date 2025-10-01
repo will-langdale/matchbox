@@ -18,7 +18,6 @@ from matchbox.common.exceptions import (
     MatchboxVersionAlreadyExists,
     MatchboxVersionNotFoundError,
 )
-from matchbox.common.factories.models import model_factory
 from matchbox.common.factories.sources import source_factory
 
 # Collection management tests
@@ -41,27 +40,7 @@ def test_get_collection(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     test_client, mock_backend, _ = api_client_and_mocks
 
     # Mock collection data with versions and resolutions
-    source = source_factory().source
-    model = model_factory().model
-    collection = Collection(
-        versions={
-            "v1": Version(
-                name="v1",
-                resolutions={
-                    source.name: source.to_resolution(),
-                    model.name: model.to_resolution(),
-                },
-                mutable=False,
-                default=True,
-            ),
-            "v2": Version(
-                name="v2",
-                resolutions={source.name: source.to_resolution()},
-                mutable=True,
-                default=False,
-            ),
-        },
-    )
+    collection = Collection(versions=["v1", "v2"])
 
     mock_backend.get_collection = Mock(return_value=collection)
 

@@ -104,8 +104,9 @@ class Collections(CountMixin, MBDB.MatchboxBase):
     def to_dto(self) -> CommonCollection:
         """Convert ORM collection to a matchbox.common Collection object."""
         versions: dict[VersionName, list[CommonVersion]] = {}
+        versions: list[VersionName] = []
         if self.versions:
-            versions = {version.name: version.to_dto() for version in self.versions}
+            versions = [version.name for version in self.versions]
 
         return CommonCollection(versions=versions)
 

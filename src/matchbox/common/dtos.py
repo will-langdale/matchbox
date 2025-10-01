@@ -640,7 +640,7 @@ class Version(BaseModel):
         default=False, description="Whether this version can be modified"
     )
     resolutions: dict[ResolutionName, Resolution] = Field(
-        default_factory=list,
+        default_factory=dict,
         description="Dict of resolution objects by name within this version",
     )
 
@@ -648,8 +648,8 @@ class Version(BaseModel):
 class Collection(BaseModel):
     """A collection of versions."""
 
-    versions: dict[VersionName, Version] = Field(
-        default_factory=dict, description="Dictionary of versions in this collection"
+    versions: list[VersionName] = Field(
+        default_factory=list, description="List of version names in this collection"
     )
 
 
