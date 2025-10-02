@@ -36,8 +36,7 @@ jobs:
       - name: Extract development version
         id: get_version
         run: |
-          echo "version=$(SETUPTOOLS_SCM_PRETEND_METADATA='{distance=1}' \
-          uv run --frozen python -m setuptools_scm)" >> $GITHUB_OUTPUT
+          echo "version=$(uv run --frozen python -m setuptools_scm)" >> $GITHUB_OUTPUT
 
       - name: Build package
         env:
