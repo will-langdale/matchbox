@@ -264,7 +264,7 @@ def get_upload_status(
             status_code=400,
             detail=UploadStatus(
                 id=upload_id,
-                stage="unknown",
+                stage=UploadStage.UNKNOWN,
                 update_timestamp=datetime.now(),
                 details=(
                     "Upload ID not found or expired. Entries expire after 30 minutes "
