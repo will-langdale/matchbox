@@ -112,7 +112,7 @@ def create_bare_scenario(
         engine=warehouse_engine,
         dag=dag_testkit.dag,
     )
-    dag_testkit.add_source(linked)
+    dag_testkit.add_linked_sources(linked)
 
     # Write sources to warehouse
     _testkitdag_to_location(warehouse_engine, dag_testkit)
@@ -163,7 +163,7 @@ def create_dedupe_scenario(
     )
 
     # Get the LinkedSourcesTestkit using one of the sources
-    linked = dag_testkit.get_linked_testkit("crn")
+    linked = dag_testkit.source_to_linked["crn"]
 
     # Create and add deduplication models
     for testkit in dag_testkit.sources.values():
@@ -213,7 +213,7 @@ def create_probabilistic_dedupe_scenario(
     )
 
     # Get the LinkedSourcesTestkit using one of the sources
-    linked = dag_testkit.get_linked_testkit("crn")
+    linked = dag_testkit.source_to_linked["crn"]
 
     # Create and add deduplication models
     for testkit in dag_testkit.sources.values():
@@ -265,7 +265,7 @@ def create_link_scenario(
     )
 
     # Get the LinkedSourcesTestkit using one of the sources
-    linked = dag_testkit.get_linked_testkit("crn")
+    linked = dag_testkit.source_to_linked["crn"]
 
     # Extract models for linking
     crn_model = dag_testkit.models["naive_test_crn"]
@@ -445,7 +445,7 @@ def create_alt_dedupe_scenario(
     linked = linked_sources_factory(
         source_parameters=(foo_a_tkit_source,), dag=dag_testkit.dag
     )
-    dag_testkit.add_source(linked)
+    dag_testkit.add_linked_sources(linked)
 
     # Write sources to warehouse
     _testkitdag_to_location(warehouse_engine, dag_testkit)
@@ -557,7 +557,7 @@ def create_convergent_scenario(
         dag=dag_testkit.dag,
     )
 
-    dag_testkit.add_source(linked)
+    dag_testkit.add_linked_sources(linked)
 
     # Write sources to warehouse
     _testkitdag_to_location(warehouse_engine, dag_testkit)

@@ -51,7 +51,7 @@ def test_add_linked_sources():
     linked = linked_sources_factory(
         source_parameters=configs, n_true_entities=5, dag=dag_testkit.dag
     )
-    dag_testkit.add_source(linked)
+    dag_testkit.add_linked_sources(linked)
 
     # Should store in linked registry with correct key
     expected_key = "linked_source1_source2"
@@ -75,7 +75,7 @@ def test_add_model():
 
     # Create source first
     linked = linked_sources_factory(n_true_entities=5, dag=dag_testkit.dag)
-    dag_testkit.add_source(linked)
+    dag_testkit.add_linked_sources(linked)
 
     # Create and add model
     model = model_factory(
@@ -100,96 +100,22 @@ def test_get_linked_testkit_for_source():
 
     # Add linked sources
     linked = linked_sources_factory(n_true_entities=5, dag=dag_testkit.dag)
-    dag_testkit.add_source(linked)
+    dag_testkit.add_linked_sources(linked)
 
     # Add standalone source
     standalone = source_factory(name="standalone", dag=dag_testkit.dag)
     dag_testkit.add_source(standalone)
 
     # Should find linked testkit for sources that belong to one
-    linked_testkit = dag_testkit.get_linked_testkit("crn")
+    linked_testkit = dag_testkit.source_to_linked["crn"]
     assert linked_testkit == linked
 
-    linked_testkit = dag_testkit.get_linked_testkit("duns")
+    linked_testkit = dag_testkit.source_to_linked["duns"]
     assert linked_testkit == linked
 
-    # Should return None for standalone source
-    assert dag_testkit.get_linked_testkit("standalone") is None
-
-    # Should return None for non-existent source
-    assert dag_testkit.get_linked_testkit("nonexistent") is None
-
-
-def test_get_linked_testkit_for_model():
-    """Test getting linked testkit for a model via its query sources."""
-    dag_testkit = TestkitDAG()
-
-    # Create linked sources
-    linked = linked_sources_factory(n_true_entities=5, dag=dag_testkit.dag)
-    dag_testkit.add_source(linked)
-
-    # Create standalone source
-    standalone = source_factory(name="standalone", dag=dag_testkit.dag)
-    dag_testkit.add_source(standalone)
-
-    # Create model using linked source
-    model_linked = model_factory(
-        name="model_linked",
-        left_testkit=linked.sources["crn"],
-        true_entities=tuple(linked.true_entities),
-    )
-    dag_testkit.add_model(model_linked)
-
-    # Create model using standalone source
-    model_standalone = model_factory(
-        name="model_standalone",
-        left_testkit=standalone,
-        true_entities=tuple(linked.true_entities),  # Still need some entities
-    )
-    dag_testkit.add_model(model_standalone)
-
-    # Should find linked testkit for model that uses linked sources
-    assert dag_testkit.get_linked_testkit("model_linked") == linked
-
-    # Should return None for model that uses standalone sources
-    assert dag_testkit.get_linked_testkit("model_standalone") is None
-
-    # Should return None for non-existent model
-    assert dag_testkit.get_linked_testkit("nonexistent_model") is None
-
-
-def test_get_linked_testkit_for_linker_model():
-    """Test getting linked testkit for a model that uses both left and right queries."""
-    dag_testkit = TestkitDAG()
-
-    # Create two different linked testkits
-    features1 = [FeatureConfig(name="company", base_generator="company")]
-    features2 = [FeatureConfig(name="email", base_generator="email")]
-
-    configs1 = (SourceTestkitParameters(name="src1", features=tuple(features1)),)
-    configs2 = (SourceTestkitParameters(name="src2", features=tuple(features2)),)
-
-    linked1 = linked_sources_factory(
-        source_parameters=configs1, n_true_entities=5, dag=dag_testkit.dag
-    )
-    linked2 = linked_sources_factory(
-        source_parameters=configs2, n_true_entities=5, dag=dag_testkit.dag
-    )
-
-    dag_testkit.add_source(linked1)
-    dag_testkit.add_source(linked2)
-
-    # Create linker model using sources from first linked testkit
-    model = model_factory(
-        name="linker_model",
-        left_testkit=linked1.sources["src1"],
-        right_testkit=linked1.sources["src1"],  # Same testkit
-        true_entities=tuple(linked1.true_entities),
-    )
-    dag_testkit.add_model(model)
-
-    # Should find the first linked testkit
-    assert dag_testkit.get_linked_testkit("linker_model") == linked1
+    # Standalone and nonexistent sources should generate a KeyError
+    assert "standalone" not in dag_testkit.source_to_linked
+    assert "nonexistent" not in dag_testkit.source_to_linked
 
 
 def test_multiple_linked_testkits():
@@ -218,8 +144,8 @@ def test_multiple_linked_testkits():
         source_parameters=configs2, n_true_entities=5, dag=dag_testkit.dag
     )
 
-    dag_testkit.add_source(linked1)
-    dag_testkit.add_source(linked2)
+    dag_testkit.add_linked_sources(linked1)
+    dag_testkit.add_linked_sources(linked2)
 
     # Expected linked keys
     assert "linked_foo1_foo2" in dag_testkit.linked
@@ -232,8 +158,8 @@ def test_multiple_linked_testkits():
     assert all(name in dag_testkit.sources for name in ["foo1", "foo2", "bar1", "bar2"])
 
     # Test linked testkit lookup works for each
-    assert dag_testkit.get_linked_testkit("foo1") == linked1
-    assert dag_testkit.get_linked_testkit("bar1") == linked2
+    assert dag_testkit.source_to_linked["foo1"] == linked1
+    assert dag_testkit.source_to_linked["bar1"] == linked2
 
 
 def test_name_collision_caught_by_dag():
@@ -261,7 +187,7 @@ def test_empty_dag_properties():
     assert len(dag_testkit.linked) == 0
 
     # get_linked_testkit should return None for anything
-    assert dag_testkit.get_linked_testkit("anything") is None
+    assert "anything" not in dag_testkit.source_to_linked
 
     # DAG should be empty but valid
     assert len(dag_testkit.dag.nodes) == 0

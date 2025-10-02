@@ -124,7 +124,7 @@ class TestMatchboxBackend:
             assert df_crn.num_rows == crn_testkit.data.num_rows
             assert df_crn.schema.equals(SCHEMA_QUERY)
 
-            linked = dag_testkit.get_linked_testkit(naive_crn_testkit.name)
+            linked = dag_testkit.source_to_linked["crn"]
 
             assert pc.count_distinct(df_crn["id"]).as_py() == len(
                 linked.true_entity_subset("crn")
@@ -156,7 +156,8 @@ class TestMatchboxBackend:
             assert df_duns.num_rows == duns_testkit.data.num_rows
             assert df_duns.schema.equals(SCHEMA_QUERY)
 
-            linked = dag_testkit.get_linked_testkit(linker_name)
+            # Assumes CRN and DUNS come from same LinkedSourcesTestkit
+            linked = dag_testkit.source_to_linked["crn"]
 
             all_ids = pa.concat_arrays(
                 [df_crn["id"].combine_chunks(), df_duns["id"].combine_chunks()]
@@ -192,7 +193,8 @@ class TestMatchboxBackend:
             assert df_cdms.num_rows == cdms_testkit.data.num_rows
             assert df_cdms.schema.equals(SCHEMA_QUERY)
 
-            linked = dag_testkit.get_linked_testkit(linker_name)
+            # Assumes CRN and DUNS come from same LinkedSourcesTestkit
+            linked = dag_testkit.source_to_linked["crn"]
 
             # Test query with threshold
             df_crn_threshold = self.backend.query(
@@ -226,7 +228,8 @@ class TestMatchboxBackend:
             duns_testkit = dag_testkit.sources.get("duns")
             linker_testkit = dag_testkit.models.get(linker_name)
 
-            linked = dag_testkit.get_linked_testkit(linker_name)
+            # Assumes CRN and DUNS come from same LinkedSourcesTestkit
+            linked = dag_testkit.source_to_linked["crn"]
 
             # A random one:many entity
             source_entity: SourceEntity = linked.find_entities(
@@ -257,7 +260,8 @@ class TestMatchboxBackend:
             duns_testkit = dag_testkit.sources.get("duns")
             linker_testkit = dag_testkit.models.get(linker_name)
 
-            linked = dag_testkit.get_linked_testkit(linker_name)
+            # Assumes CRN and DUNS come from same LinkedSourcesTestkit
+            linked = dag_testkit.source_to_linked["crn"]
 
             # A random many:one entity
             source_entity: SourceEntity = linked.find_entities(
@@ -288,7 +292,8 @@ class TestMatchboxBackend:
             duns_testkit = dag_testkit.sources.get("duns")
             linker_testkit = dag_testkit.models.get(linker_name)
 
-            linked = dag_testkit.get_linked_testkit(linker_name)
+            # Assumes CRN and DUNS come from same LinkedSourcesTestkit
+            linked = dag_testkit.source_to_linked["crn"]
 
             # A random one:none entity
             source_entity: SourceEntity = linked.find_entities(
@@ -345,7 +350,8 @@ class TestMatchboxBackend:
             duns_testkit = dag_testkit.sources.get("duns")
             linker_testkit = dag_testkit.models.get(linker_name)
 
-            linked = dag_testkit.get_linked_testkit(linker_name)
+            # Assumes CRN and DUNS come from same LinkedSourcesTestkit
+            linked = dag_testkit.source_to_linked["crn"]
 
             # A random one:many entity
             source_entity: SourceEntity = linked.find_entities(
@@ -579,7 +585,8 @@ class TestMatchboxBackend:
         with self.scenario(self.backend, "index") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
             duns_testkit = dag_testkit.sources.get("duns")
-            linked = dag_testkit.get_linked_testkit("crn")
+            # Assumes CRN and DUNS come from same LinkedSourcesTestkit
+            linked = dag_testkit.source_to_linked["crn"]
 
             # Test deduper insertion
             models_count = self.backend.models.count()
