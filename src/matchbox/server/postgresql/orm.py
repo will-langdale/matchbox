@@ -76,19 +76,7 @@ class Collections(CountMixin, MBDB.MatchboxBase):
         Raises:
             MatchboxCollectionNotFoundError: If the collection doesn't exist.
         """
-        query = (
-            select(cls)
-            .where(cls.name == name)
-            .options(
-                selectinload(cls.versions)
-                .selectinload(Versions.resolutions)
-                .selectinload(Resolutions.source_config)
-                .selectinload(SourceConfigs.fields),
-                selectinload(cls.versions)
-                .selectinload(Versions.resolutions)
-                .selectinload(Resolutions.model_config),
-            )
-        )
+        query = select(cls).where(cls.name == name).options(selectinload(cls.versions))
 
         if session:
             collection = session.execute(query).scalar_one_or_none()
