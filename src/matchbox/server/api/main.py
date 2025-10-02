@@ -4,6 +4,7 @@ from datetime import datetime
 from importlib.metadata import version
 from typing import Annotated
 
+import pyarrow.parquet as pq
 from fastapi import (
     BackgroundTasks,
     Depends,
@@ -17,6 +18,7 @@ from fastapi import (
 )
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from pyarrow import ArrowInvalid
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from matchbox.common.arrow import table_to_buffer
@@ -127,6 +129,34 @@ def upload_file(
     * Upload is already being processed
     * Uploaded data doesn't match the metadata schema
     """
+    # Validate file
+    if ".parquet" not in file.filename:
+        raise HTTPException(
+            status_code=400,
+            detail=UploadStatus(
+                id=upload_id,
+                update_timestamp=datetime.now(),
+                stage="unknown",
+                details=(
+                    f"Server expected .parquet file, got {file.filename.split('.')[-1]}"
+                ),
+            ).model_dump(),
+        )
+
+    # pyarrow validates Parquet magic numbers when loading file
+    try:
+        pq.ParquetFile(file.file)
+    except ArrowInvalid as e:
+        raise HTTPException(
+            status_code=400,
+            detail=UploadStatus(
+                id=upload_id,
+                update_timestamp=datetime.now(),
+                stage="unknown",
+                details=(f"Invalid Parquet file: {str(e)}"),
+            ).model_dump(),
+        ) from e
+
     # Get and validate cache entry
     upload_entry = upload_tracker.get(upload_id=upload_id)
     if not upload_entry:
