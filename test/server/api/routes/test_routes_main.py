@@ -137,7 +137,7 @@ def test_upload_wrong_filetype(
 
     source_testkit = source_factory()
 
-    update_id = mock_tracker.add_source(source_testkit.source.to_resolution())
+    update_id = mock_tracker.add_source(source_testkit.resolution_path)
 
     # Make request with mocked background task
     response = test_client.post(
@@ -178,7 +178,7 @@ def test_upload_wrong_file_format(
 
     source_testkit = source_factory()
 
-    update_id = mock_tracker.add_source(source_testkit.source.to_resolution())
+    update_id = mock_tracker.add_source(source_testkit.resolution_path)
 
     # Make request with mocked background task
     response = test_client.post(
