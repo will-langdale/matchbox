@@ -2,8 +2,10 @@
 
 from datetime import datetime
 from importlib.metadata import version
+from pathlib import Path
 from typing import Annotated
 
+import pyarrow.parquet as pq
 from fastapi import (
     BackgroundTasks,
     Depends,
@@ -16,7 +18,13 @@ from fastapi import (
     status,
 )
 from fastapi.encoders import jsonable_encoder
+from fastapi.openapi.docs import (
+    get_swagger_ui_html,
+    get_swagger_ui_oauth2_redirect_html,
+)
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pyarrow import ArrowInvalid
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from matchbox.common.arrow import table_to_buffer
@@ -66,9 +74,14 @@ app = FastAPI(
     title="matchbox API",
     version=version("matchbox_db"),
     lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
 )
 app.include_router(collection.router)
 app.include_router(eval.router)
+
+static_dir = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -165,7 +178,12 @@ async def add_security_headers(request: Request, call_next):
     response: Response = await call_next(request)
     response.headers["Cache-control"] = "no-store, no-cache"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; frame-ancestors 'none'; form-action 'none'; sandbox"
+        # Restrict by default
+        "default-src 'none'; frame-ancestors 'none'; form-action 'none';"
+        # Load Swagger CSS, favicon and openapi.json
+        "style-src 'self'; img-src 'self' data:; connect-src 'self'; "
+        # Load Swagger JS, hard-coding the expected file hash
+        "script-src 'self' 'sha256-QOOQu4W1oxGqd2nbXbxiA1Di6OHQOLQD+o+G9oWL8YY='"
     )
     response.headers["Strict-Transport-Security"] = (
         "max-age=31536000; includeSubDomains"
@@ -219,6 +237,34 @@ def upload_file(
     * Upload is already being processed
     * Uploaded data doesn't match the metadata schema
     """
+    # Validate file
+    if ".parquet" not in file.filename:
+        raise HTTPException(
+            status_code=400,
+            detail=UploadStatus(
+                id=upload_id,
+                update_timestamp=datetime.now(),
+                stage=UploadStage.READY,
+                details=(
+                    f"Server expected .parquet file, got {file.filename.split('.')[-1]}"
+                ),
+            ).model_dump(),
+        )
+
+    # pyarrow validates Parquet magic numbers when loading file
+    try:
+        pq.ParquetFile(file.file)
+    except ArrowInvalid as e:
+        raise HTTPException(
+            status_code=400,
+            detail=UploadStatus(
+                id=upload_id,
+                update_timestamp=datetime.now(),
+                stage=UploadStage.READY,
+                details=(f"Invalid Parquet file: {str(e)}"),
+            ).model_dump(),
+        ) from e
+
     # Get and validate cache entry
     upload_entry = upload_tracker.get(upload_id=upload_id)
     if not upload_entry:
@@ -227,7 +273,7 @@ def upload_file(
             detail=UploadStatus(
                 id=upload_id,
                 update_timestamp=datetime.now(),
-                stage="unknown",
+                stage=UploadStage.UNKNOWN,
                 details=(
                     "Upload ID not found or expired. Entries expire after 30 minutes "
                     "of inactivity, including failed processes."
@@ -326,7 +372,7 @@ def get_upload_status(
             status_code=400,
             detail=UploadStatus(
                 id=upload_id,
-                stage="unknown",
+                stage=UploadStage.UNKNOWN,
                 update_timestamp=datetime.now(),
                 details=(
                     "Upload ID not found or expired. Entries expire after 30 minutes "
@@ -494,3 +540,25 @@ def clear_database(
                 details=str(e),
             ),
         ) from e
+
+
+# Swagger UI
+
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    """Get locally hosted docs."""
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=app.title + " - Swagger UI",
+        oauth2_redirect_url=app.swagger_ui_oauth2_redirect_url,
+        swagger_js_url="/static/swagger-ui-bundle.js",
+        swagger_css_url="/static/swagger-ui.css",
+        swagger_favicon_url="/static/favicon.png",
+    )
+
+
+@app.get(app.swagger_ui_oauth2_redirect_url, include_in_schema=False)
+async def swagger_ui_redirect():
+    """Helper for OAuth2."""
+    return get_swagger_ui_oauth2_redirect_html()

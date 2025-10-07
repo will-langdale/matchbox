@@ -7,8 +7,10 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push-development-image:
+  build:
     runs-on: ubuntu-latest
+    outputs:
+      mb_version: ${{ steps.get_version.outputs.mb_version }}
     permissions:
       contents: write
       packages: write
@@ -34,11 +36,20 @@ jobs:
           python-version: "3.11"
 
       - name: Extract development version
+        id: get_version
         run: |
-          echo "MB_VERSION=$( \
-            SETUPTOOLS_SCM_PRETEND_METADATA='{distance=1}' \
-            uv run --frozen python -m setuptools_scm \
-          )" >> $GITHUB_ENV
+          echo "mb_version=$(uv run --frozen python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
+
+      - name: Build package
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.get_version.outputs.mb_version }}
+        run: uv build
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-dist
+          path: ./dist
 
       - name: Extract tag metadata for Docker
         id: meta
@@ -46,7 +57,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ env.MB_VERSION }}
+            type=raw,value=${{ steps.get_version.outputs.mb_version }}
             type=raw,value=development
 
       - name: Build and push Docker image
@@ -56,7 +67,7 @@ jobs:
           file: src/matchbox/server/Dockerfile
           push: true
           build-args: |
-            MB_VERSION=${{ env.MB_VERSION }}
+            MB_VERSION=${{ steps.get_version.outputs.mb_version }}
           tags: ${{ steps.meta.outputs.tags }}
 
       - name: Delete existing development release if it exists
@@ -76,5 +87,23 @@ jobs:
             
             May be unstable.
             
-            **Version:** ${{ env.MB_VERSION }}
+            **Version:** ${{ steps.get_version.outputs.mb_version }}
             **Commit:** ${{ github.sha }}
+
+  deploy-package:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    
+    environment: pypi
+    
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: package-dist
+          path: ./dist
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
