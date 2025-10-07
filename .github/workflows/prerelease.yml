@@ -57,7 +57,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ steps.version.outputs.mb_version }}
+            type=raw,value=${{ steps.get_version.outputs.mb_version }}
             type=raw,value=development
 
       - name: Build and push Docker image
@@ -67,7 +67,7 @@ jobs:
           file: src/matchbox/server/Dockerfile
           push: true
           build-args: |
-            MB_VERSION=${{ steps.version.outputs.mb_version }}
+            MB_VERSION=${{ steps.get_version.outputs.mb_version }}
           tags: ${{ steps.meta.outputs.tags }}
 
       - name: Delete existing development release if it exists
