@@ -9,6 +9,8 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      mb_version: ${{ steps.get_version.outputs.mb_version }}
     permissions:
       contents: write
       packages: write
@@ -36,11 +38,11 @@ jobs:
       - name: Extract development version
         id: get_version
         run: |
-          echo "version=$(uv run --frozen python -m setuptools_scm)" >> $GITHUB_OUTPUT
+          echo "mb_version=$(uv run --frozen python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
 
       - name: Build package
         env:
-          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.get_version.outputs.version }}
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.get_version.outputs.mb_version }}
         run: uv build
 
       - name: Upload package artifacts
@@ -55,7 +57,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ env.MB_VERSION }}
+            type=raw,value=${{ steps.version.outputs.mb_version }}
             type=raw,value=development
 
       - name: Build and push Docker image
@@ -65,7 +67,7 @@ jobs:
           file: src/matchbox/server/Dockerfile
           push: true
           build-args: |
-            MB_VERSION=${{ steps.version.outputs.version }}
+            MB_VERSION=${{ steps.version.outputs.mb_version }}
           tags: ${{ steps.meta.outputs.tags }}
 
       - name: Delete existing development release if it exists
@@ -85,7 +87,7 @@ jobs:
             
             May be unstable.
             
-            **Version:** ${{ env.MB_VERSION }}
+            **Version:** ${{ steps.get_version.outputs.mb_version }}
             **Commit:** ${{ github.sha }}
 
   deploy-package:
