@@ -1,6 +1,6 @@
 from typing import Any
 
-import pyarrow as pa
+import polars as pl
 import pytest
 from faker import Faker
 
@@ -157,7 +157,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
     ),
     [
         pytest.param(
-            pa.table(
+            pl.DataFrame(
                 {
                     "left_id": [1, 2],
                     "right_id": [2, 3],
@@ -175,7 +175,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
             id="basic_dedupe_chain",
         ),
         pytest.param(
-            pa.table(
+            pl.DataFrame(
                 {
                     "left_id": [1],
                     "right_id": [4],
@@ -189,7 +189,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
             id="basic_link_match",
         ),
         pytest.param(
-            pa.table(
+            pl.DataFrame(
                 {
                     "left_id": [1, 2],
                     "right_id": [2, 3],
@@ -207,7 +207,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
             id="threshold_prevents_merge",
         ),
         pytest.param(
-            pa.table(
+            pl.DataFrame(
                 {
                     "left_id": [],
                     "right_id": [],
@@ -226,7 +226,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
     ],
 )
 def test_probabilities_to_results_entities(
-    probabilities: pa.Table,
+    probabilities: pl.DataFrame,
     left_clusters: tuple[ClusterEntity, ...],
     right_clusters: tuple[ClusterEntity, ...] | None,
     threshold: float,

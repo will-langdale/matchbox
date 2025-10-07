@@ -4,8 +4,6 @@ from collections.abc import Hashable
 from typing import ParamSpec, TypeVar
 
 import polars as pl
-import pyarrow as pa
-import pyarrow.compute as pc
 from pydantic import ConfigDict
 
 from matchbox.common.arrow import SCHEMA_RESULTS
@@ -33,14 +31,14 @@ class Results:
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    probabilities: pa.Table
-    _clusters: pa.Table | None = None
+    probabilities: pl.DataFrame
+    _clusters: pl.DataFrame | None = None
 
     def __init__(
         self,
-        probabilities: pa.Table | pl.DataFrame,
-        left_root_leaf: pa.Table | None = None,
-        right_root_leaf: pa.Table | None = None,
+        probabilities: pl.DataFrame,
+        left_root_leaf: pl.DataFrame | None = None,
+        right_root_leaf: pl.DataFrame | None = None,
     ) -> None:
         """Initialises and validates results."""
         self.left_root_leaf = None
@@ -51,61 +49,49 @@ class Results:
         if right_root_leaf is not None:
             self.right_root_leaf = right_root_leaf
 
-        if isinstance(probabilities, pl.DataFrame):
-            probabilities = probabilities.to_arrow()
-
-        if not isinstance(probabilities, pa.Table):
-            raise ValueError("Expected a polars DataFrame or pyarrow Table.")
+        if not isinstance(probabilities, pl.DataFrame):
+            raise ValueError(f"Expected a polars DataFrame, got {type(probabilities)}.")
 
         expected_fields = set(SCHEMA_RESULTS.names)
-        if set(probabilities.column_names) != expected_fields:
+        if set(probabilities.columns) != expected_fields:
             raise ValueError(
                 f"Expected {expected_fields}.\nFound {set(probabilities.column_names)}."
             )
 
         # Handle empty tables
-        if probabilities.num_rows == 0:
-            empty_arrays = [pa.array([], type=field.type) for field in SCHEMA_RESULTS]
-            probabilities = pa.Table.from_arrays(
-                empty_arrays, names=[field.name for field in SCHEMA_RESULTS]
-            )
+        if probabilities.height == 0:
+            probabilities = pl.DataFrame(schema=pl.Schema(SCHEMA_RESULTS))
 
         # Process probability field if it contains floating-point or decimal values
-        probability_type = probabilities["probability"].type
-        if pa.types.is_floating(probability_type) or pa.types.is_decimal(
-            probability_type
-        ):
-            probability_uint8 = pc.cast(
-                pc.round(pc.multiply(probabilities["probability"], 100)),
-                options=pc.CastOptions(
-                    target_type=pa.uint8(),
-                    allow_float_truncate=True,
-                    allow_decimal_truncate=True,
-                ),
+        probability_type = probabilities["probability"].dtype
+        if probability_type.is_float() or probability_type.is_decimal():
+            probability_uint8 = pl.Series(
+                probabilities.select(
+                    pl.col("probability").mul(100).round(0).cast(pl.UInt8)
+                )
             )
 
             # Check max value only if the table is not empty
-            max_prob = pc.max(probability_uint8)
-            if max_prob is not None and max_prob.as_py() > 100:
-                p_max = pc.max(probabilities["probability"]).as_py()
-                p_min = pc.min(probabilities["probability"]).as_py()
+            max_prob = probability_uint8.max()
+            if max_prob is not None and max_prob > 100:
+                p_max = max_prob
+                p_min = probability_uint8.min()
                 raise ValueError(f"Probability range misconfigured: [{p_min}, {p_max}]")
 
-            probabilities = probabilities.set_column(
-                i=probabilities.schema.get_field_index("probability"),
-                field_="probability",
-                column=probability_uint8,
+            probabilities = probabilities.replace_column(
+                probabilities.get_column_index("probability"), probability_uint8
             )
 
-        self.probabilities = probabilities.cast(SCHEMA_RESULTS)
+        # need schema in format recognised by polars
+        self.probabilities = probabilities.cast(pl.Schema(SCHEMA_RESULTS))
 
     @property
     def clusters(self):
         """Retrieve new clusters implied by these results."""
-        if not self._clusters:
+        if self._clusters is None:
             im = IntMap()
             self._clusters = to_clusters(
-                results=self.probabilities, dtype=pa.int64, hash_func=im.index
+                results=self.probabilities, dtype=pl.Int64, hash_func=im.index
             )
         return self._clusters
 
@@ -146,7 +132,7 @@ class Results:
     ) -> pl.DataFrame:
         """Enriches the probability results with the source data."""
         return self._merge_with_source_data(
-            base_df=pl.from_arrow(self.probabilities),
+            base_df=self.probabilities,
             base_df_cols=["left_id", "right_id", "probability"],
             left_data=left_data,
             left_key=left_key,
@@ -165,7 +151,7 @@ class Results:
     ) -> pl.DataFrame:
         """Enriches the cluster results with the source data."""
         return self._merge_with_source_data(
-            base_df=pl.from_arrow(self.clusters),
+            base_df=self.clusters,
             base_df_cols=["parent", "child", "probability"],
             left_data=left_data,
             left_key=left_key,
@@ -182,20 +168,19 @@ class Results:
                 "This Results object wasn't instantiated for validation features."
             )
 
-        parents_root_leaf = pl.from_arrow(self.left_root_leaf.select(["id", "leaf_id"]))
+        parents_root_leaf = self.left_root_leaf.select(["id", "leaf_id"])
         if self.right_root_leaf is not None:
             parents_root_leaf = pl.concat(
                 [
                     parents_root_leaf,
-                    pl.from_arrow(self.right_root_leaf.select(["id", "leaf_id"])),
+                    self.right_root_leaf.select(["id", "leaf_id"]),
                 ]
             )
 
         # Go from parent-child (where child could be the root of another model)
         # to root-leaf, where leaf is a source cluster ID
         root_leaf_res = (
-            pl.from_arrow(self.clusters)
-            .rename({"parent": "root_id"})
+            self.clusters.rename({"parent": "root_id"})
             .join(parents_root_leaf, left_on="child", right_on="id")
             .select(["root_id", "leaf_id"])
             .unique()
@@ -205,7 +190,7 @@ class Results:
         unmerged_ids_rows = (
             parents_root_leaf.select("id", "leaf_id")
             .join(
-                pl.from_arrow(self.clusters).select("child"),
+                self.clusters.select("child"),
                 left_on="id",
                 right_on="child",
                 how="anti",

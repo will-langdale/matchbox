@@ -5,6 +5,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated
 
+import pyarrow.parquet as pq
 from fastapi import (
     BackgroundTasks,
     Depends,
@@ -23,6 +24,7 @@ from fastapi.openapi.docs import (
 )
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pyarrow import ArrowInvalid
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from matchbox.common.arrow import table_to_buffer
@@ -143,6 +145,34 @@ def upload_file(
     * Upload is already being processed
     * Uploaded data doesn't match the metadata schema
     """
+    # Validate file
+    if ".parquet" not in file.filename:
+        raise HTTPException(
+            status_code=400,
+            detail=UploadStatus(
+                id=upload_id,
+                update_timestamp=datetime.now(),
+                stage=UploadStage.READY,
+                details=(
+                    f"Server expected .parquet file, got {file.filename.split('.')[-1]}"
+                ),
+            ).model_dump(),
+        )
+
+    # pyarrow validates Parquet magic numbers when loading file
+    try:
+        pq.ParquetFile(file.file)
+    except ArrowInvalid as e:
+        raise HTTPException(
+            status_code=400,
+            detail=UploadStatus(
+                id=upload_id,
+                update_timestamp=datetime.now(),
+                stage=UploadStage.READY,
+                details=(f"Invalid Parquet file: {str(e)}"),
+            ).model_dump(),
+        ) from e
+
     # Get and validate cache entry
     upload_entry = upload_tracker.get(upload_id=upload_id)
     if not upload_entry:
@@ -151,7 +181,7 @@ def upload_file(
             detail=UploadStatus(
                 id=upload_id,
                 update_timestamp=datetime.now(),
-                stage="unknown",
+                stage=UploadStage.UNKNOWN,
                 details=(
                     "Upload ID not found or expired. Entries expire after 30 minutes "
                     "of inactivity, including failed processes."
@@ -250,7 +280,7 @@ def get_upload_status(
             status_code=400,
             detail=UploadStatus(
                 id=upload_id,
-                stage="unknown",
+                stage=UploadStage.UNKNOWN,
                 update_timestamp=datetime.now(),
                 details=(
                     "Upload ID not found or expired. Entries expire after 30 minutes "

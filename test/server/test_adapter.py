@@ -448,7 +448,8 @@ class TestMatchboxBackend:
                     resolution=model_testkit.model.to_resolution()
                 )
                 self.backend.insert_model_data(
-                    name=model_testkit.name, results=model_testkit.probabilities
+                    name=model_testkit.name,
+                    results=model_testkit.probabilities.to_arrow(),
                 )
 
     def test_model_truth(self):

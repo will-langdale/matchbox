@@ -4,7 +4,6 @@ from collections.abc import Callable
 from typing import Any
 from unittest.mock import Mock, patch
 
-import numpy as np
 import polars as pl
 import pytest
 from splink import SettingsCreator
@@ -275,7 +274,7 @@ def test_probabilistic_scores_generation(
         left_clusters=left_source.entities,
         right_clusters=right_source.entities,
         sources=["source_left", "source_right"],
-        threshold=np.mean(results.probabilities["probability"]),
+        threshold=results.probabilities["probability"].mean(),
     )
 
     assert not identical, f"Expected imperfect results but got: {report}"
