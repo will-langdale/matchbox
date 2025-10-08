@@ -38,7 +38,8 @@ jobs:
       - name: Extract development version
         id: get_version
         run: |
-          echo "mb_version=$(uv run --frozen python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
+          echo "mb_version=$(uv run --frozen python -m setuptools_scm | sed 's/+.*//')" \
+          >> "$GITHUB_OUTPUT"
 
       - name: Build package
         env:
