@@ -52,7 +52,7 @@ def setup_mock_database():
         engine=warehouse,
     ).write_to_location()
 
-    dag = DAG("companies").connect()
+    dag = DAG("companies").new_run()
     foo = dag.source(**testkit_foo.into_dag())
     bar = dag.source(**testkit_bar.into_dag())
 

@@ -438,8 +438,8 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
         # Check if resolution already exists within run
         existing_resolutions: Resolutions = run_obj.resolutions
-        for res_name in existing_resolutions:
-            if res_name == path.name:
+        for res in existing_resolutions:
+            if res.name == path.name:
                 raise MatchboxResolutionAlreadyExists(
                     f"Resolution {path.name} already exists"
                 )

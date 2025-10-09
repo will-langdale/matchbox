@@ -78,10 +78,10 @@ You're now ready to create your first [`DAG`][matchbox.client.dags.DAG].
 === "Example"
     ```python
     from matchbox.client.dags import DAG
-    dag = DAG(name="companies").connect()
+    dag = DAG(name="companies").new_run()
     ```
 
-A DAG needs a name, which will be used to identify this DAG once you publish it to the Matchbox server. You also need to use the `.connect()` method to register the DAG with the server.
+A DAG needs a name, which will be used to identify this DAG once you publish it to the Matchbox server. You also need to use the `.new_run()` method to prepare the DAG to send results to the server.
 
 This DAG will own all the sources and models you define later.
 
@@ -532,9 +532,9 @@ You might want to publish a new run of your DAG based on newer data. You can ret
 === "Example"
     ```python    
     # Create a new DAG identical to the previous default
-    dag = DAG(name="companies").connect().load_default(
+    dag = DAG(name="companies").load_default(
         location=RelationalDBLocation(name="dbname", client=engine)
-    )
+    ).new_run()
     # Run new DAG
     dag.run_and_sync()
     # Make the DAG the new default

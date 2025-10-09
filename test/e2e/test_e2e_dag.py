@@ -138,7 +138,7 @@ class TestE2EPipelineBuilder:
         # === SETUP PHASE ===
         dw_loc = RelationalDBLocation(name="dbname", client=self.warehouse_engine)
 
-        dag = DAG("companies").connect()
+        dag = DAG("companies").new_run()
 
         # Create source configs
         source_a = dag.source(
@@ -247,24 +247,17 @@ class TestE2EPipelineBuilder:
         dag1_lookup = dag.extract_lookup()
 
         # Set as new default
-        assert dag.collection.default_run is None
-        first_run_id = dag.run
-
         dag.set_default()
-        dag.connect()  # Start a new run
-
-        assert dag.run != first_run_id
-        assert dag.collection.default_run == first_run_id
 
         # === SECOND RUN ===
 
         logging.info("Running DAG again to test downloading and using the default")
 
         # Load default
-        dag2 = DAG("companies").connect().load_default(location=dw_loc)
-        assert dag2.collection.default_run == first_run_id
-
-        # Run
+        reconstructed_dag = DAG("companies").load_default(location=dw_loc)
+        assert reconstructed_dag.run == dag.run
+        # Start a new run
+        dag2 = reconstructed_dag.new_run()
         dag2.run_and_sync()
 
         # Verify second run produces same results

@@ -29,6 +29,7 @@ from matchbox.common.dtos import (
     Run,
 )
 from matchbox.common.exceptions import (
+    MatchboxCollectionNotFoundError,
     MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
 )
@@ -174,7 +175,6 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
     assert dag.graph["d_foo"] == [foo.name]
 
 
-@patch.object(DAG, "connect")
 @patch.object(Source, "run")
 @patch.object(Model, "run")
 @patch.object(Source, "sync")
@@ -184,7 +184,6 @@ def test_dag_disconnected(
     source_sync_mock: Mock,
     model_run_mock: Mock,
     source_run_mock: Mock,
-    dag_connect_mock: Mock,
     sqlite_warehouse: Engine,
 ):
     """Nodes cannot be disconnected."""
@@ -652,7 +651,7 @@ def test_from_resolution():
         )
 
 
-def test_dag_connect_creates_new_collection(
+def test_dag_creates_new_collection(
     matchbox_api: MockRouter,
     sqlite_warehouse: Engine,
 ):
@@ -701,7 +700,7 @@ def test_dag_connect_creates_new_collection(
     )
 
     # Connect the DAG
-    result = dag.connect()
+    result = dag.new_run()
 
     # Verify
     assert result == dag
@@ -715,13 +714,10 @@ def test_dag_connect_creates_new_collection(
         pytest.param(True, 4, id="with_existing_runs"),
     ],
 )
-def test_dag_connect_uses_existing_collection(
-    matchbox_api: MockRouter,
-    sqlite_warehouse: Engine,
-    has_existing_runs: bool,
-    expected_run_id: int,
+def test_dag_uses_existing_collection(
+    matchbox_api: MockRouter, has_existing_runs: bool, expected_run_id: int
 ):
-    """Connect uses existing collection and creates new run."""
+    """New runs can be started from existing collection."""
     dag = DAG(name="test_collection")
 
     # Mock existing collection
@@ -760,18 +756,18 @@ def test_dag_connect_uses_existing_collection(
     )
 
     # Connect the DAG
-    result = dag.connect()
+    result = dag.new_run()
 
     # Verify
     assert result == dag
     assert dag.run == expected_run_id
 
 
-def test_dag_connect_with_default_run(
+def test_dag_load_default_run(
     matchbox_api: MockRouter,
     sqlite_warehouse: Engine,
 ):
-    """Connect loads default run with sources and optionally models."""
+    """Can load default run with sources and optionally models."""
     # Create test data
     test_dag = TestkitDAG().dag
 
@@ -838,16 +834,30 @@ def test_dag_connect_with_default_run(
         )
     )
 
-    # Connect with default
+    # Load default run
     fresh_dag = DAG(name=test_dag.name)
     location = RelationalDBLocation(name="db", client=sqlite_warehouse)
-    fresh_dag = fresh_dag.connect().load_default(location=location)
+    fresh_dag = fresh_dag.load_default(location=location)
 
     # Verify reconstruction matches original
     assert fresh_dag.name == test_dag.name
-    assert fresh_dag.run == 2
+    assert fresh_dag.run == 1
     assert set(fresh_dag.nodes.keys()) == set(test_dag.nodes.keys())
     assert fresh_dag.graph == test_dag.graph
+
+    # If the collection is not available, errors
+    matchbox_api.get(f"/collections/{test_dag.name}/runs/1").mock(
+        return_value=Response(
+            404,
+            json=NotFoundError(
+                details="Collection not found",
+                entity=BackendResourceType.COLLECTION,
+            ).model_dump(),
+        ),
+    )
+
+    with pytest.raises(MatchboxCollectionNotFoundError):
+        DAG(name=test_dag.name).load_default(location=location)
 
 
 def test_dag_set_default_ok(matchbox_api: MockRouter):
@@ -895,5 +905,5 @@ def test_dag_set_default_not_connected():
     """Set default raises error when DAG is not connected."""
     dag = DAG(name="test_collection")
 
-    with pytest.raises(RuntimeError, match="hasn't connected"):
+    with pytest.raises(RuntimeError, match="has not been connected"):
         dag.set_default()
