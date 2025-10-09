@@ -13,7 +13,6 @@ from sqlglot import select as sqlglot_select
 from matchbox.client import _handler
 from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
-from matchbox.client.sources import Source
 from matchbox.common.db import QueryReturnClass, QueryReturnType
 from matchbox.common.dtos import (
     QueryCombineType,
@@ -24,9 +23,11 @@ from matchbox.common.transform import truth_float_to_int, truth_int_to_float
 if TYPE_CHECKING:
     from matchbox.client.dags import DAG
     from matchbox.client.models import Model
+    from matchbox.client.sources import Source
 else:
     DAG = Any
     Model = Any
+    Source = Any
 
 
 class Query:

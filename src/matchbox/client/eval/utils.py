@@ -49,11 +49,7 @@ def get_samples(
 
     samples: pl.DataFrame = pl.from_arrow(
         _handler.sample_for_eval(
-            n=n,
-            resolution=ResolutionPath(
-                name=dag.final_step, collection=dag.name, run=dag.run
-            ),
-            user_id=user_id,
+            n=n, resolution=dag.final_step.resolution_path, user_id=user_id
         )
     )
 

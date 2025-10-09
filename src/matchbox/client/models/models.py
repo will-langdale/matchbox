@@ -290,4 +290,4 @@ class Model:
 
     def query(self, *sources, **kwargs) -> Query:
         """Generate a query for this model."""
-        return self.dag.query(*sources, **kwargs, model=self)
+        return Query(*sources, **kwargs, model=self, dag=self.dag)

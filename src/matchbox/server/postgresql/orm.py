@@ -426,13 +426,6 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         Returns:
             A Resolutions ORM instance with ID and relationships established
         """
-        # Check if resolution already exists. Always an error
-        existing = session.scalar(select(cls).where(cls.name == path.name))
-        if existing:
-            raise MatchboxResolutionAlreadyExists(
-                f"Resolution {path.name} already exists"
-            )
-
         # Find the run ID for the given collection and run ID
         run_obj = session.execute(
             select(Runs)
@@ -442,6 +435,14 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
         if not run_obj:
             raise MatchboxRunNotFoundError(number=path.run)
+
+        # Check if resolution already exists within run
+        existing_resolutions: Resolutions = run_obj.resolutions
+        for res_name in existing_resolutions:
+            if res_name == path.name:
+                raise MatchboxResolutionAlreadyExists(
+                    f"Resolution {path.name} already exists"
+                )
 
         # Create new resolution
         resolution_orm = cls(

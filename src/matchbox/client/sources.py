@@ -16,6 +16,7 @@ from sqlalchemy import Engine
 from sqlalchemy.exc import OperationalError
 
 from matchbox.client import _handler
+from matchbox.client.queries import Query
 from matchbox.common.db import (
     QueryReturnClass,
     QueryReturnType,
@@ -43,11 +44,9 @@ from matchbox.common.logging import logger
 
 if TYPE_CHECKING:
     from matchbox.client.dags import DAG
-    from matchbox.client.queries import Query
 
 else:
     DAG = Any
-    Query = Any
 
 
 T = TypeVar("T")
@@ -661,4 +660,4 @@ class Source:
 
     def query(self, **kwargs) -> Query:
         """Generate a query for this source."""
-        return self.dag.query(self, **kwargs)
+        return Query(self, **kwargs, dag=self.dag)

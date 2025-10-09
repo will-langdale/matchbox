@@ -116,11 +116,11 @@ class DAG:
         self._collection = collection
 
     @property
-    def final_step(self) -> str:
-        """Returns name of the root node in the DAG.
+    def final_step(self) -> Source | Model:
+        """Returns the root node in the DAG.
 
         Returns:
-            The name of the root node in the DAG
+            The root node in the DAG
 
         Raises:
             ValueError: If the DAG does not have a final step
@@ -139,7 +139,7 @@ class DAG:
         elif not apex_nodes:
             raise ValueError("No root node found, DAG might contain cycles")
         else:
-            return apex_nodes.pop()
+            return self.nodes[apex_nodes.pop()]
 
     def source(self, *args, **kwargs) -> Source:
         """Create Source and add it to the DAG."""
@@ -261,7 +261,7 @@ class DAG:
         Returns:
             String representation of the DAG with status indicators.
         """
-        root_name = self.final_step
+        root_name = self.final_step.name
         skipped = skipped or []
 
         def _get_node_status(name: str) -> str:
@@ -373,7 +373,7 @@ class DAG:
         start_time = datetime.datetime.now()
 
         # Determine order of execution steps
-        root_node = self.final_step
+        root_node = self.final_step.name
 
         def depth_first(node: str, sequence: list):
             sequence.append(node)
@@ -479,9 +479,7 @@ class DAG:
             ],
             source=ResolutionPath(name=from_source, collection=self.name, run=self.run),
             key=key,
-            resolution=ResolutionPath(
-                name=self.final_step, collection=self.name, run=self.run
-            ),
+            resolution=self.final_step.resolution_path,
             threshold=threshold,
         )
 
@@ -501,71 +499,64 @@ class DAG:
             location_names: An optional list of location names to filter by.
         """
         # Get all sources in scope of the DAG run
-        run = _handler.get_run(collection=self.name, run_id=self.run)
-        source_resolutions = {
-            res_name: resolution
-            for res_name, resolution in run.resolutions.items()
-            if resolution.resolution_type == ResolutionType.SOURCE
+        sources = {
+            node_name: node
+            for node_name, node in self.nodes.items()
+            if isinstance(node, Source)
         }
 
-        filtered_res_names = list(source_resolutions.keys())
+        filtered_source_names = list(sources.keys())
 
         if source_filter:
-            filtered_res_names = [s for s in filtered_res_names if s in source_filter]
-
-        if location_names:
-            filtered_res_names = [
-                s
-                for s in filtered_res_names
-                if source_resolutions[s].config.location_config.name in location_names
+            filtered_source_names = [
+                s for s in filtered_source_names if s in source_filter
             ]
 
-        if not filtered_res_names:
+        if location_names:
+            filtered_source_names = [
+                s
+                for s in filtered_source_names
+                if sources[s].config.location_config.name in location_names
+            ]
+
+        if not filtered_source_names:
             raise MatchboxResolutionNotFoundError("No compatible source was found")
 
         source_mb_ids: list[ArrowTable] = []
         source_to_key_field: dict[str, str] = {}
 
-        for res_name in filtered_res_names:
+        for source_name in filtered_source_names:
             # Get Matchbox IDs from backend
             source_mb_ids.append(
                 _handler.query(
-                    source=ResolutionPath(
-                        name=res_name, collection=self.name, run=self.run
-                    ),
-                    resolution=ResolutionPath(
-                        name=self.final_step, collection=self.name, run=self.run
-                    ),
+                    source=sources[source_name].resolution_path,
+                    resolution=self.final_step.resolution_path,
                     return_leaf_id=False,
                 )
             )
 
-            source_to_key_field[res_name] = source_resolutions[
-                res_name
+            source_to_key_field[source_name] = sources[
+                source_name
             ].config.key_field.name
 
         # Join Matchbox IDs to form mapping table
         mapping = source_mb_ids[0]
         mapping = mapping.rename_columns(
             {
-                "key": source_resolutions[filtered_res_names[0]].config.qualified_key(
-                    filtered_res_names[0]
+                "key": sources[filtered_source_names[0]].config.qualified_key(
+                    filtered_source_names[0]
                 )
             }
         )
-        if len(filtered_res_names) > 1:
+        if len(filtered_source_names) > 1:
             for source_name, mb_ids in zip(
-                filtered_res_names[1:], source_mb_ids[1:], strict=True
+                filtered_source_names[1:], source_mb_ids[1:], strict=True
             ):
                 mapping = mapping.join(
                     right_table=mb_ids, keys="id", join_type="full outer"
                 )
                 mapping = mapping.rename_columns(
-                    {
-                        "key": source_resolutions[source_name].config.qualified_key(
-                            source_name
-                        )
-                    }
+                    {"key": sources[source_name].config.qualified_key(source_name)}
                 )
 
         return mapping

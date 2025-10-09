@@ -243,24 +243,22 @@ class TestE2EPipelineBuilder:
         )
         assert len(matches[source_a.name]) >= 1
 
+        # Can retrieve whole lookup
+        dag1_lookup = dag.extract_lookup()
+
         # Set as new default
-        default_run_id = dag.collection.default_run
+        assert dag.collection.default_run is None
         first_run_id = dag.run
 
-        assert default_run_id is None
-
         dag.set_default()
-        dag.connect()  # Refresh from server
+        dag.connect()  # Start a new run
 
-        assert dag.run != default_run_id
+        assert dag.run != first_run_id
         assert dag.collection.default_run == first_run_id
 
         # === SECOND RUN ===
 
         logging.info("Running DAG again to test downloading and using the default")
-
-        # Clear up some memory
-        del dag
 
         # Load default
         dag2 = DAG("companies").connect().load_default(location=dw_loc)
@@ -270,7 +268,9 @@ class TestE2EPipelineBuilder:
         dag2.run_and_sync()
 
         # Verify second run produces same results
-        final_df_second = dag2.query().run()
+        final_df_second = dag2.final_step.query(
+            dag2.get_source(source_a.name), dag2.get_source(source_b.name)
+        ).run()
         second_run_entities = final_df_second["id"].n_unique()
         logging.info(f"Second run produced {second_run_entities} unique entities")
 
@@ -279,6 +279,9 @@ class TestE2EPipelineBuilder:
             "Expected same results after rerun: "
             f"{first_run_entities} vs {second_run_entities}"
         )
+
+        # The lookup is identical
+        assert dag2.extract_lookup() == dag1_lookup
 
         # # Basic sanity checks
         assert len(final_df_second) > 0, "Expected some results from second run"
