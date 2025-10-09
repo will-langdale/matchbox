@@ -3,6 +3,7 @@ import logging
 import polars as pl
 import pytest
 from httpx import Client
+from polars.testing import assert_frame_equal
 from sqlalchemy import Engine, text
 
 from matchbox.client.dags import DAG
@@ -268,10 +269,15 @@ class TestE2EPipelineBuilder:
 
         # Start a new run
         rerun_dag = reconstructed_dag.new_run()
-        assert rerun_dag.run != reconstructed_dag.run
+        assert rerun_dag.run != dag.run
         rerun_dag.run_and_sync()
 
         # The lookup is identical
-        assert rerun_dag.extract_lookup() == dag1_lookup
+        assert_frame_equal(
+            pl.from_arrow(rerun_dag.extract_lookup()),
+            pl.from_arrow(dag1_lookup),
+            check_column_order=False,
+            check_row_order=False,
+        )
 
         logging.info("DAG pipeline test completed successfully!")

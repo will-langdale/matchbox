@@ -378,6 +378,7 @@ class Source:
         self.dag = dag
         self.name = name
         self.description = description
+        self.extract_transform = extract_transform
 
         if infer_types:
             self._validate_fields(key_field, index_fields, str)
@@ -388,19 +389,14 @@ class Source:
                 field_name: SourceField(name=field_name, type=dtype)
                 for field_name, dtype in inferred_types.items()
             }
-            typed_key_field = SourceField(name=key_field, type=DataTypes.STRING)
-            typed_index_fields = tuple(remote_fields[field] for field in index_fields)
+            self.typed_key_field = SourceField(name=key_field, type=DataTypes.STRING)
+            self.typed_index_fields = tuple(
+                remote_fields[field] for field in index_fields
+            )
         else:
-            typed_key_field, typed_index_fields = self._validate_fields(
+            self.typed_key_field, self.typed_index_fields = self._validate_fields(
                 key_field, index_fields, SourceField
             )
-
-        self.config = SourceConfig(
-            location_config=location.config,
-            extract_transform=extract_transform,
-            key_field=typed_key_field,
-            index_fields=typed_index_fields,
-        )
 
     def _validate_fields(
         self,
@@ -420,6 +416,16 @@ class Source:
             )
 
         return key_field, tuple(index_fields)
+
+    @property
+    def config(self) -> SourceConfig:
+        """Generate SourceConfig from Source."""
+        return SourceConfig(
+            location_config=self.location.config,
+            extract_transform=self.extract_transform,
+            key_field=self.typed_key_field,
+            index_fields=self.typed_index_fields,
+        )
 
     @property
     def dependencies(self) -> list[ResolutionPath]:

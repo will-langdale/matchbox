@@ -112,25 +112,32 @@ class Model:
         self.results: Results | None = None
 
         if isinstance(model_class, str):
-            model_class: type[Linker | Deduper] = _MODEL_CLASSES[model_class]
-        self.model_instance = model_class(settings=model_settings)
+            self.model_class: type[Linker | Deduper] = _MODEL_CLASSES[model_class]
+        else:
+            self.model_class = model_class
+        self.model_instance = self.model_class(settings=model_settings)
 
-        model_type: ModelType = (
-            ModelType.LINKER if issubclass(model_class, Linker) else ModelType.DEDUPER
+        self.model_type: ModelType = (
+            ModelType.LINKER
+            if issubclass(self.model_class, Linker)
+            else ModelType.DEDUPER
         )
 
         if isinstance(model_settings, dict):
             SettingsClass = self.model_instance.__annotations__["settings"]
-            model_settings = SettingsClass(**model_settings)
+            self.model_settings = SettingsClass(**model_settings)
+        else:
+            self.model_settings = model_settings
 
-        serialised_settings = model_settings.model_dump_json()
-
-        self.config = ModelConfig(
-            type=model_type,
-            model_class=model_class.__name__,
-            model_settings=serialised_settings,
-            left_query=left_query.config,
-            right_query=right_query.config if right_query else None,
+    @property
+    def config(self) -> ModelConfig:
+        """Generate config DTO from Model."""
+        return ModelConfig(
+            type=self.model_type,
+            model_class=self.model_class.__name__,
+            model_settings=self.model_settings.model_dump_json(),
+            left_query=self.left_query.config,
+            right_query=self.right_query.config if self.right_query else None,
         )
 
     @property
