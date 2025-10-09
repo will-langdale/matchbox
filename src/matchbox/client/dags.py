@@ -12,6 +12,7 @@ from matchbox.client.models import Model
 from matchbox.client.queries import Query
 from matchbox.client.sources import Location, Source
 from matchbox.common.dtos import (
+    Collection,
     CollectionName,
     ModelResolutionName,
     Resolution,
@@ -28,18 +29,39 @@ from matchbox.common.exceptions import (
 from matchbox.common.logging import logger
 from matchbox.common.transform import truth_int_to_float
 
+# class DAGConnection:
+#     """Read-only server metadata describing link with local DAG."""
+
+#     def __init__(self, run: RunID, collection: Collection) -> None:
+#         """Initialise connection for DAG."""
+#         self._run = run
+#         self._collection = collection
+
+#     ERROR_MSG = "DAG not connected."
+
+#     @property
+#     def run(self) -> RunID:
+#         """Get run ID."""
+#         if not self._run:
+#             raise RuntimeError(self.ERROR_MSG)
+#         return self._run
+
+#     @property
+#     def collection(self) -> Collection:
+#         """Get collection."""
+#         if not self._collection:
+#             raise RuntimeError(self.ERROR_MSG)
+#         return self._collection
+
 
 class DAG:
     """Self-sufficient pipeline of indexing, deduping and linking steps."""
 
-    def __init__(
-        self,
-        name: str,
-        new: bool = False,
-    ):
+    def __init__(self, name: str):
         """Initialises empty DAG."""
         self.name: CollectionName = CollectionName(name)
-        self.run: RunID | None = None
+        self._run: RunID | None = None
+        self._collection: Collection | None = None
         self.nodes: dict[ResolutionName, Source | Model] = {}
         self.graph: dict[ResolutionName, list[ResolutionName]] = {}
 
@@ -66,6 +88,32 @@ class DAG:
             self.graph[step.name] = []
 
         self.nodes[step.name] = step
+
+    @property
+    def run(self) -> RunID:
+        """Return run ID if available, else error."""
+        if self._run:
+            return self._run
+
+        raise RuntimeError("The DAG hasn't connected yet.")
+
+    @run.setter
+    def run(self, run_id: RunID) -> None:
+        """Set run ID manually."""
+        self._run = run_id
+
+    @property
+    def collection(self) -> Collection:
+        """Return collection if available, else error."""
+        if self._collection:
+            return self._collection
+
+        raise RuntimeError("The DAG hasn't connected yet.")
+
+    @collection.setter
+    def collection(self, collection: Collection) -> None:
+        """Set collection manually."""
+        self._collection = collection
 
     @property
     def final_step(self) -> str:
@@ -271,52 +319,47 @@ class DAG:
 
         return "\n".join(result)
 
-    def connect(self, location: Location, default: bool = False) -> Self:
-        """Attach the DAG to a backend and start a new run.
-
-        If `default` is True, the existing default run will be loaded in.
-
-        Args:
-            location: The Location object defining where all source data is stored.
-                Can be updated per-source after instantiation if necessary.
-            default: Download the existing default collection run if it exists.
-        """
+    def connect(self) -> Self:
+        """Attach the DAG to a backend and start a new run."""
         # Create or get collection
         try:
-            collection = _handler.get_collection(self.name)
+            self.collection = _handler.get_collection(self.name)
         except MatchboxCollectionNotFoundError:
             _handler.create_collection(self.name)
-            collection = _handler.get_collection(self.name)
+            self.collection = _handler.get_collection(self.name)
 
         # Delete non-default runs
-        for run in collection.runs:
-            if run != collection.default_run:
+        for run in self.collection.runs:
+            if run != self.collection.default_run:
                 _handler.delete_run(collection=self.name, run_id=run, certain=True)
 
         # Start a new run
         self.run = _handler.create_run(collection=self.name).run_id
 
-        # If default is requested, load it in
-        if default and collection.default_run is not None:
-            # Load in default
-            default_run = _handler.get_run(
-                collection=self.name, run_id=collection.default_run
-            )
+        return self
 
-            def _len_dependencies(res_item: tuple[ResolutionName, Resolution]) -> int:
-                return len(res_item[1].config.dependencies)
+    def load_default(self, location: Location) -> Self:
+        """Add nodes from DAG implied by default Run in this collection.
 
-            sorted_resolutions: tuple[ResolutionName, Resolution] = sorted(
-                default_run.resolutions.items(),
-                key=_len_dependencies,
-            )
+        Args:
+            location: The Location object that will be attached to nodes coming
+                from default Run. Can be updated per-source after instantiation if
+                necessary.
+        """
+        default_run = _handler.get_run(
+            collection=self.name, run_id=self.collection.default_run
+        )
 
-            for name, resolution in sorted_resolutions:
-                self.add_resolution(
-                    name=name,
-                    resolution=resolution,
-                    location=location,
-                )
+        def _len_dependencies(res_item: tuple[ResolutionName, Resolution]) -> int:
+            return len(res_item[1].config.dependencies)
+
+        sorted_resolutions: tuple[ResolutionName, Resolution] = sorted(
+            default_run.resolutions.items(),
+            key=_len_dependencies,
+        )
+
+        for name, resolution in sorted_resolutions:
+            self.add_resolution(name=name, resolution=resolution, location=location)
 
         return self
 
@@ -393,9 +436,6 @@ class DAG:
 
         Makes it immutable, then moves the default pointer to it.
         """
-        if self.run is None:
-            raise ValueError("DAG is not connected to a run")
-
         _handler.set_run_mutable(collection=self.name, run_id=self.run, mutable=False)
         _handler.set_run_default(collection=self.name, run_id=self.run, default=True)
 

@@ -138,7 +138,7 @@ class TestE2EPipelineBuilder:
         # === SETUP PHASE ===
         dw_loc = RelationalDBLocation(name="dbname", client=self.warehouse_engine)
 
-        dag = DAG("companies", new=True)
+        dag = DAG("companies").connect()
 
         # Create source configs
         source_a = dag.source(

@@ -264,8 +264,8 @@ class ResolutionPath(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    collection: CollectionName = "default"
-    run: RunID = 1
+    collection: CollectionName
+    run: RunID
     name: ResolutionName
 
     def __str__(self) -> str:

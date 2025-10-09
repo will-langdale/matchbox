@@ -100,8 +100,8 @@ def test_get_judgements(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
 
 def test_compare_models_ok(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     test_client, mock_backend, _ = api_client_and_mocks
-    model_a_path = ModelResolutionPath(name="a")
-    model_b_path = ModelResolutionPath(name="b")
+    model_a_path = ModelResolutionPath(name="a", collection="default", run=1)
+    model_b_path = ModelResolutionPath(name="b", collection="default", run=1)
     mock_pr = {model_a_path: (1, 0.5), model_b_path: (0.5, 1)}
     mock_backend.compare_models.return_value = mock_pr
 
@@ -119,9 +119,9 @@ def test_compare_models_ok(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
 
 def test_compare_models_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     test_client, mock_backend, _ = api_client_and_mocks
-    model_a_path = ModelResolutionPath(name="a")
-    model_b_path = ModelResolutionPath(name="b")
-    model_c_path = ModelResolutionPath(name="c")
+    model_a_path = ModelResolutionPath(name="a", collection="default", run=1)
+    model_b_path = ModelResolutionPath(name="b", collection="default", run=1)
+    model_c_path = ModelResolutionPath(name="c", collection="default", run=1)
 
     mock_backend.compare_models.side_effect = MatchboxResolutionNotFoundError
     response = test_client.post(

@@ -658,7 +658,6 @@ def test_dag_connect_creates_new_collection(
 ):
     """Connect creates a new collection when it doesn't exist."""
     dag = DAG(name="test_collection")
-    location = RelationalDBLocation(name="db", client=sqlite_warehouse)
 
     # Mock collection not found, then found after creation
     matchbox_api.get("/collections/test_collection").mock(
@@ -702,7 +701,7 @@ def test_dag_connect_creates_new_collection(
     )
 
     # Connect the DAG
-    result = dag.connect(location=location, default=False)
+    result = dag.connect()
 
     # Verify
     assert result == dag
@@ -724,7 +723,6 @@ def test_dag_connect_uses_existing_collection(
 ):
     """Connect uses existing collection and creates new run."""
     dag = DAG(name="test_collection")
-    location = RelationalDBLocation(name="db", client=sqlite_warehouse)
 
     # Mock existing collection
     existing_runs = [2, 3] if has_existing_runs else []
@@ -762,7 +760,7 @@ def test_dag_connect_uses_existing_collection(
     )
 
     # Connect the DAG
-    result = dag.connect(location=location, default=False)
+    result = dag.connect()
 
     # Verify
     assert result == dag
@@ -843,7 +841,7 @@ def test_dag_connect_with_default_run(
     # Connect with default
     fresh_dag = DAG(name=test_dag.name)
     location = RelationalDBLocation(name="db", client=sqlite_warehouse)
-    fresh_dag = fresh_dag.connect(location=location, default=True)
+    fresh_dag = fresh_dag.connect().load_default(location=location)
 
     # Verify reconstruction matches original
     assert fresh_dag.name == test_dag.name
@@ -897,5 +895,5 @@ def test_dag_set_default_not_connected():
     """Set default raises error when DAG is not connected."""
     dag = DAG(name="test_collection")
 
-    with pytest.raises(ValueError, match="not connected to a run"):
+    with pytest.raises(RuntimeError, match="hasn't connected"):
         dag.set_default()

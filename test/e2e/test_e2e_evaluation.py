@@ -84,7 +84,7 @@ class TestE2EModelEvaluation:
         # Create DAG
         dw_loc = RelationalDBLocation(name="postgres", client=postgres_warehouse)
 
-        dag = DAG("companies", new=True)
+        dag = DAG("companies").connect()
         self.__class__.dag = dag
 
         source_a = dag.source(

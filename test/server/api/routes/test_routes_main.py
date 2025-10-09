@@ -391,9 +391,13 @@ def test_match(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     mock_matches = [
         Match(
             cluster=1,
-            source=SourceResolutionPath(collection="test_collection", name="foo"),
+            source=SourceResolutionPath(
+                collection="test_collection", name="foo", run=1
+            ),
             source_id={"1"},
-            target=SourceResolutionPath(collection="test_collection", name="bar"),
+            target=SourceResolutionPath(
+                collection="test_collection", name="bar", run=1
+            ),
             target_id={"a"},
         )
     ]
