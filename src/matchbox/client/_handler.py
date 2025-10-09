@@ -369,7 +369,7 @@ def create_resolution(
     path: ResolutionPath,
 ) -> ResourceOperationStatus:
     """Create a resolution (model or source)."""
-    log_prefix = f"Resolution {path.name}"
+    log_prefix = f"Resolution {path}"
     logger.debug("Creating", prefix=log_prefix)
 
     res = CLIENT.post(

@@ -243,14 +243,34 @@ class TestE2EPipelineBuilder:
         )
         assert len(matches[source_a.name]) >= 1
 
-        # === SECOND RUN (OVERWRITE) ===
+        # Set as new default
+        default_run_id = dag.collection.default_run
+        first_run_id = dag.run
 
-        logging.info("Running DAG again to test overwriting")
-        dag.run_and_sync()
+        assert default_run_id is None
+
+        dag.set_default()
+        dag.connect()  # Refresh from server
+
+        assert dag.run != default_run_id
+        assert dag.collection.default_run == first_run_id
+
+        # === SECOND RUN ===
+
+        logging.info("Running DAG again to test downloading and using the default")
+
+        # Clear up some memory
+        del dag
+
+        # Load default
+        dag2 = DAG("companies").connect().load_default(location=dw_loc)
+        assert dag2.collection.default_run == first_run_id
+
+        # Run
+        dag2.run_and_sync()
 
         # Verify second run produces same results
-        final_df_second = link_a_b.query(source_a, source_b).run()
-
+        final_df_second = dag2.query().run()
         second_run_entities = final_df_second["id"].n_unique()
         logging.info(f"Second run produced {second_run_entities} unique entities")
 
