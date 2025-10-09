@@ -519,7 +519,8 @@ class TestMatchboxBackend:
 
             with pytest.raises(MatchboxResolutionNotFoundError):
                 self.backend.get_resolution(
-                    path=ResolutionPath(name="foo"), validate=ResolutionType.SOURCE
+                    path=ResolutionPath(collection="collection", run=1, name="foo"),
+                    validate=ResolutionType.SOURCE,
                 )
 
             with pytest.raises(MatchboxResolutionNotFoundError):
@@ -1204,7 +1205,11 @@ class TestMatchboxBackend:
         ):
             user_id = self.backend.login("alice")
             self.backend.sample_for_eval(
-                n=10, path=ResolutionPath(name="naive_test_crn"), user_id=user_id
+                n=10,
+                path=ResolutionPath(
+                    collection="collection", run=1, name="naive_test_crn"
+                ),
+                user_id=user_id,
             )
 
         with self.scenario(self.backend, "dedupe") as dag_testkit:
