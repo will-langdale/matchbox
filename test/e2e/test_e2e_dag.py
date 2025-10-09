@@ -234,12 +234,14 @@ class TestE2EPipelineBuilder:
         logging.info(f"First run produced {first_run_entities} unique entities")
 
         # Lookup works too
+        test_key = final_df.filter(
+            pl.col(source_b.f(source_b.config.key_field.name)).is_not_null()
+        )[source_b.f(source_b.config.key_field.name)][0]
+
         matches = dag.lookup_key(
             from_source=source_b.name,
             to_sources=[source_a.name],
-            key=final_df.filter(
-                pl.col(source_b.f(source_b.config.key_field.name)).is_not_null()
-            )[source_b.f(source_b.config.key_field.name)][0],
+            key=test_key,
         )
         assert len(matches[source_a.name]) >= 1
 
@@ -256,27 +258,20 @@ class TestE2EPipelineBuilder:
         # Load default
         reconstructed_dag = DAG("companies").load_default(location=dw_loc)
         assert reconstructed_dag.run == dag.run
-        # Start a new run
-        dag2 = reconstructed_dag.new_run()
-        dag2.run_and_sync()
 
-        # Verify second run produces same results
-        final_df_second = dag2.final_step.query(
-            dag2.get_source(source_a.name), dag2.get_source(source_b.name)
-        ).run()
-        second_run_entities = final_df_second["id"].n_unique()
-        logging.info(f"Second run produced {second_run_entities} unique entities")
-
-        # Should have same number of entities after rerun
-        assert first_run_entities == second_run_entities, (
-            "Expected same results after rerun: "
-            f"{first_run_entities} vs {second_run_entities}"
+        # Can directly read data from default
+        assert matches == reconstructed_dag.lookup_key(
+            from_source=source_b.name,
+            to_sources=[source_a.name],
+            key=test_key,
         )
 
-        # The lookup is identical
-        assert dag2.extract_lookup() == dag1_lookup
+        # Start a new run
+        rerun_dag = reconstructed_dag.new_run()
+        assert rerun_dag.run != reconstructed_dag.run
+        rerun_dag.run_and_sync()
 
-        # # Basic sanity checks
-        assert len(final_df_second) > 0, "Expected some results from second run"
+        # The lookup is identical
+        assert rerun_dag.extract_lookup() == dag1_lookup
 
         logging.info("DAG pipeline test completed successfully!")
