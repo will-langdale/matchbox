@@ -137,8 +137,8 @@ class TestUploadTracker:
 
     def test_basic_upload_tracking(self):
         """Test adding upload to tracker and retrieving."""
-        source_path = ResolutionPath(name="source", collection="default", version="v1")
-        model_path = ResolutionPath(name="model", collection="default", version="v1")
+        source_path = ResolutionPath(name="source", collection="default", run=1)
+        model_path = ResolutionPath(name="model", collection="default", run=1)
 
         # Add the source and the model
         source_upload_id = self.tracker.add_source(source_path)
@@ -168,7 +168,7 @@ class TestUploadTracker:
         """Test status update functionality."""
         # Create entry and verify initial status
         upload_id = self.tracker.add_source(
-            ResolutionPath(name="source", collection="default", version="v1")
+            ResolutionPath(name="source", collection="default", run=1)
         )
         entry = self.tracker.get(upload_id)
         assert entry.status.stage == UploadStage.AWAITING_UPLOAD
@@ -199,7 +199,7 @@ class TestUploadTracker:
         # Initial creation
         mock_datetime.now.return_value = creation_timestamp
         upload_id = self.tracker.add_source(
-            ResolutionPath(name="source", collection="default", version="v1")
+            ResolutionPath(name="source", collection="default", run=1)
         )
         entry = self.tracker.get(upload_id)
         assert entry.status.update_timestamp == datetime(2024, 1, 1, 12, 0)

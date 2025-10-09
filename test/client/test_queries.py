@@ -19,8 +19,13 @@ from matchbox.common.exceptions import (
     MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
 )
+from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.models import model_factory
-from matchbox.common.factories.sources import source_factory, source_from_tuple
+from matchbox.common.factories.sources import (
+    linked_sources_factory,
+    source_factory,
+    source_from_tuple,
+)
 
 
 def test_init_query():
@@ -159,7 +164,7 @@ def test_query_single_source(matchbox_api: MockRouter, sqlite_warehouse: Engine)
 
     assert dict(query_route.calls.last.request.url.params) == {
         "collection": testkit.source.dag.name,
-        "version": testkit.source.dag.version,
+        "run_id": str(testkit.source.dag.run),
         "source": testkit.source.name,
         "return_leaf_id": "False",
     }
@@ -175,7 +180,7 @@ def test_query_single_source(matchbox_api: MockRouter, sqlite_warehouse: Engine)
 
     assert dict(query_route.calls.last.request.url.params) == {
         "collection": testkit.source.dag.name,
-        "version": testkit.source.dag.version,
+        "run_id": str(testkit.source.dag.run),
         "source": testkit.source.name,
         "threshold": "50",
         "return_leaf_id": "False",
@@ -248,14 +253,14 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
 
     assert dict(query_route.calls[-2].request.url.params) == {
         "collection": testkit1.source.dag.name,
-        "version": testkit1.source.dag.version,
+        "run_id": str(testkit1.source.dag.run),
         "source": testkit1.source.name,
         "resolution": model.name,
         "return_leaf_id": "False",
     }
     assert dict(query_route.calls[-1].request.url.params) == {
         "collection": testkit2.source.dag.name,
-        "version": testkit2.source.dag.version,
+        "run_id": str(testkit2.source.dag.run),
         "source": testkit2.source.name,
         "resolution": model.name,
         "return_leaf_id": "False",
@@ -728,3 +733,75 @@ def test_clean_column_passthrough():
     assert result["full_name"].to_list() == ["John", "Jane", "Bob"]
     assert result["age"].to_list() == [25, 30, 35]
     assert result["city"].to_list() == ["London", "Hull", "Stratford-upon-Avon"]
+
+
+def test_query_from_config():
+    """Test reconstructing a Query from a QueryConfig."""
+    dag = TestkitDAG().dag
+
+    # Create test sources
+    linked_testkit = linked_sources_factory(dag=dag)
+    crn_testkit = linked_testkit.sources["crn"]
+    duns_testkit = linked_testkit.sources["duns"]
+
+    model_testkit = model_factory(
+        left_testkit=crn_testkit,
+        right_testkit=duns_testkit,
+        true_entities=linked_testkit.true_entities,
+        dag=dag,
+    )
+
+    # Add to DAG
+    dag.source(**crn_testkit.into_dag())
+    dag.source(**duns_testkit.into_dag())
+    dag.model(**model_testkit.into_dag())
+
+    # Create original query
+    original_query = Query(
+        crn_testkit.source,
+        duns_testkit.source,
+        dag=dag,
+        model=model_testkit.model,
+        combine_type="explode",
+        threshold=0.75,
+        cleaning={"new_col": "foo_a * 2"},
+    )
+
+    # Get config and reconstruct
+    config = original_query.config
+    reconstructed_query = Query.from_config(config, dag=dag)
+
+    # Verify reconstruction matches original
+    assert reconstructed_query.config == original_query.config
+    assert reconstructed_query.sources == original_query.sources
+    assert reconstructed_query.model.config == original_query.model.config
+    assert reconstructed_query.combine_type == original_query.combine_type
+    assert reconstructed_query.threshold == original_query.threshold
+    assert reconstructed_query.cleaning == original_query.cleaning
+
+
+def test_query_from_config_no_model():
+    """Test reconstructing a Query without a model."""
+    dag = TestkitDAG().dag
+
+    # Create test source
+    testkit = source_factory(dag=dag)
+
+    # Add to DAG
+    dag.source(**testkit.into_dag())
+
+    # Create query without model
+    original_query = Query(
+        testkit.source,
+        dag=dag,
+        threshold=0.5,
+    )
+
+    # Reconstruct from config
+    config = original_query.config
+    reconstructed_query = Query.from_config(config, dag=dag)
+
+    # Verify
+    assert reconstructed_query.config == original_query.config
+    assert reconstructed_query.model is None
+    assert reconstructed_query.threshold == 0.5

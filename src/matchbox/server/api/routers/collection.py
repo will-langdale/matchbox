@@ -16,9 +16,9 @@ from matchbox.common.dtos import (
     ResolutionPath,
     ResolutionType,
     ResourceOperationStatus,
+    Run,
+    RunID,
     UploadStatus,
-    Version,
-    VersionName,
 )
 from matchbox.common.exceptions import (
     MatchboxCollectionAlreadyExists,
@@ -26,8 +26,7 @@ from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionAlreadyExists,
     MatchboxResolutionNotFoundError,
-    MatchboxVersionAlreadyExists,
-    MatchboxVersionNotFoundError,
+    MatchboxRunNotFoundError,
 )
 from matchbox.server.api.dependencies import (
     BackendDependency,
@@ -151,26 +150,26 @@ def delete_collection(
         ) from e
 
 
-# Version management endpoints
+# Run management endpoints
 
 
 @router.get(
-    "/{collection}/versions/{version}",
+    "/{collection}/runs/{run_id}",
     responses={404: {"model": NotFoundError}},
-    summary="Get specific version",
-    description="Retrieve details for a specific version within a collection.",
+    summary="Get specific run",
+    description="Retrieve details for a specific run within a collection.",
 )
-def get_version(
+def get_run(
     backend: BackendDependency,
     collection: CollectionName,
-    version: VersionName,
-) -> Version:
-    """Get a specific version."""
-    return backend.get_version(collection=collection, name=version)
+    run_id: RunID,
+) -> Run:
+    """Get a specific run."""
+    return backend.get_run(collection=collection, run_id=run_id)
 
 
 @router.post(
-    "/{collection}/versions/{version}",
+    "/{collection}/runs",
     responses={
         404: {"model": NotFoundError},
         409: {
@@ -180,28 +179,22 @@ def get_version(
     },
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(authorisation_dependencies)],
-    summary="Create a new version",
-    description="Create a new version within the specified collection.",
+    summary="Create a new run",
+    description="Create a new run within the specified collection.",
 )
-def create_version(
+def create_run(
     backend: BackendDependency,
     collection: CollectionName,
-    version: VersionName,
-) -> ResourceOperationStatus:
-    """Create a new version in a collection."""
+) -> Run:
+    """Create a new run in a collection."""
     try:
-        backend.create_version(collection=collection, name=version)
-        return ResourceOperationStatus(
-            success=True,
-            name=version,
-            operation=CRUDOperation.CREATE,
-        )
-    except (MatchboxVersionAlreadyExists, MatchboxCollectionNotFoundError) as e:
+        return backend.create_run(collection=collection)
+    except MatchboxCollectionNotFoundError as e:
         raise HTTPException(
             status_code=409,
             detail=ResourceOperationStatus(
                 success=False,
-                name=version,
+                name=collection,
                 operation=CRUDOperation.CREATE,
                 details=str(e),
             ),
@@ -209,7 +202,7 @@ def create_version(
 
 
 @router.patch(
-    "/{collection}/versions/{version}/mutable",
+    "/{collection}/runs/{run_id}/mutable",
     responses={
         404: {"model": NotFoundError},
         500: {
@@ -218,28 +211,26 @@ def create_version(
         },
     },
     dependencies=[Depends(authorisation_dependencies)],
-    summary="Change version mutability",
-    description="Set whether a version can be modified.",
+    summary="Change run mutability",
+    description="Set whether a run can be modified.",
 )
-def set_version_mutable(
+def set_run_mutable(
     backend: BackendDependency,
     collection: CollectionName,
-    version: VersionName,
+    run_id: RunID,
     mutable: Annotated[bool, Body(description="Mutability setting")],
 ) -> ResourceOperationStatus:
-    """Set version mutability."""
+    """Set run mutability."""
     try:
-        backend.set_version_mutable(
-            collection=collection, name=version, mutable=mutable
-        )
+        backend.set_run_mutable(collection=collection, run_id=run_id, mutable=mutable)
         return ResourceOperationStatus(
             success=True,
-            name=version,
+            name=run_id,
             operation=CRUDOperation.UPDATE,
         )
     except (
         MatchboxCollectionNotFoundError,
-        MatchboxVersionNotFoundError,
+        MatchboxRunNotFoundError,
     ):
         raise
     except Exception as e:
@@ -247,7 +238,7 @@ def set_version_mutable(
             status_code=500,
             detail=ResourceOperationStatus(
                 success=False,
-                name=version,
+                name=run_id,
                 operation=CRUDOperation.UPDATE,
                 details=str(e),
             ).model_dump(),
@@ -255,7 +246,7 @@ def set_version_mutable(
 
 
 @router.patch(
-    "/{collection}/versions/{version}/default",
+    "/{collection}/runs/{run_id}/default",
     responses={
         404: {"model": NotFoundError},
         500: {
@@ -264,28 +255,26 @@ def set_version_mutable(
         },
     },
     dependencies=[Depends(authorisation_dependencies)],
-    summary="Change default version",
-    description="Set whether a version is the default for its collection.",
+    summary="Change default run",
+    description="Set whether a run is the default for its collection.",
 )
-def set_version_default(
+def set_run_default(
     backend: BackendDependency,
     collection: CollectionName,
-    version: VersionName,
+    run_id: RunID,
     default: Annotated[bool, Body(description="Default setting")],
 ) -> ResourceOperationStatus:
-    """Set version as default."""
+    """Set run as default."""
     try:
-        backend.set_version_default(
-            collection=collection, name=version, default=default
-        )
+        backend.set_run_default(collection=collection, run_id=run_id, default=default)
         return ResourceOperationStatus(
             success=True,
-            name=version,
+            name=run_id,
             operation=CRUDOperation.UPDATE,
         )
     except (
         MatchboxCollectionNotFoundError,
-        MatchboxVersionNotFoundError,
+        MatchboxRunNotFoundError,
     ):
         raise
     except Exception as e:
@@ -293,7 +282,7 @@ def set_version_default(
             status_code=500,
             detail=ResourceOperationStatus(
                 success=False,
-                name=version,
+                name=run_id,
                 operation=CRUDOperation.UPDATE,
                 details=str(e),
             ).model_dump(),
@@ -301,7 +290,7 @@ def set_version_default(
 
 
 @router.delete(
-    "/{collection}/versions/{version}",
+    "/{collection}/runs/{run_id}",
     responses={
         404: {"model": NotFoundError},
         409: {
@@ -314,26 +303,24 @@ def set_version_default(
         },
     },
     dependencies=[Depends(authorisation_dependencies)],
-    summary="Delete a version",
-    description="Delete a version and all its resolutions. Requires confirmation.",
+    summary="Delete a run",
+    description="Delete a run and all its resolutions. Requires confirmation.",
 )
-def delete_version(
+def delete_run(
     backend: BackendDependency,
     collection: CollectionName,
-    version: VersionName,
-    certain: Annotated[
-        bool, Query(description="Confirm deletion of the version")
-    ] = False,
+    run_id: RunID,
+    certain: Annotated[bool, Query(description="Confirm deletion of the run")] = False,
 ) -> ResourceOperationStatus:
-    """Delete a version."""
+    """Delete a run."""
     try:
-        backend.delete_version(collection=collection, name=version, certain=certain)
+        backend.delete_run(collection=collection, run_id=run_id, certain=certain)
         return ResourceOperationStatus(
-            success=True, name=version, operation=CRUDOperation.DELETE
+            success=True, name=run_id, operation=CRUDOperation.DELETE
         )
     except (
         MatchboxCollectionNotFoundError,
-        MatchboxVersionNotFoundError,
+        MatchboxRunNotFoundError,
         MatchboxDeletionNotConfirmed,
     ):
         raise
@@ -342,7 +329,7 @@ def delete_version(
             status_code=500,
             detail=ResourceOperationStatus(
                 success=False,
-                name=version,
+                name=run_id,
                 operation=CRUDOperation.DELETE,
                 details=str(e),
             ),
@@ -353,7 +340,7 @@ def delete_version(
 
 
 @router.post(
-    "/{collection}/versions/{version}/resolutions/{resolution_name}",
+    "/{collection}/runs/{run_id}/resolutions/{resolution_name}",
     responses={
         409: {
             "model": ResourceOperationStatus,
@@ -367,12 +354,12 @@ def delete_version(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(authorisation_dependencies)],
     summary="Create a resolution",
-    description="Create a new resolution (model or source) in the specified version.",
+    description="Create a new resolution (model or source) in the specified run.",
 )
 def create_resolution(
     backend: BackendDependency,
     collection: CollectionName,
-    version: VersionName,
+    run_id: RunID,
     resolution_name: ResolutionName,
     resolution: Resolution,
 ) -> ResourceOperationStatus:
@@ -381,7 +368,7 @@ def create_resolution(
         backend.create_resolution(
             resolution=resolution,
             path=ResolutionPath(
-                name=resolution_name, collection=collection, version=version
+                name=resolution_name, collection=collection, run=run_id
             ),
         )
         return ResourceOperationStatus(
@@ -391,7 +378,7 @@ def create_resolution(
         )
     except (
         MatchboxCollectionNotFoundError,
-        MatchboxVersionNotFoundError,
+        MatchboxRunNotFoundError,
     ):
         raise
     except MatchboxResolutionAlreadyExists as e:
@@ -417,7 +404,7 @@ def create_resolution(
 
 
 @router.get(
-    "/{collection}/versions/{version}/resolutions/{resolution}",
+    "/{collection}/runs/{run_id}/resolutions/{resolution}",
     responses={404: {"model": NotFoundError}},
     summary="Get a resolution",
     description="Retrieve a specific resolution (model or source) from the backend.",
@@ -425,19 +412,19 @@ def create_resolution(
 def get_resolution(
     backend: BackendDependency,
     collection: CollectionName,
-    version: VersionName,
+    run_id: RunID,
     resolution: ResolutionName,
     validate_type: ResolutionType | None = None,
 ) -> Resolution:
     """Get a resolution (model or source) from the backend."""
     return backend.get_resolution(
-        path=ResolutionPath(collection=collection, version=version, name=resolution),
+        path=ResolutionPath(collection=collection, run=run_id, name=resolution),
         validate=validate_type,
     )
 
 
 @router.delete(
-    "/{collection}/versions/{version}/resolutions/{resolution}",
+    "/{collection}/runs/{run_id}/resolutions/{resolution}",
     responses={
         404: {"model": NotFoundError},
         409: {
@@ -456,7 +443,7 @@ def get_resolution(
 def delete_resolution(
     backend: BackendDependency,
     collection: CollectionName,
-    version: VersionName,
+    run_id: RunID,
     resolution: ResolutionName,
     certain: Annotated[
         bool, Query(description="Confirm deletion of the resolution")
@@ -465,9 +452,7 @@ def delete_resolution(
     """Delete a resolution from the backend."""
     try:
         backend.delete_resolution(
-            name=ResolutionPath(
-                collection=collection, version=version, name=resolution
-            ),
+            name=ResolutionPath(collection=collection, run=run_id, name=resolution),
             certain=certain,
         )
         return ResourceOperationStatus(
@@ -477,7 +462,7 @@ def delete_resolution(
         )
     except (
         MatchboxCollectionNotFoundError,
-        MatchboxVersionNotFoundError,
+        MatchboxRunNotFoundError,
         MatchboxDeletionNotConfirmed,
         MatchboxResolutionNotFoundError,
     ):
@@ -495,7 +480,7 @@ def delete_resolution(
 
 
 @router.post(
-    "/{collection}/versions/{version}/resolutions/{resolution}/data",
+    "/{collection}/runs/{run_id}/resolutions/{resolution}/data",
     responses={404: {"model": NotFoundError}},
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(authorisation_dependencies)],
@@ -506,15 +491,13 @@ def set_data(
     backend: BackendDependency,
     upload_tracker: UploadTrackerDependency,
     collection: CollectionName,
-    version: VersionName,
+    run_id: RunID,
     resolution: ModelResolutionName,
     validate_type: ResolutionType | None = None,
 ) -> UploadStatus:
     """Create an upload task for source hashes or model results."""
-    # Get resolution from the specified version
-    resolution_path = ResolutionPath(
-        collection=collection, version=version, name=resolution
-    )
+    # Get resolution from the specified run
+    resolution_path = ResolutionPath(collection=collection, run=run_id, name=resolution)
     resolution = backend.get_resolution(path=resolution_path, validate=validate_type)
 
     if resolution.resolution_type == ResolutionType.SOURCE:
@@ -526,7 +509,7 @@ def set_data(
 
 
 @router.get(
-    "/{collection}/versions/{version}/resolutions/{resolution}/data",
+    "/{collection}/runs/{run_id}/resolutions/{resolution}/data",
     responses={404: {"model": NotFoundError}},
     summary="Get resolution results",
     description="Download results for a model as a parquet file.",
@@ -534,12 +517,12 @@ def set_data(
 def get_results(
     backend: BackendDependency,
     collection: CollectionName,
-    version: VersionName,
+    run_id: RunID,
     resolution: ModelResolutionName,
 ) -> ParquetResponse:
     """Download results for a model as a parquet file."""
     res = backend.get_model_data(
-        path=ResolutionPath(collection=collection, version=version, name=resolution)
+        path=ResolutionPath(collection=collection, run=run_id, name=resolution)
     )
 
     buffer = table_to_buffer(res)
@@ -547,7 +530,7 @@ def get_results(
 
 
 @router.patch(
-    "/{collection}/versions/{version}/resolutions/{resolution}/truth",
+    "/{collection}/runs/{run_id}/resolutions/{resolution}/truth",
     responses={
         404: {"model": NotFoundError},
         500: {
@@ -562,16 +545,14 @@ def get_results(
 def set_truth(
     backend: BackendDependency,
     collection: CollectionName,
-    version: VersionName,
+    run_id: RunID,
     resolution: ModelResolutionName,
     truth: Annotated[int, Body(ge=0, le=100)],
 ) -> ResourceOperationStatus:
     """Set truth data for a resolution."""
     try:
         backend.set_model_truth(
-            path=ResolutionPath(
-                collection=collection, version=version, name=resolution
-            ),
+            path=ResolutionPath(collection=collection, run=run_id, name=resolution),
             truth=truth,
         )
         return ResourceOperationStatus(
@@ -581,7 +562,7 @@ def set_truth(
         )
     except (
         MatchboxCollectionNotFoundError,
-        MatchboxVersionNotFoundError,
+        MatchboxRunNotFoundError,
         MatchboxResolutionNotFoundError,
     ):
         raise
@@ -598,7 +579,7 @@ def set_truth(
 
 
 @router.get(
-    "/{collection}/versions/{version}/resolutions/{resolution}/truth",
+    "/{collection}/runs/{run_id}/resolutions/{resolution}/truth",
     responses={404: {"model": NotFoundError}},
     summary="Get resolution truth",
     description="Get truth data for a resolution.",
@@ -606,10 +587,10 @@ def set_truth(
 def get_truth(
     backend: BackendDependency,
     collection: CollectionName,
-    version: VersionName,
+    run_id: RunID,
     resolution: ModelResolutionName,
 ) -> float:
     """Get truth data for a resolution."""
     return backend.get_model_truth(
-        path=ResolutionPath(collection=collection, version=version, name=resolution)
+        path=ResolutionPath(collection=collection, run=run_id, name=resolution)
     )

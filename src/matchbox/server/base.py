@@ -19,9 +19,9 @@ from matchbox.common.dtos import (
     Resolution,
     ResolutionPath,
     ResolutionType,
+    Run,
+    RunID,
     SourceResolutionPath,
-    Version,
-    VersionName,
 )
 from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.logging import LogLevelType
@@ -343,75 +343,72 @@ class MatchboxDBAdapter(ABC):
     # Version management
 
     @abstractmethod
-    def create_version(
-        self, collection: CollectionName, version: VersionName
-    ) -> Version:
-        """Create a new version label.
+    def create_run(self, collection: CollectionName) -> Run:
+        """Create a new run.
 
         Args:
-            collection: The name of the collection to create the version in.
-            version: The name of the version to create.
+            collection: The name of the collection to create the run in.
 
         Returns:
-            A Version object containing its metadata and resolutions.
+            A Run object containing its metadata and resolutions.
         """
         ...
 
     @abstractmethod
-    def set_version_mutable(
-        self, collection: CollectionName, version: VersionName, mutable: bool
-    ) -> Version:
-        """Set the mutability of a version.
+    def set_run_mutable(
+        self, collection: CollectionName, run_id: RunID, mutable: bool
+    ) -> Run:
+        """Set the mutability of a run.
 
         Args:
-            collection: The name of the collection containing the version.
-            version: The name of the version to update.
-            mutable: Whether the version should be mutable.
+            collection: The name of the collection containing the run.
+            run_id: The ID of the run to update.
+            mutable: Whether the run should be mutable.
 
         Returns:
-            The updated Version object.
+            The updated Run object.
         """
         ...
 
     @abstractmethod
-    def set_version_default(
-        self, collection: CollectionName, version: VersionName, default: bool
-    ) -> Version:
-        """Set the default status of a version.
+    def set_run_default(
+        self, collection: CollectionName, run_id: RunID, default: bool
+    ) -> Run:
+        """Set the default status of a run.
 
         Args:
-            collection: The name of the collection containing the version.
-            version: The name of the version to update.
-            default: Whether the version should be the default version.
+            collection: The name of the collection containing the run.
+            run_id: The ID of the run to update.
+            default: Whether the run should be the default run.
 
         Returns:
-            The updated Version object.
+            The updated Run object.
         """
         ...
 
     @abstractmethod
-    def get_version(self, collection: CollectionName, version: VersionName) -> Version:
-        """Get version metadata and resolutions.
+    def get_run(self, collection: CollectionName, run_id: RunID) -> Run:
+        """Get run metadata and resolutions.
 
         Args:
-            collection: The name of the collection to get the version from.
-            version: The name of the version to get.
+            collection: The name of the collection containing the run.
+            run_id: The ID of the run to get.
 
         Returns:
-            A Version object containing its metadata and resolutions.
+            A Run object containing its metadata and resolutions.
         """
         ...
 
     @abstractmethod
-    def delete_version(
-        self, collection: CollectionName, version: VersionName, certain: bool
+    def delete_run(
+        self, collection: CollectionName, run_id: RunID, certain: bool
     ) -> None:
-        """Delete a version and all its resolutions.
+        """Delete a run and all its resolutions.
 
         Args:
-            collection: The name of the collection to delete the version from.
-            version: The name of the version to delete.
-            certain: Whether to delete the version without confirmation.
+            collection: The name of the collection containing the run.
+            run_id: The ID of the run to delete.
+            certain: Whether to delete the run without confirmation.
         """
         ...
 

@@ -44,11 +44,11 @@ from matchbox.common.dtos import (
     ResolutionPath,
     ResolutionType,
     ResourceOperationStatus,
+    Run,
+    RunID,
     SourceResolutionPath,
     UploadStage,
     UploadStatus,
-    Version,
-    VersionName,
 )
 from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.exceptions import (
@@ -57,12 +57,12 @@ from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
+    MatchboxRunNotFoundError,
     MatchboxServerFileError,
     MatchboxTooManySamplesRequested,
     MatchboxUnhandledServerResponse,
     MatchboxUnparsedClientRequest,
     MatchboxUserNotFoundError,
-    MatchboxVersionNotFoundError,
 )
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.logging import logger
@@ -124,8 +124,8 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
         match error.entity:
             case BackendResourceType.COLLECTION:
                 raise MatchboxCollectionNotFoundError(error.details)
-            case BackendResourceType.VERSION:
-                raise MatchboxVersionNotFoundError(error.details)
+            case BackendResourceType.RUN:
+                raise MatchboxRunNotFoundError(error.details)
             case BackendResourceType.RESOLUTION:
                 raise MatchboxResolutionNotFoundError(error.details)
             case BackendResourceType.CLUSTER:
@@ -204,7 +204,7 @@ def query(
         params=url_params(
             {
                 "collection": source.collection,
-                "version": source.version,
+                "run_id": source.run,
                 "source": source.name,
                 "resolution": resolution.name if resolution else None,
                 "return_leaf_id": return_leaf_id,
@@ -251,7 +251,7 @@ def match(
         params=url_params(
             {
                 "collection": resolution.collection,
-                "version": resolution.version,
+                "run_id": resolution.run,
                 "targets": [t.name for t in targets],
                 "source": source.name,
                 "key": key,
@@ -276,7 +276,7 @@ def match(
 
 @http_retry
 def get_collection(name: CollectionName) -> Collection:
-    """Get all versions and resolutions in a collection."""
+    """Get all runs and resolutions in a collection."""
     log_prefix = f"Collection {name}"
     logger.debug("Retrieving", prefix=log_prefix)
 
@@ -297,28 +297,66 @@ def create_collection(name: CollectionName) -> ResourceOperationStatus:
     return ResourceOperationStatus.model_validate(res.json())
 
 
+# Run management
+
+
 @http_retry
-def get_version(collection: CollectionName, name: VersionName) -> Version:
-    """Get all versions and resolutions in a collection."""
-    log_prefix = f"Collection {name}"
+def get_run(collection: CollectionName, run_id: RunID) -> Run:
+    """Get all resolutions in a run."""
+    log_prefix = f"Collection {collection}, run {run_id}"
     logger.debug("Retrieving", prefix=log_prefix)
 
-    res = CLIENT.get(f"/collections/{collection}/versions/{name}")
-    return Version.model_validate(res.json())
+    res = CLIENT.get(f"/collections/{collection}/runs/{run_id}")
+    return Run.model_validate(res.json())
 
 
 @http_retry
-def create_version(
-    collection: CollectionName, name: VersionName
-) -> ResourceOperationStatus:
-    """Create a new version."""
-    log_prefix = f"Version {name} in collection {collection}"
+def create_run(collection: CollectionName) -> ResourceOperationStatus:
+    """Create a new run."""
+    log_prefix = f"Collection {collection}, new run"
     logger.debug("Creating", prefix=log_prefix)
 
-    res = CLIENT.post(
-        f"/collections/{collection}/versions/{name}",
-    )
+    res = CLIENT.post(f"/collections/{collection}/runs")
 
+    return Run.model_validate(res.json())
+
+
+@http_retry
+def delete_run(
+    collection: CollectionName, run_id: RunID, certain: bool = False
+) -> ResourceOperationStatus:
+    """Delete a run in Matchbox."""
+    log_prefix = f"Collection {collection}, run {run_id}"
+    logger.debug("Deleting", prefix=log_prefix)
+
+    res = CLIENT.delete(
+        f"/collections/{collection}/runs/{run_id}",
+        params={"certain": certain},
+    )
+    return ResourceOperationStatus.model_validate(res.json())
+
+
+@http_retry
+def set_run_mutable(
+    collection: CollectionName, run_id: RunID, mutable: bool
+) -> ResourceOperationStatus:
+    """Set a run as mutable for a collection."""
+    log_prefix = f"Collection {collection}, run {run_id}"
+    logger.debug("Setting mutability", prefix=log_prefix)
+
+    res = CLIENT.patch(f"/collections/{collection}/runs/{run_id}/mutable", json=mutable)
+    return ResourceOperationStatus.model_validate(res.json())
+
+
+@http_retry
+def set_run_default(
+    collection: CollectionName, run_id: RunID, default: bool
+) -> ResourceOperationStatus:
+    """Set a run as the default run for a collection."""
+    log_prefix = f"Collection {collection}, run {run_id}"
+    logger.debug("Setting as default", prefix=log_prefix)
+
+    res = CLIENT.patch(f"/collections/{collection}/runs/{run_id}/default", json=default)
     return ResourceOperationStatus.model_validate(res.json())
 
 
@@ -335,7 +373,7 @@ def create_resolution(
     logger.debug("Creating", prefix=log_prefix)
 
     res = CLIENT.post(
-        f"/collections/{path.collection}/versions/{path.version}/resolutions/{path.name}",
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}",
         json=resolution.model_dump(),
     )
 
@@ -351,7 +389,7 @@ def get_resolution(
     logger.debug("Retrieving metadata", prefix=log_prefix)
 
     res = CLIENT.get(
-        f"/collections/{path.collection}/versions/{path.version}/resolutions/{path.name}",
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}",
         params=url_params({"validate_type": validate_type}),
     )
     return Resolution.model_validate(res.json())
@@ -370,7 +408,7 @@ def set_data(
 
     # Initialise upload
     metadata_res = CLIENT.post(
-        f"/collections/{path.collection}/versions/{path.version}/resolutions/{path.name}/data",
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data",
         params=url_params({"validate_type": validate_type}),
     )
 
@@ -409,7 +447,7 @@ def get_results(path: ModelResolutionPath) -> Table:
     logger.debug("Retrieving results", prefix=log_prefix)
 
     res = CLIENT.get(
-        f"/collections/{path.collection}/versions/{path.version}/resolutions/{path.name}/data"
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data"
     )
     buffer = BytesIO(res.content)
     return read_table(buffer)
@@ -422,7 +460,7 @@ def set_truth(path: ModelResolutionPath, truth: int) -> ResourceOperationStatus:
     logger.debug("Setting truth value", prefix=log_prefix)
 
     res = CLIENT.patch(
-        f"/collections/{path.collection}/versions/{path.version}/resolutions/{path.name}/truth",
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/truth",
         json=truth,
     )
     return ResourceOperationStatus.model_validate(res.json())
@@ -435,7 +473,7 @@ def get_truth(path: ModelResolutionPath) -> int:
     logger.debug("Retrieving truth value", prefix=log_prefix)
 
     res = CLIENT.get(
-        f"/collections/{path.collection}/versions/{path.version}/resolutions/{path.name}/truth"
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/truth"
     )
     return res.json()
 
@@ -449,7 +487,7 @@ def delete_resolution(
     logger.debug("Deleting", prefix=log_prefix)
 
     res = CLIENT.delete(
-        f"/collections/{path.collection}/versions/{path.version}/resolutions/{path.name}",
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}",
         params={"certain": certain},
     )
     return ResourceOperationStatus.model_validate(res.json())
@@ -467,7 +505,7 @@ def sample_for_eval(n: int, resolution: ModelResolutionPath, user_id: int) -> Ta
             {
                 "n": n,
                 "collection": resolution.collection,
-                "version": resolution.version,
+                "run_id": resolution.run,
                 "resolution": resolution.name,
                 "user_id": user_id,
             }
@@ -485,7 +523,7 @@ def compare_models(
     qualified_resolution = [
         ModelResolutionPath(
             collection=resolution.collection,
-            version=resolution.version,
+            run=resolution.run,
             name=resolution,
         )
         for resolution in resolutions

@@ -8,18 +8,17 @@ from matchbox.common.dtos import (
     ResolutionName,
     ResolutionPath,
     SourceResolutionName,
-    VersionName,
 )
 from matchbox.common.exceptions import MatchboxNameError
 
 
 def test_validate_names():
+    """Names are validated when they're instantiated."""
     name_classes = [
         CollectionName,
         ModelResolutionName,
         ResolutionName,
         SourceResolutionName,
-        VersionName,
     ]
 
     [NameClass("Valid.name_-") for NameClass in name_classes]
@@ -31,8 +30,8 @@ def test_validate_names():
 
 def test_match_validates():
     """Match objects are validated when they're instantiated."""
-    source_path = ResolutionPath(name="source", collection="default", version="v1")
-    target_path = ResolutionPath(name="target", collection="default", version="v1")
+    source_path = ResolutionPath(name="source", collection="default", run=1)
+    target_path = ResolutionPath(name="target", collection="default", run=1)
     Match(
         cluster=1,
         source=source_path,
@@ -55,12 +54,12 @@ def test_match_validates():
 
 
 def test_validate_collection():
-    """Default version name needs to be within all versions."""
+    """Default run name needs to be within all runs."""
     # No default
-    Collection(versions=["v1", "v2"])
+    Collection(runs=[1, 2])
 
     # Valid default
-    Collection(default_version="v2", versions=["v1", "v2"])
+    Collection(default_run=2, runs=[1, 2])
 
     with pytest.raises(ValueError):
-        Collection(default_version="v2", versions=["v1"])
+        Collection(default_run=2, runs=[1])

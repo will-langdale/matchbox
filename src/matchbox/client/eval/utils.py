@@ -51,7 +51,7 @@ def get_samples(
         _handler.sample_for_eval(
             n=n,
             resolution=ResolutionPath(
-                name=dag.final_step, collection=dag.name, version=dag.version
+                name=dag.final_step, collection=dag.name, run=dag.run
             ),
             user_id=user_id,
         )
@@ -64,7 +64,7 @@ def get_samples(
     for source_resolution in samples["source"].unique():
         resolution = _handler.get_resolution(
             path=ResolutionPath(
-                name=source_resolution, collection=dag.name, version=dag.version
+                name=source_resolution, collection=dag.name, run=dag.run
             ),
             validate_type=ResolutionType.SOURCE,
         )

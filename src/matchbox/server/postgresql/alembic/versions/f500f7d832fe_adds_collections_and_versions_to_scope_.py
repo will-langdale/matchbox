@@ -1,4 +1,4 @@
-"""Adds Collections and Versions to scope Resolutions.
+"""Adds Collections and Runs to scope Resolutions.
 
 Revision ID: f500f7d832fe
 Revises: c4cb937d00f4
@@ -30,39 +30,37 @@ def upgrade() -> None:
         schema="mb",
     )
 
-    # Create versions table
+    # Create runs table
     op.create_table(
-        "versions",
-        sa.Column("version_id", sa.BIGINT(), autoincrement=True, nullable=False),
+        "runs",
+        sa.Column("run_id", sa.BIGINT(), autoincrement=True, nullable=False),
         sa.Column("collection_id", sa.BIGINT(), nullable=False),
-        sa.Column("name", sa.TEXT(), nullable=False),
         sa.Column("is_mutable", sa.BOOLEAN(), nullable=True),
         sa.Column("is_default", sa.BOOLEAN(), nullable=True),
         sa.ForeignKeyConstraint(
             ["collection_id"], ["mb.collections.collection_id"], ondelete="CASCADE"
         ),
-        sa.PrimaryKeyConstraint("version_id"),
-        sa.UniqueConstraint("collection_id", "name", name="unique_version_name"),
-        sa.UniqueConstraint("collection_id", "version_id", name="unique_version_id"),
+        sa.PrimaryKeyConstraint("run_id"),
+        sa.UniqueConstraint("collection_id", "run_id", name="unique_run_id"),
         schema="mb",
     )
 
-    # Create the partial index for default versions
+    # Create the partial index for default runs
     op.create_index(
-        "ix_default_version_collection",
-        "versions",
+        "ix_default_run_collection",
+        "runs",
         ["collection_id"],
         unique=True,
         schema="mb",
         postgresql_where=sa.text("is_default = true"),
     )
 
-    # Add version_id column to resolutions (initially nullable for data migration)
+    # Add run_id column to resolutions (initially nullable for data migration)
     op.add_column(
-        "resolutions", sa.Column("version_id", sa.BIGINT(), nullable=True), schema="mb"
+        "resolutions", sa.Column("run_id", sa.BIGINT(), nullable=True), schema="mb"
     )
 
-    # Data migration: Create default collection and version for existing resolutions
+    # Data migration: Create default collection and run for existing resolutions
     # Only do this if there are existing resolutions
     bind = op.get_bind()
     existing_resolutions = bind.execute(
@@ -79,31 +77,31 @@ def upgrade() -> None:
         )
         collection_id = collection_result.scalar()
 
-        # Create default version
-        version_result = bind.execute(
+        # Create default run
+        run_result = bind.execute(
             sa.text("""
-            INSERT INTO mb.versions (collection_id, name, is_mutable, is_default)
-            VALUES (:collection_id, 'v1', false, true)
-            RETURNING version_id
+            INSERT INTO mb.runs (collection_id, is_mutable, is_default)
+            VALUES (:collection_id, false, true)
+            RETURNING run_id
             """),
             {"collection_id": collection_id},
         )
-        version_id = version_result.scalar()
+        run_id = run_result.scalar()
 
-        # Associate all existing resolutions with the new default version
+        # Associate all existing resolutions with the new default run
         bind.execute(
             sa.text("""
             UPDATE mb.resolutions
-            SET version_id = :version_id
-            WHERE version_id IS NULL
+            SET run_id = :run_id
+            WHERE run_id IS NULL
             """),
-            {"version_id": version_id},
+            {"run_id": run_id},
         )
 
-    # Now make version_id non-nullable
+    # Now make run_id non-nullable
     op.alter_column(
         "resolutions",
-        "version_id",
+        "run_id",
         existing_type=sa.BIGINT(),
         nullable=False,
         schema="mb",
@@ -114,16 +112,16 @@ def upgrade() -> None:
         op.f("resolutions_name_key"), "resolutions", schema="mb", type_="unique"
     )
     op.create_unique_constraint(
-        "resolutions_name_key", "resolutions", ["version_id", "name"], schema="mb"
+        "resolutions_name_key", "resolutions", ["run_id", "name"], schema="mb"
     )
 
-    # Create foreign key constraint for version_id
+    # Create foreign key constraint for run_id
     op.create_foreign_key(
-        "resolutions_version_fkey",
+        "resolutions_run_fkey",
         "resolutions",
-        "versions",
-        ["version_id"],
-        ["version_id"],
+        "runs",
+        ["run_id"],
+        ["run_id"],
         source_schema="mb",
         referent_schema="mb",
         ondelete="CASCADE",
@@ -134,7 +132,7 @@ def downgrade() -> None:
     """Downgrade schema."""
     # Drop foreign key constraint
     op.drop_constraint(
-        "resolutions_version_fkey", "resolutions", schema="mb", type_="foreignkey"
+        "resolutions_run_fkey", "resolutions", schema="mb", type_="foreignkey"
     )
 
     # Revert unique constraint changes
@@ -149,17 +147,17 @@ def downgrade() -> None:
         postgresql_nulls_not_distinct=False,
     )
 
-    # Drop the version_id column
-    op.drop_column("resolutions", "version_id", schema="mb")
+    # Drop the run_id column
+    op.drop_column("resolutions", "run_id", schema="mb")
 
     # Drop the partial index
     op.drop_index(
-        "ix_default_version_collection",
-        table_name="versions",
+        "ix_default_run_collection",
+        table_name="runs",
         schema="mb",
         postgresql_where=sa.text("is_default = true"),
     )
 
     # Drop the tables
-    op.drop_table("versions", schema="mb")
+    op.drop_table("runs", schema="mb")
     op.drop_table("collections", schema="mb")

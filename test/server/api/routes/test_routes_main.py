@@ -12,9 +12,7 @@ from matchbox.client.authorisation import (
 )
 from matchbox.common.arrow import SCHEMA_QUERY, table_to_buffer
 from matchbox.common.dtos import (
-    BackendParameterType,
     BackendResourceType,
-    InvalidParameterError,
     LoginAttempt,
     LoginResult,
     Match,
@@ -27,7 +25,7 @@ from matchbox.common.exceptions import (
     MatchboxCollectionNotFoundError,
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
-    MatchboxVersionNotFoundError,
+    MatchboxRunNotFoundError,
 )
 from matchbox.common.factories.sources import source_factory
 
@@ -326,16 +324,17 @@ def test_query(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
         "/query",
         params={
             "collection": "test_collection",
-            "version": "v1",
+            "run_id": 1,
             "source": "foo",
             "return_leaf_id": False,
         },
     )
 
+    assert response.status_code == 200
+
     buffer = BytesIO(response.content)
     table = pq.read_table(buffer)
 
-    assert response.status_code == 200
     assert table.schema.equals(SCHEMA_QUERY)
 
 
@@ -348,7 +347,7 @@ def test_query_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
         "/query",
         params={
             "collection": "test_collection",
-            "version": "v1",
+            "run_id": 1,
             "source": "foo",
             "return_leaf_id": True,
         },
@@ -357,19 +356,19 @@ def test_query_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     assert response.status_code == 404
     assert response.json()["entity"] == BackendResourceType.COLLECTION
 
-    mock_backend.query = Mock(side_effect=MatchboxVersionNotFoundError())
+    mock_backend.query = Mock(side_effect=MatchboxRunNotFoundError())
 
     response = test_client.get(
         "/query",
         params={
             "collection": "test_collection",
-            "version": "v1",
+            "run_id": 1,
             "source": "foo",
             "return_leaf_id": True,
         },
     )
     assert response.status_code == 404
-    assert response.json()["entity"] == BackendResourceType.VERSION
+    assert response.json()["entity"] == BackendResourceType.RUN
 
     mock_backend.query = Mock(side_effect=MatchboxResolutionNotFoundError())
 
@@ -377,7 +376,7 @@ def test_query_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
         "/query",
         params={
             "collection": "test_collection",
-            "version": "v1",
+            "run_id": 1,
             "source": "foo",
             "return_leaf_id": True,
         },
@@ -404,7 +403,7 @@ def test_match(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
         "/match",
         params={
             "collection": "test_collection",
-            "version": "v1",
+            "run_id": 1,
             "targets": "foo",
             "source": "bar",
             "key": 1,
@@ -426,7 +425,7 @@ def test_match_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
         "/match",
         params={
             "collection": "test_collection",
-            "version": "v1",
+            "run_id": 1,
             "targets": ["foo"],
             "source": "bar",
             "key": 1,
@@ -437,13 +436,13 @@ def test_match_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     assert response.status_code == 404
     assert response.json()["entity"] == BackendResourceType.COLLECTION
 
-    mock_backend.match = Mock(side_effect=MatchboxVersionNotFoundError())
+    mock_backend.match = Mock(side_effect=MatchboxRunNotFoundError())
 
     response = test_client.get(
         "/match",
         params={
             "collection": "test_collection",
-            "version": "v1",
+            "run_id": 1,
             "targets": ["foo"],
             "source": "bar",
             "key": 1,
@@ -452,7 +451,7 @@ def test_match_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     )
 
     assert response.status_code == 404
-    assert response.json()["entity"] == BackendResourceType.VERSION
+    assert response.json()["entity"] == BackendResourceType.RUN
 
     mock_backend.match = Mock(side_effect=MatchboxResolutionNotFoundError())
 
@@ -460,7 +459,7 @@ def test_match_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
         "/match",
         params={
             "collection": "test_collection",
-            "version": "v1",
+            "run_id": 1,
             "targets": ["foo"],
             "source": "bar",
             "key": 1,
@@ -530,9 +529,9 @@ def test_api_key_authorisation(api_client_and_mocks: tuple[TestClient, Mock, Moc
     test_client, _, _ = api_client_and_mocks
     routes = [
         (test_client.post, "/upload/upload_id"),
-        (test_client.post, "/collections/default/versions/v1/resolutions/name"),
-        (test_client.patch, "/collections/default/versions/v1/resolutions/name/truth"),
-        (test_client.delete, "/collections/default/versions/v1/resolutions/name"),
+        (test_client.post, "/collections/default/runs/1/resolutions/name"),
+        (test_client.patch, "/collections/default/runs/1/resolutions/name/truth"),
+        (test_client.delete, "/collections/default/runs/1/resolutions/name"),
         (test_client.delete, "/database"),
     ]
 
@@ -566,16 +565,3 @@ def test_api_key_authorisation(api_client_and_mocks: tuple[TestClient, Mock, Moc
         response = method(url)
         assert response.status_code == 401
         assert response.content == b'"JWT required but not provided."'
-
-
-#  Error handling
-
-
-def test_handles_name_errors(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
-    test_client, _, _ = api_client_and_mocks
-
-    response = test_client.get("/collections/companies,")
-    assert response.status_code == 422
-    error = InvalidParameterError.model_validate(response.json())
-    assert error.parameter == BackendParameterType.NAME
-    assert "companies," in error.details

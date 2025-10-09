@@ -30,9 +30,8 @@ from matchbox.common.exceptions import (
     MatchboxNoJudgements,
     MatchboxResolutionAlreadyExists,
     MatchboxResolutionNotFoundError,
-    MatchboxVersionAlreadyExists,
-    MatchboxVersionNotFoundError,
-    MatchboxVersionNotWriteable,
+    MatchboxRunNotFoundError,
+    MatchboxRunNotWriteable,
 )
 from matchbox.common.factories.entities import (
     SourceEntity,
@@ -387,7 +386,7 @@ class TestMatchboxBackend:
             # Create new collection and verify its initial properties
             test_collection_created = self.backend.create_collection("test_collection")
 
-            assert test_collection_created.versions == []  # No versions yet
+            assert test_collection_created.runs == []  # No versions yet
 
             collections_post = self.backend.list_collections()
             assert "test_collection" in collections_post
@@ -409,50 +408,47 @@ class TestMatchboxBackend:
             with pytest.raises(MatchboxCollectionNotFoundError):
                 self.backend.delete_collection("test_collection", certain=False)
 
-    # Version management
+    # Run management
 
-    def test_versions(self):
-        """Test creating, listing, getting and deleting versions."""
+    def test_runs(self):
+        """Test creating, listing, getting and deleting runs."""
         with self.scenario(self.backend, "bare") as _:
             collections_pre = self.backend.list_collections()
             assert "test_collection" not in collections_pre
 
-            # Create parent collection with no versions initially
+            # Create parent collection with no runs initially
             test_collection_pre = self.backend.create_collection("test_collection")
-            assert "v1" not in test_collection_pre.versions
+            assert len(test_collection_pre.runs) == 0  # No runs yet
 
-            # Create first version and check default properties
-            v1 = self.backend.create_version("test_collection", "v1")
+            # Create first run and check default properties
+            v1 = self.backend.create_run("test_collection")
 
-            assert v1.name == "v1"
-            assert v1.is_default is False  # New versions aren't default by default
-            assert v1.is_mutable is True  # New versions are mutable by default
+            assert isinstance(v1.run_id, int)
+            assert v1.is_default is False  # New runs aren't default by default
+            assert v1.is_mutable is True  # New runs are mutable by default
             assert v1.resolutions == {}  # No resolutions yet
 
             test_collection_post = self.backend.get_collection("test_collection")
-            assert "v1" in test_collection_post.versions
+            assert v1.run_id in test_collection_post.runs
 
-            with pytest.raises(MatchboxVersionAlreadyExists):
-                self.backend.create_version("test_collection", "v1")
-
-            self.backend.create_version("test_collection", "v2")
+            v2 = self.backend.create_run("test_collection")
 
             with pytest.raises(ValueError, match="mutable"):
-                self.backend.set_version_default("test_collection", "v1", True)
+                self.backend.set_run_default("test_collection", v1.run_id, True)
 
-            self.backend.set_version_mutable("test_collection", "v1", False)
-            self.backend.set_version_default("test_collection", "v1", True)
+            self.backend.set_run_mutable("test_collection", v1.run_id, False)
+            self.backend.set_run_default("test_collection", v1.run_id, True)
 
-            # Default version info also available on collection DTO
+            # Default run info also available on collection DTO
             collection = self.backend.get_collection("test_collection")
-            assert collection.default_version == "v1"
+            assert collection.default_run == v1.run_id
 
             # Setting v2 as default should automatically unset v1 as default
-            self.backend.set_version_mutable("test_collection", "v2", False)
-            self.backend.set_version_default("test_collection", "v2", True)
+            self.backend.set_run_mutable("test_collection", v2.run_id, False)
+            self.backend.set_run_default("test_collection", v2.run_id, True)
 
-            v1 = self.backend.get_version("test_collection", "v1")
-            v2 = self.backend.get_version("test_collection", "v2")
+            v1 = self.backend.get_run("test_collection", v1.run_id)
+            v2 = self.backend.get_run("test_collection", v2.run_id)
 
             assert v1.is_mutable is False
             assert v1.is_default is False
@@ -460,28 +456,28 @@ class TestMatchboxBackend:
             assert v2.is_mutable is False
             assert v2.is_default is True
 
-            self.backend.delete_version("test_collection", "v1", certain=True)
+            self.backend.delete_run("test_collection", v1.run_id, certain=True)
 
-            # Verify version is properly removed
-            with pytest.raises(MatchboxVersionNotFoundError):
-                self.backend.get_version("test_collection", "v1")
+            # Verify run is properly removed
+            with pytest.raises(MatchboxRunNotFoundError):
+                self.backend.get_run("test_collection", v1.run_id)
 
-            with pytest.raises(MatchboxVersionNotFoundError):
-                self.backend.delete_version("test_collection", "v1", certain=False)
+            with pytest.raises(MatchboxRunNotFoundError):
+                self.backend.delete_run("test_collection", v1.run_id, certain=False)
 
-    def test_version_immutable(self):
-        """Nothing in an immutable version can be changed."""
+    def test_run_immutable(self):
+        """Nothing in an immutable run can be changed."""
         with self.scenario(self.backend, "dedupe") as dag_testkit:
             source_testkit = dag_testkit.sources["crn"]
             model_testkit = dag_testkit.models["naive_test_crn"]
 
-            self.backend.set_version_mutable(
+            self.backend.set_run_mutable(
                 collection=dag_testkit.dag.name,
-                name=dag_testkit.dag.version,
+                run_id=dag_testkit.dag.run,
                 mutable=False,
             )
 
-            with pytest.raises(MatchboxVersionNotWriteable):
+            with pytest.raises(MatchboxRunNotWriteable):
                 self.backend.create_resolution(
                     path=source_testkit.resolution_path.model_copy(
                         update={"name": "new_source"}
@@ -489,23 +485,23 @@ class TestMatchboxBackend:
                     resolution=source_testkit.source.to_resolution(),
                 )
 
-            with pytest.raises(MatchboxVersionNotWriteable):
+            with pytest.raises(MatchboxRunNotWriteable):
                 self.backend.delete_resolution(
                     source_testkit.resolution_path, certain=True
                 )
 
-            with pytest.raises(MatchboxVersionNotWriteable):
+            with pytest.raises(MatchboxRunNotWriteable):
                 self.backend.insert_source_data(
                     source_testkit.resolution_path, source_testkit.data_hashes
                 )
 
-            with pytest.raises(MatchboxVersionNotWriteable):
+            with pytest.raises(MatchboxRunNotWriteable):
                 self.backend.insert_model_data(
                     model_testkit.resolution_path,
                     model_testkit.probabilities.to_arrow(),
                 )
 
-            with pytest.raises(MatchboxVersionNotWriteable):
+            with pytest.raises(MatchboxRunNotWriteable):
                 self.backend.set_model_truth(model_testkit.resolution_path, 50)
 
     # Resolution management

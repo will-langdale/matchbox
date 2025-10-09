@@ -112,9 +112,9 @@ def test_compare_models_ok(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
 
     assert response.status_code == 200
     result = response.json()
-    assert sorted(result.keys()) == ["default/v1/a", "default/v1/b"]
-    assert tuple(result["default/v1/a"]) == mock_pr[model_a_path]
-    assert tuple(result["default/v1/b"]) == mock_pr[model_b_path]
+    assert sorted(result.keys()) == ["default/1/a", "default/1/b"]
+    assert tuple(result["default/1/a"]) == mock_pr[model_a_path]
+    assert tuple(result["default/1/b"]) == mock_pr[model_b_path]
 
 
 def test_compare_models_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
@@ -160,7 +160,7 @@ def test_get_samples(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
         "/eval/samples",
         params={
             "collection": "test_collection",
-            "version": "v1",
+            "run_id": 1,
             "resolution": "a",
             "n": 10,
             "user_id": 12,
@@ -201,7 +201,7 @@ def test_get_samples_404(
         "/eval/samples",
         params={
             "collection": "test_collection",
-            "version": "v1",
+            "run_id": 1,
             "resolution": "a",
             "n": 10,
             "user_id": 12,
@@ -221,7 +221,7 @@ def test_get_samples_422(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
         "/eval/samples",
         params={
             "collection": "test_collection",
-            "version": "v1",
+            "run_id": 1,
             "resolution": "a",
             "n": 10,
             "user_id": 12,

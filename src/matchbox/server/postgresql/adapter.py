@@ -17,9 +17,9 @@ from matchbox.common.dtos import (
     Resolution,
     ResolutionPath,
     ResolutionType,
+    Run,
+    RunID,
     SourceResolutionPath,
-    Version,
-    VersionName,
 )
 from matchbox.common.eval import Judgement as CommonJudgement
 from matchbox.common.eval import ModelComparison
@@ -28,8 +28,7 @@ from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
     MatchboxNoJudgements,
-    MatchboxVersionAlreadyExists,
-    MatchboxVersionNotWriteable,
+    MatchboxRunNotWriteable,
 )
 from matchbox.common.logging import logger
 from matchbox.server.base import MatchboxDBAdapter, MatchboxSnapshot
@@ -48,9 +47,9 @@ from matchbox.server.postgresql.orm import (
     Probabilities,
     Resolutions,
     Results,
+    Runs,
     SourceConfigs,
     Users,
-    Versions,
 )
 from matchbox.server.postgresql.utils import evaluation
 from matchbox.server.postgresql.utils.db import (
@@ -257,89 +256,81 @@ class MatchboxPostgres(MatchboxDBAdapter):
             )
             session.commit()
 
-    # Version management
+    # Run management
 
-    def create_version(self, collection: CollectionName, name: VersionName) -> Version:  # noqa: D102
+    def create_run(self, collection: CollectionName) -> Run:  # noqa: D102
         with MBDB.get_session() as session:
             # Can raise MatchboxCollectionNotFoundError
             collection_orm = Collections.from_name(collection, session)
 
-            if name in [v.name for v in collection_orm.versions]:
-                raise MatchboxVersionAlreadyExists
-
-            new_version = Versions(
+            new_run = Runs(
                 collection_id=collection_orm.collection_id,
-                name=name,
                 is_mutable=True,
                 is_default=False,
             )
-            session.add(new_version)
+            session.add(new_run)
             session.commit()
 
-            return new_version.to_dto()
+            return new_run.to_dto()
 
-    def set_version_mutable(  # noqa: D102
-        self, collection: CollectionName, name: VersionName, mutable: bool
-    ) -> Version:
+    def set_run_mutable(  # noqa: D102
+        self, collection: CollectionName, run_id: RunID, mutable: bool
+    ) -> Run:
         with MBDB.get_session() as session:
-            version_orm = Versions.from_name(collection, name, session)
-            version_orm.is_mutable = mutable
+            run_orm = Runs.from_id(collection, run_id, session)
+            run_orm.is_mutable = mutable
             session.commit()
 
-            return version_orm.to_dto()
+            return run_orm.to_dto()
 
-    def set_version_default(  # noqa: D102
-        self, collection: CollectionName, name: VersionName, default: bool
-    ) -> Version:
+    def set_run_default(  # noqa: D102
+        self, collection: CollectionName, run_id: RunID, default: bool
+    ) -> Run:
         with MBDB.get_session() as session:
-            version_orm = Versions.from_name(collection, name, session)
+            run_orm = Runs.from_id(collection, run_id, session)
             if default:
-                if version_orm.is_mutable:
-                    raise ValueError("Cannot set as default a mutable version")
-                # Unset any existing default version for the collection
+                if run_orm.is_mutable:
+                    raise ValueError("Cannot set as default a mutable run")
+                # Unset any existing default run for the collection
                 session.execute(
-                    update(Versions)
+                    update(Runs)
                     .where(
-                        Versions.collection_id == version_orm.collection_id,
-                        Versions.is_default.is_(True),
+                        Runs.collection_id == run_orm.collection_id,
+                        Runs.is_default.is_(True),
                     )
                     .values(is_default=False)
                 )
 
-            version_orm.is_default = default
+            run_orm.is_default = default
             session.commit()
 
-            return version_orm.to_dto()
+            return run_orm.to_dto()
 
-    def get_version(  # noqa: D102
-        self, collection: CollectionName, name: VersionName
-    ) -> list[Resolution]:
+    def get_run(self, collection: CollectionName, run_id: RunID) -> Run:  # noqa: D102
         with MBDB.get_session() as session:
-            version_orm = Versions.from_name(collection, name, session)
-            return version_orm.to_dto()
+            run_orm = Runs.from_id(collection, run_id, session)
+            return run_orm.to_dto()
 
-    def delete_version(  # noqa: D102
-        self, collection: CollectionName, name: VersionName, certain: bool
+    def delete_run(  # noqa: D102
+        self, collection: CollectionName, run_id: RunID, certain: bool
     ) -> None:
         with MBDB.get_session() as session:
-            version_orm = Versions.from_name(collection, name, session)
+            run_orm = Runs.from_id(collection, run_id, session)
 
             if not certain:
-                resolution_names = [res.name for res in version_orm.resolutions]
+                resolution_names = [res.name for res in run_orm.resolutions]
                 raise MatchboxDeletionNotConfirmed(children=resolution_names)
 
-            session.execute(
-                delete(Versions).where(Versions.version_id == version_orm.version_id)
-            )
+            session.execute(delete(Runs).where(Runs.run_id == run_orm.run_id))
             session.commit()
 
     # Resolution management
 
     def _check_writeable(self, path: ResolutionPath):
-        version = Versions.from_name(name=path.version, collection=path.collection)
-        if not version.is_mutable:
-            raise MatchboxVersionNotWriteable(
-                f"Version {path.version} in collection {path.collection} is immutable"
+        run = Runs.from_id(collection=path.collection, run_id=path.run)
+        if not run.is_mutable:
+            raise MatchboxRunNotWriteable(
+                f"Version {path.run} in collection {path.collection} is immutable"
             )
 
     def create_resolution(  # noqa: D102

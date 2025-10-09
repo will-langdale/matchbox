@@ -15,7 +15,7 @@ from typing import Literal
 import pytest
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.dtos import CollectionName, ResolutionPath, VersionName
+from matchbox.common.dtos import CollectionName, ResolutionPath, RunID
 from matchbox.server.postgresql import MatchboxPostgres
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
@@ -27,9 +27,9 @@ from matchbox.server.postgresql.orm import (
     ResolutionFrom,
     Resolutions,
     Results,
+    Runs,
     SourceConfigs,
     SourceFields,
-    Versions,
 )
 from matchbox.server.postgresql.utils.db import compile_sql
 from matchbox.server.postgresql.utils.query import (
@@ -40,7 +40,7 @@ from matchbox.server.postgresql.utils.query import (
 )
 
 _COLLECTION: CollectionName = "default"
-_VERSION: VersionName = "v1"
+_RUN: RunID = 1
 
 
 def _resolution_path(name: str) -> ResolutionPath:
@@ -50,7 +50,7 @@ def _resolution_path(name: str) -> ResolutionPath:
     """
     return ResolutionPath(
         collection=_COLLECTION,
-        version=_VERSION,
+        run=_RUN,
         name=name,
     )
 
@@ -194,45 +194,43 @@ def populated_postgres_db(
     """
 
     with MBDB.get_session() as session:
-        # === COLLECTION AND VERSION ===
+        # === COLLECTION AND RUNS ===
         collection = Collections(name=_COLLECTION)
-        version = Versions(
-            name=_VERSION, is_mutable=True, is_default=True, collection=collection
-        )
+        run = Runs(run_id=_RUN, is_mutable=True, is_default=True, collection=collection)
 
         # === RESOLUTIONS ===
         resolutions = [
             Resolutions(
                 resolution_id=1,
-                version=version,
+                run=run,
                 name="source_a",
                 type="source",
                 truth=None,
             ),
             Resolutions(
                 resolution_id=2,
-                version=version,
+                run=run,
                 name="source_b",
                 type="source",
                 truth=None,
             ),
             Resolutions(
                 resolution_id=3,
-                version=version,
+                run=run,
                 name="dedupe_a",
                 type="model",
                 truth=80,
             ),
             Resolutions(
                 resolution_id=4,
-                version=version,
+                run=run,
                 name="dedupe_b",
                 type="model",
                 truth=70,
             ),
             Resolutions(
                 resolution_id=5,
-                version=version,
+                run=run,
                 name="linker_ab",
                 type="model",
                 truth=90,
@@ -448,7 +446,7 @@ def populated_postgres_db(
 
         # Insert all objects
         for obj in (
-            [collection, version],
+            [collection, run],
             resolutions,
             lineage,
             source_configs,

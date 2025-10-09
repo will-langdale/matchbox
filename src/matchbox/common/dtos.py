@@ -172,7 +172,7 @@ class BackendResourceType(StrEnum):
     """Enumeration of resources types referenced by client or API."""
 
     COLLECTION = "collection"
-    VERSION = "version"
+    RUN = "run"
     RESOLUTION = "resolution"
     CLUSTER = "cluster"
     USER = "user"
@@ -246,8 +246,8 @@ class MatchboxName(str):
 CollectionName: TypeAlias = MatchboxName
 """Type alias for collection names."""
 
-VersionName: TypeAlias = MatchboxName
-"""Type alias for version names."""
+RunID: TypeAlias = int
+"""Type alias for run IDs."""
 
 SourceResolutionName: TypeAlias = MatchboxName
 """Type alias for source resolution names."""
@@ -260,17 +260,17 @@ ResolutionName: TypeAlias = SourceResolutionName | ModelResolutionName
 
 
 class ResolutionPath(BaseModel):
-    """Base resolution identifier with collection, version, and name."""
+    """Base resolution identifier with collection, run, and name."""
 
     model_config = ConfigDict(frozen=True)
 
     collection: CollectionName = "default"
-    version: VersionName = "v1"
+    run: RunID = 1
     name: ResolutionName
 
     def __str__(self) -> str:
         """String representation of the resolution path."""
-        return f"{self.collection}/{self.version}/{self.name}"
+        return f"{self.collection}/{self.run}/{self.name}"
 
 
 SourceResolutionPath: TypeAlias = ResolutionPath
@@ -375,6 +375,14 @@ class SourceConfig(BaseModel):
             raise ValueError("Key field must be a string. ")
 
         return self
+
+    @property
+    def dependencies(self) -> list[ResolutionPath]:
+        """Return all resolution names that this source needs.
+
+        Provided for symmetry with ModelConfig.
+        """
+        return []
 
     def prefix(self, name: str) -> str:
         """Get the prefix for the source.
@@ -553,6 +561,15 @@ class ModelConfig(BaseModel):
             raise ValueError("Model settings are not valid JSON") from e
         return value
 
+    @property
+    def dependencies(self) -> list[ResolutionPath]:
+        """Return all resolution names that this model needs."""
+        deps = list(self.left_query.dependencies)
+        if self.right_query:
+            deps.extend(self.right_query.dependencies)
+
+        return deps
+
 
 class Match(BaseModel):
     """A match between primary keys in the Matchbox database."""
@@ -628,39 +645,39 @@ class Resolution(BaseModel):
         return self
 
 
-class Version(BaseModel):
-    """A version within a collection."""
+class Run(BaseModel):
+    """A run within a collection."""
 
-    name: VersionName = Field(description="Unique name of the version")
+    run_id: RunID | None = Field(default=None, description="Unique ID of the run")
     is_default: bool = Field(
         default=False,
-        description="Whether this version is the default in its collection",
+        description="Whether this run is the default in its collection",
     )
     is_mutable: bool = Field(
-        default=False, description="Whether this version can be modified"
+        default=False, description="Whether this run can be modified"
     )
     resolutions: dict[ResolutionName, Resolution] = Field(
         default_factory=dict,
-        description="Dict of resolution objects by name within this version",
+        description="Dict of resolution objects by name within this run",
     )
 
 
 class Collection(BaseModel):
-    """A collection of versions."""
+    """A collection of runs."""
 
-    default_version: VersionName | None = Field(
-        default=None, description="Name of default version for this collection"
+    default_run: RunID | None = Field(
+        default=None, description="ID of default run for this collection"
     )
-    versions: list[VersionName] = Field(
-        default_factory=list, description="List of version names in this collection"
+    runs: list[RunID] = Field(
+        default_factory=list, description="List of run IDs in this collection"
     )
 
     @model_validator(mode="after")
-    def validate_default_version(self) -> Self:
-        """Check default version is within all versions."""
-        if self.default_version and self.default_version not in self.versions:
+    def validate_default_run(self) -> Self:
+        """Check default run is within all runs."""
+        if self.default_run and self.default_run not in self.runs:
             raise ValueError(
-                "The default version needs to be included in the list of all versions."
+                "The default run needs to be included in the list of all runs."
             )
 
         return self
@@ -670,7 +687,7 @@ class ResourceOperationStatus(BaseModel):
     """Status response for any resource operation."""
 
     success: bool
-    name: ResolutionPath | CollectionName | VersionName
+    name: ResolutionPath | CollectionName | RunID
     operation: CRUDOperation
     details: str | None = None
 
@@ -687,7 +704,7 @@ class ResourceOperationStatus(BaseModel):
                                 success=False,
                                 name=ModelResolutionPath(
                                     collection="default",
-                                    version="v1",
+                                    run=1,
                                     name="example_model",
                                 ),
                                 operation=CRUDOperation.DELETE,
@@ -724,7 +741,7 @@ class ResourceOperationStatus(BaseModel):
                                 success=False,
                                 name=ModelResolutionPath(
                                     collection="default",
-                                    version="v1",
+                                    run=1,
                                     name="example_model",
                                 ),
                                 operation=CRUDOperation.UPDATE,

@@ -302,3 +302,19 @@ class Cluster:
             probability=probability,
             leaves=list(unique_dict.values()),
         )
+
+
+def truth_float_to_int(truth: float) -> int:
+    """Convert user input float truth values to int."""
+    if isinstance(truth, float) and 0.0 <= truth <= 1.0:
+        return round(truth * 100)
+    else:
+        raise ValueError(f"Truth value {truth} not a valid probability")
+
+
+def truth_int_to_float(truth: int) -> float:
+    """Convert backend int truth values to float."""
+    if isinstance(truth, int) and 0 <= truth <= 100:
+        return float(truth / 100)
+    else:
+        raise ValueError(f"Truth value {truth} not valid")

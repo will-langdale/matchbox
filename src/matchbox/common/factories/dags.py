@@ -11,13 +11,20 @@ from matchbox.common.factories.models import ModelTestkit
 from matchbox.common.factories.sources import LinkedSourcesTestkit, SourceTestkit
 
 
+def _default_dag() -> DAG:
+    """Create a default empty DAG."""
+    dag = DAG(name="collection")
+    dag.run = 1
+    return dag
+
+
 class TestkitDAG(BaseModel):
     """DAG test wrapper that's just a registry of test data."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # The real DAG that handles all logic
-    dag: DAG = Field(default_factory=lambda: DAG(name="collection", version="draft"))
+    dag: DAG = Field(default_factory=_default_dag)
 
     # Just registries of test data - no complex logic
     sources: dict[SourceResolutionName, SourceTestkit] = {}

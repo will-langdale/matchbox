@@ -11,7 +11,6 @@ from sqlglot import expressions, parse_one
 from sqlglot import select as sqlglot_select
 
 from matchbox.client import _handler
-from matchbox.client.models import Model
 from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.sources import Source
@@ -20,11 +19,14 @@ from matchbox.common.dtos import (
     QueryCombineType,
     QueryConfig,
 )
+from matchbox.common.transform import truth_float_to_int, truth_int_to_float
 
 if TYPE_CHECKING:
     from matchbox.client.dags import DAG
+    from matchbox.client.models import Model
 else:
     DAG = Any
+    Model = Any
 
 
 class Query:
@@ -82,8 +84,43 @@ class Query:
             source_resolutions=[source.resolution_path for source in self.sources],
             model_resolution=self.model.resolution_path if self.model else None,
             combine_type=self.combine_type,
-            threshold=int(self.threshold * 100) if self.threshold else None,
+            threshold=truth_float_to_int(self.threshold) if self.threshold else None,
             cleaning=self.cleaning,
+        )
+
+    @classmethod
+    def from_config(cls, config: QueryConfig, dag: DAG) -> Self:
+        """Create query from config.
+
+        The DAG must have had relevant sources and model added already.
+
+        Args:
+            config: The QueryConfig to reconstruct from.
+            dag: The DAG containing the sources and model.
+
+        Returns:
+            A reconstructed Query instance.
+        """
+        # Get sources from DAG
+        sources = [dag.get_source(res.name) for res in config.source_resolutions]
+
+        # Get model if specified
+        model = (
+            dag.get_model(config.model_resolution.name)
+            if config.model_resolution
+            else None
+        )
+
+        # Convert threshold back to float
+        threshold = truth_int_to_float(config.threshold) if config.threshold else None
+
+        return cls(
+            *sources,
+            dag=dag,
+            model=model,
+            combine_type=config.combine_type,
+            threshold=threshold,
+            cleaning=config.cleaning,
         )
 
     def run(

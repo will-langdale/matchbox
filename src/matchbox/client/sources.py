@@ -26,6 +26,7 @@ from matchbox.common.dtos import (
     LocationConfig,
     LocationType,
     Resolution,
+    ResolutionPath,
     ResolutionType,
     SourceConfig,
     SourceField,
@@ -421,6 +422,14 @@ class Source:
 
         return key_field, tuple(index_fields)
 
+    @property
+    def dependencies(self) -> list[ResolutionPath]:
+        """Returns all resolution paths this source needs.
+
+        Provided to match the interface of Model objects.
+        """
+        return self.config.dependencies
+
     def to_resolution(self) -> Resolution:
         """Convert to Resolution for API calls."""
         return Resolution(
@@ -579,7 +588,7 @@ class Source:
         """Returns the source resolution path."""
         return SourceResolutionPath(
             collection=self.dag.name,
-            version=self.dag.version,
+            run=self.dag.run,
             name=self.name,
         )
 

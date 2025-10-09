@@ -14,7 +14,7 @@ from matchbox.common.dtos import (
     ModelResolutionName,
     ModelResolutionPath,
     NotFoundError,
-    VersionName,
+    RunID,
 )
 from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.exceptions import (
@@ -112,7 +112,7 @@ def compare_models(
 def sample(
     backend: BackendDependency,
     collection: CollectionName,
-    version: VersionName,
+    run_id: RunID,
     resolution: ModelResolutionName,
     n: int,
     user_id: int,
@@ -121,7 +121,7 @@ def sample(
     try:
         sample = backend.sample_for_eval(
             path=ModelResolutionPath(
-                collection=collection, version=version, name=resolution
+                collection=collection, run=run_id, name=resolution
             ),
             n=n,
             user_id=user_id,

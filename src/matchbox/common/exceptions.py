@@ -8,12 +8,12 @@ if TYPE_CHECKING:
     from matchbox.common.dtos import (
         CollectionName,
         ResolutionName,
-        VersionName,
+        RunID,
     )
 else:
     CollectionName = Any
     ResolutionName = Any
-    VersionName = Any
+    RunID = Any
 
 
 # -- Base class for all Matchbox exceptions
@@ -30,7 +30,7 @@ class MatchboxException(Exception):
 # -- Common data objects exceptions --
 
 
-class MatchboxNameError(MatchboxException):
+class MatchboxNameError(MatchboxException, ValueError):
     """Name did not pass validation."""
 
     def __init__(self, message: str):
@@ -225,18 +225,18 @@ class MatchboxCollectionNotFoundError(MatchboxException):
         self.name = name
 
 
-class MatchboxVersionNotFoundError(MatchboxException):
-    """Version not found."""
+class MatchboxRunNotFoundError(MatchboxException):
+    """Run not found."""
 
-    def __init__(self, message: str | None = None, name: VersionName | None = None):
+    def __init__(self, message: str | None = None, run_id: RunID | None = None):
         """Initialise the exception."""
         if message is None:
-            message = "Version not found."
-            if name is not None:
-                message = f"Version {name} not found."
+            message = "Run not found."
+            if run_id is not None:
+                message = f"Run {run_id} not found."
 
         super().__init__(message)
-        self.name = name
+        self.run_id = run_id
 
 
 class MatchboxDataNotFound(MatchboxException):
@@ -271,13 +271,15 @@ class MatchboxConnectionError(MatchboxException):
 class MatchboxDeletionNotConfirmed(MatchboxException):
     """Deletion must be confirmed: if certain, rerun with certain=True."""
 
-    def __init__(self, message: str | None = None, children: list[str] | None = None):
+    def __init__(
+        self, message: str | None = None, children: list[str | int] | None = None
+    ):
         """Initialise the exception."""
         if message is None:
             message = "Deletion must be confirmed: if certain, rerun with certain=True."
 
         if children is not None:
-            children_names = ", ".join(children)
+            children_names = ", ".join(str(child) for child in children)
             message = (
                 f"This operation will delete the resolutions {children_names}, "
                 "as well as all probabilities they have created. \n\n"
@@ -297,12 +299,12 @@ class MatchboxCollectionAlreadyExists(MatchboxException):
     """Collection already exists."""
 
 
-class MatchboxVersionAlreadyExists(MatchboxException):
-    """Version already exists."""
+class MatchboxRunAlreadyExists(MatchboxException):
+    """Run already exists."""
 
 
-class MatchboxVersionNotWriteable(MatchboxException):
-    """Version is not mutable."""
+class MatchboxRunNotWriteable(MatchboxException):
+    """Run is not mutable."""
 
 
 class MatchboxTooManySamplesRequested(MatchboxException):

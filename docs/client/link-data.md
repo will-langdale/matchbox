@@ -527,7 +527,7 @@ This example demonstrates how you can:
 
 ### Re-run a previous DAG
 
-You might want to publish a new version of your DAG based on newer data. You can retrieve the old DAG and inspect it. You can't sync or publish it, as it will be read-only. However, you can generate a new version from it explicitly
+You might want to publish a new run of your DAG based on newer data. You can retrieve the old DAG and inspect it. You can't sync or publish it, as it will be read-only. However, you can generate a new run from it explicitly
 
 === "Example"
     ```python    

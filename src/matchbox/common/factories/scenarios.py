@@ -99,11 +99,9 @@ def create_bare_scenario(
     """Create a bare TestkitDAG scenario."""
     dag_testkit = TestkitDAG()
 
-    # Create collection and version
+    # Create collection and run
     backend.create_collection(name=dag_testkit.dag.name)
-    backend.create_version(
-        collection=dag_testkit.dag.name, name=dag_testkit.dag.version
-    )
+    dag_testkit.dag.run = backend.create_run(collection=dag_testkit.dag.name).run_id
 
     # Create linked sources
     linked = linked_sources_factory(
@@ -422,11 +420,9 @@ def create_alt_dedupe_scenario(
     """Create a TestkitDAG scenario with two alternative dedupers."""
     dag_testkit = TestkitDAG()
 
-    # Create collection and version
+    # Create collection and run
     backend.create_collection(name=dag_testkit.dag.name)
-    backend.create_version(
-        collection=dag_testkit.dag.name, name=dag_testkit.dag.version
-    )
+    dag_testkit.dag.run = backend.create_run(collection=dag_testkit.dag.name).run_id
 
     # Create linked sources
     company_name_feature = FeatureConfig(
@@ -529,11 +525,9 @@ def create_convergent_scenario(
     """
     dag_testkit = TestkitDAG()
 
-    # Create collection and version
+    # Create collection and run
     backend.create_collection(name=dag_testkit.dag.name)
-    backend.create_version(
-        collection=dag_testkit.dag.name, name=dag_testkit.dag.version
-    )
+    dag_testkit.dag.run = backend.create_run(collection=dag_testkit.dag.name).run_id
 
     # Create linked sources
     company_name_feature = FeatureConfig(

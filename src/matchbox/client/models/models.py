@@ -1,6 +1,7 @@
 """Functions and classes to define, run and register models."""
 
 import inspect
+import json
 import warnings
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
@@ -10,6 +11,7 @@ from matchbox.client._settings import settings
 from matchbox.client.models import dedupers, linkers
 from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
+from matchbox.client.queries import Query
 from matchbox.client.results import Results
 from matchbox.common.dtos import (
     ModelConfig,
@@ -22,13 +24,12 @@ from matchbox.common.dtos import (
 )
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.logging import logger
+from matchbox.common.transform import truth_float_to_int, truth_int_to_float
 
 if TYPE_CHECKING:
     from matchbox.client.dags import DAG
-    from matchbox.client.queries import Query
 else:
     DAG = Any
-    Query = Any
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -105,7 +106,7 @@ class Model:
         self.dag = dag
         self.name = name
         self.description = description
-        self._truth: int = _truth_float_to_int(truth)
+        self._truth: int = truth_float_to_int(truth)
         self.left_query = left_query
         self.right_query = right_query
         self.results: Results | None = None
@@ -135,12 +136,7 @@ class Model:
     @property
     def dependencies(self) -> list[ResolutionPath]:
         """Returns all resolution paths this model needs as implied by the queries."""
-        if self.right_query:
-            return (
-                self.left_query.config.dependencies
-                + self.right_query.config.dependencies
-            )
-        return self.left_query.config.dependencies
+        return self.config.dependencies
 
     @property
     def parents(self) -> list[ResolutionPath]:
@@ -177,10 +173,12 @@ class Model:
             name=ModelResolutionName(resolution_name),
             description=resolution.description,
             model_class=resolution.config.model_class,
-            model_settings=resolution.config.model_settings,
-            left_query=resolution.config.left_query,
-            right_query=resolution.config.right_query,
-            truth=resolution.truth,
+            model_settings=json.loads(resolution.config.model_settings),
+            left_query=Query.from_config(resolution.config.left_query, dag=dag),
+            right_query=Query.from_config(resolution.config.right_query, dag=dag)
+            if resolution.config.right_query
+            else None,
+            truth=truth_int_to_float(resolution.truth),
         )
 
     @property
@@ -188,7 +186,7 @@ class Model:
         """Returns the model resolution path."""
         return ModelResolutionPath(
             collection=self.dag.name,
-            version=self.dag.version,
+            run=self.dag.run,
             name=self.name,
         )
 
@@ -196,13 +194,13 @@ class Model:
     def truth(self) -> float | None:
         """Returns the truth threshold for the model as a float."""
         if self._truth is not None:
-            return _truth_int_to_float(self._truth)
+            return truth_int_to_float(self._truth)
         return None
 
     @truth.setter
     def truth(self, truth: float) -> None:
         """Set the truth threshold for the model."""
-        self._truth = _truth_float_to_int(truth)
+        self._truth = truth_float_to_int(truth)
 
     def delete(self, certain: bool = False) -> bool:
         """Delete the model from the database."""
@@ -293,19 +291,3 @@ class Model:
     def query(self, *sources, **kwargs) -> Query:
         """Generate a query for this model."""
         return self.dag.query(*sources, **kwargs, model=self)
-
-
-def _truth_float_to_int(truth: float) -> int:
-    """Convert user input float truth values to int."""
-    if isinstance(truth, float) and 0.0 <= truth <= 1.0:
-        return round(truth * 100)
-    else:
-        raise ValueError(f"Truth value {truth} not a valid probability")
-
-
-def _truth_int_to_float(truth: int) -> float:
-    """Convert backend int truth values to float."""
-    if isinstance(truth, int) and 0 <= truth <= 100:
-        return float(truth / 100)
-    else:
-        raise ValueError(f"Truth value {truth} not valid")

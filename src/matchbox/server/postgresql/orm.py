@@ -30,25 +30,25 @@ from matchbox.common.dtos import (
     ResolutionName,
     ResolutionPath,
     ResolutionType,
-    VersionName,
+    RunID,
 )
 from matchbox.common.dtos import ModelConfig as CommonModelConfig
 from matchbox.common.dtos import Resolution as CommonResolution
+from matchbox.common.dtos import Run as CommonRun
 from matchbox.common.dtos import SourceConfig as CommonSourceConfig
 from matchbox.common.dtos import SourceField as CommonSourceField
-from matchbox.common.dtos import Version as CommonVersion
 from matchbox.common.exceptions import (
     MatchboxCollectionNotFoundError,
     MatchboxResolutionAlreadyExists,
     MatchboxResolutionNotFoundError,
-    MatchboxVersionNotFoundError,
+    MatchboxRunNotFoundError,
 )
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
 
 
 class Collections(CountMixin, MBDB.MatchboxBase):
-    """Named collections of resolutions and versions."""
+    """Named collections of resolutions and runs."""
 
     __tablename__ = "collections"
 
@@ -56,7 +56,7 @@ class Collections(CountMixin, MBDB.MatchboxBase):
     name = Column(TEXT, nullable=False)
 
     # Relationships
-    versions = relationship("Versions", back_populates="collection")
+    runs = relationship("Runs", back_populates="collection")
 
     # Constraints
     __table_args__ = (UniqueConstraint("name", name="collections_name_key"),)
@@ -76,7 +76,7 @@ class Collections(CountMixin, MBDB.MatchboxBase):
         Raises:
             MatchboxCollectionNotFoundError: If the collection doesn't exist.
         """
-        query = select(cls).where(cls.name == name).options(selectinload(cls.versions))
+        query = select(cls).where(cls.name == name).options(selectinload(cls.runs))
 
         if session:
             collection = session.execute(query).scalar_one_or_none()
@@ -91,42 +91,40 @@ class Collections(CountMixin, MBDB.MatchboxBase):
 
     def to_dto(self) -> CommonCollection:
         """Convert ORM collection to a matchbox.common Collection object."""
-        version_names: list[VersionName] = []
-        default_version = None
-        if versions := self.versions:
-            version_names = [v.name for v in versions]
-            default_version_list = [v.name for v in versions if v.is_default]
-            if default_version_list:
-                default_version = default_version_list[0]
+        run_ids: list[RunID] = []
+        default_run = None
+        if runs := self.runs:
+            run_ids = [r.run_id for r in runs]
+            default_run_list = [r.run_id for r in runs if r.is_default]
+            if default_run_list:
+                default_run = default_run_list[0]
 
-        return CommonCollection(versions=version_names, default_version=default_version)
+        return CommonCollection(runs=run_ids, default_run=default_run)
 
 
-class Versions(CountMixin, MBDB.MatchboxBase):
-    """Named versions of collections of resolutions."""
+class Runs(CountMixin, MBDB.MatchboxBase):
+    """Runs of collections of resolutions."""
 
-    __tablename__ = "versions"
+    __tablename__ = "runs"
 
-    version_id = Column(BIGINT, primary_key=True, autoincrement=True)
+    run_id = Column(BIGINT, primary_key=True, autoincrement=True)
     collection_id = Column(
         BIGINT,
         ForeignKey("collections.collection_id", ondelete="CASCADE"),
         nullable=False,
     )
-    name = Column(TEXT, nullable=False)
     is_mutable = Column(BOOLEAN, default=False)
     is_default = Column(BOOLEAN, default=False)
 
     # Relationships
-    collection = relationship("Collections", back_populates="versions")
-    resolutions = relationship("Resolutions", back_populates="version")
+    collection = relationship("Collections", back_populates="runs")
+    resolutions = relationship("Resolutions", back_populates="run")
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint("collection_id", "version_id", name="unique_version_id"),
-        UniqueConstraint("collection_id", "name", name="unique_version_name"),
+        UniqueConstraint("collection_id", "run_id", name="unique_run_id"),
         Index(
-            "ix_default_version_collection",
+            "ix_default_run_collection",
             "collection_id",
             unique=True,
             postgresql_where=text("is_default = true"),
@@ -134,55 +132,61 @@ class Versions(CountMixin, MBDB.MatchboxBase):
     )
 
     @classmethod
-    def from_name(
+    def from_id(
         cls,
         collection: CollectionName,
-        name: VersionName,
+        run_id: RunID,
         session: Session | None = None,
-    ) -> "Versions":
-        """Resolve a collection and version name to a Versions object.
+    ) -> "Runs":
+        """Resolve a collection and run name to a Runs object.
 
         Args:
-            collection: The name of the collection.
-            name: The name of the version within that collection.
+            collection: The name of the collection containing the run.
+            run_id: The ID of the run within that collection.
             session: Optional session to use for the query.
 
         Raises:
-            MatchboxVersionNotFoundError: If the version doesn't exist.
+            MatchboxRunNotFoundError: If the run doesn't exist.
         """
         query = (
             select(cls)
-            .join(Collections)
-            .where(Collections.name == collection, cls.name == name)
+            .where(cls.run_id == run_id)
             .options(
                 selectinload(cls.resolutions)
                 .selectinload(Resolutions.source_config)
                 .selectinload(SourceConfigs.fields),
                 selectinload(cls.resolutions).selectinload(Resolutions.model_config),
+                selectinload(cls.collection),
             )
         )
 
         if session:
-            version_orm = session.execute(query).scalar_one_or_none()
+            run_orm = session.execute(query).scalar_one_or_none()
         else:
             with MBDB.get_session() as session:
-                version_orm = session.execute(query).scalar_one_or_none()
+                run_orm = session.execute(query).scalar_one_or_none()
 
-        if not version_orm:
-            raise MatchboxVersionNotFoundError
+        if not run_orm:
+            raise MatchboxRunNotFoundError
 
-        return version_orm
+        if run_orm.collection.name != collection:
+            raise MatchboxRunNotFoundError(
+                run_id=id,
+                message=f"Run {id} not found in collection {collection}",
+            )
 
-    def to_dto(self) -> CommonVersion:
-        """Convert ORM version to a matchbox.common Version object."""
+        return run_orm
+
+    def to_dto(self) -> CommonRun:
+        """Convert ORM run to a matchbox.common Run object."""
         resolutions: dict[ResolutionName, CommonResolution] = {}
         if self.resolutions:
             resolutions = {
                 resolution.name: resolution.to_dto() for resolution in self.resolutions
             }
 
-        return CommonVersion(
-            name=self.name,
+        return CommonRun(
+            run_id=self.run_id,
             is_default=self.is_default,
             is_mutable=self.is_mutable,
             resolutions=resolutions,
@@ -225,8 +229,8 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
     # Columns
     resolution_id = Column(BIGINT, primary_key=True, autoincrement=True)
-    version_id = Column(
-        BIGINT, ForeignKey("versions.version_id", ondelete="CASCADE"), nullable=False
+    run_id = Column(
+        BIGINT, ForeignKey("runs.run_id", ondelete="CASCADE"), nullable=False
     )
     name = Column(TEXT, nullable=False)
     description = Column(TEXT, nullable=True)
@@ -258,7 +262,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         secondaryjoin="Resolutions.resolution_id == ResolutionFrom.child",
         backref="parents",
     )
-    version = relationship("Versions", back_populates="resolutions")
+    run = relationship("Runs", back_populates="resolutions")
 
     # Constraints
     __table_args__ = (
@@ -266,7 +270,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             "type IN ('model', 'source')",
             name="resolution_type_constraints",
         ),
-        UniqueConstraint("version_id", "name", name="resolutions_name_key"),
+        UniqueConstraint("run_id", "name", name="resolutions_name_key"),
     )
 
     @property
@@ -379,11 +383,11 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         """
         query = (
             select(cls)
-            .join(cls.version)
-            .join(Versions.collection)
+            .join(cls.run)
+            .join(Runs.collection)
             .where(
                 cls.name == path.name,
-                Versions.name == path.version,
+                Runs.run_id == path.run,
                 Collections.name == path.collection,
             )
         )
@@ -429,19 +433,19 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
                 f"Resolution {path.name} already exists"
             )
 
-        # Find the version ID for the given collection and version names
-        version_obj = session.execute(
-            select(Versions)
+        # Find the run ID for the given collection and run ID
+        run_obj = session.execute(
+            select(Runs)
             .join(Collections)
-            .where(Collections.name == path.collection, Versions.name == path.version)
+            .where(Collections.name == path.collection, Runs.run_id == path.run)
         ).scalar_one_or_none()
 
-        if not version_obj:
-            raise MatchboxVersionNotFoundError(name=path.version)
+        if not run_obj:
+            raise MatchboxRunNotFoundError(number=path.run)
 
         # Create new resolution
         resolution_orm = cls(
-            version_id=version_obj.version_id,
+            run_id=run_obj.run_id,
             name=path.name,
             description=resolution.description,
             type=resolution.resolution_type.value,

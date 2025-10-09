@@ -1,5 +1,6 @@
 """Factory functions for generating model testkits and data for testing."""
 
+import json
 import warnings
 from collections import Counter
 from collections.abc import Hashable
@@ -627,6 +628,18 @@ class ModelTestkit(BaseModel):
         self._entities = entities
         self._threshold = value
 
+    def into_dag(self) -> dict:
+        """Turn model into kwargs for `dag.model()`, detaching from original DAG."""
+        return {
+            "name": self.model.name,
+            "model_class": self.model.config.model_class,
+            "model_settings": json.loads(self.model.config.model_settings),
+            "left_query": self.model.left_query,
+            "right_query": self.model.right_query,
+            "truth": self.model.truth,
+            "description": self.model.description,
+        }
+
     @model_validator(mode="after")
     def init_query_lookup(self) -> "ModelTestkit":
         """Initialize the query lookup table."""
@@ -742,6 +755,8 @@ def model_factory(
     else:
         if dag is None:
             dag = DAG("collection")
+            dag.run = 1
+
         # Create default sources
         engine = create_engine("sqlite:///:memory:")
         resolved_model_type = model_type or ModelType.DEDUPER

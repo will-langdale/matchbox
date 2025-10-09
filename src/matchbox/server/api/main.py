@@ -30,13 +30,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendCountableType,
-    BackendParameterType,
     BackendResourceType,
     BackendUploadType,
     CollectionName,
     CountResult,
     CRUDOperation,
-    InvalidParameterError,
     LoginAttempt,
     LoginResult,
     Match,
@@ -45,19 +43,18 @@ from matchbox.common.dtos import (
     OKMessage,
     ResolutionPath,
     ResourceOperationStatus,
+    RunID,
     SourceResolutionName,
     SourceResolutionPath,
     UploadStage,
     UploadStatus,
-    VersionName,
 )
 from matchbox.common.exceptions import (
     MatchboxCollectionNotFoundError,
     MatchboxDeletionNotConfirmed,
-    MatchboxNameError,
     MatchboxResolutionNotFoundError,
+    MatchboxRunNotFoundError,
     MatchboxServerFileError,
-    MatchboxVersionNotFoundError,
 )
 from matchbox.server.api.dependencies import (
     BackendDependency,
@@ -108,30 +105,16 @@ async def collection_not_found_handler(
     )
 
 
-@app.exception_handler(MatchboxVersionNotFoundError)
-async def version_not_found_handler(
-    request: Request, exc: MatchboxVersionNotFoundError
+@app.exception_handler(MatchboxRunNotFoundError)
+async def run_not_found_handler(
+    request: Request, exc: MatchboxRunNotFoundError
 ) -> JSONResponse:
-    """Handle version not found errors."""
+    """Handle run not found errors."""
     detail = NotFoundError(
-        details=str(exc), entity=BackendResourceType.VERSION
+        details=str(exc), entity=BackendResourceType.RUN
     ).model_dump()
     return JSONResponse(
         status_code=404,
-        content=jsonable_encoder(detail),
-    )
-
-
-@app.exception_handler(MatchboxNameError)
-async def invalid_name_handler(
-    request: Request, exc: MatchboxResolutionNotFoundError
-) -> JSONResponse:
-    """Handle errors for invalid names."""
-    detail = InvalidParameterError(
-        details=str(exc), parameter=BackendParameterType.NAME
-    ).model_dump()
-    return JSONResponse(
-        status_code=422,
         content=jsonable_encoder(detail),
     )
 
@@ -395,7 +378,7 @@ def get_upload_status(
 def query(
     backend: BackendDependency,
     collection: CollectionName,
-    version: VersionName,
+    run_id: RunID,
     source: SourceResolutionName,
     return_leaf_id: bool,
     resolution: ModelResolutionName | None = None,
@@ -407,11 +390,11 @@ def query(
         res = backend.query(
             source=SourceResolutionPath(
                 collection=collection,
-                version=version,
+                run=run_id,
                 name=source,
             ),
             point_of_truth=ResolutionPath(
-                collection=collection, version=version, name=resolution
+                collection=collection, run=run_id, name=resolution
             )
             if resolution
             else None,
@@ -438,7 +421,7 @@ def query(
 def match(
     backend: BackendDependency,
     collection: CollectionName,
-    version: VersionName,
+    run_id: RunID,
     targets: Annotated[list[SourceResolutionName], Query()],
     source: SourceResolutionName,
     key: str,
@@ -447,21 +430,20 @@ def match(
 ) -> list[Match]:
     """Match a source key against a list of target source resolutions."""
     targets = [
-        SourceResolutionPath(collection=collection, version=version, name=t)
-        for t in targets
+        SourceResolutionPath(collection=collection, run=run_id, name=t) for t in targets
     ]
     try:
         res = backend.match(
             key=key,
             source=SourceResolutionPath(
                 collection=collection,
-                version=version,
+                run=run_id,
                 name=source,
             ),
             targets=targets,
             point_of_truth=ResolutionPath(
                 collection=collection,
-                version=version,
+                run=run_id,
                 name=resolution,
             ),
             threshold=threshold,

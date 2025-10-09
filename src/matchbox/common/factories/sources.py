@@ -163,7 +163,8 @@ class LinkedSourcesTestkit(BaseModel):
     """Container for multiple related SourceConfig testkits with entity tracking."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    dag: DAG = DAG(name="dag")
+
+    dag: DAG
     true_entities: set[SourceEntity] = Field(default_factory=set)
     sources: dict[SourceResolutionName, SourceTestkit]
 
@@ -516,6 +517,7 @@ def source_factory(
 
     if dag is None:
         dag = DAG("collection")
+        dag.run = 1
 
     # Generate base entities
     base_entities = generate_entities(
@@ -602,6 +604,7 @@ def source_from_tuple(
 
     if dag is None:
         dag = DAG("collection")
+        dag.run = 1
 
     base_entities = tuple(SourceEntity(base_values=row) for row in data_tuple)
 
@@ -693,6 +696,7 @@ def linked_sources_factory(
 
     if dag is None:
         dag = DAG("collection")
+        dag.run = 1
 
     default_engine = create_engine("sqlite:///:memory:")
 
