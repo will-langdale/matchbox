@@ -123,7 +123,7 @@ class DAG:
         self,
         name: ResolutionName,
         resolution: Resolution,
-        location: Location | None = None,
+        location: Location,
     ) -> None:
         """Convert a resolution to a Source or Model and add to DAG."""
         if resolution.resolution_type == ResolutionType.SOURCE:
@@ -312,7 +312,7 @@ class DAG:
         collection = _handler.get_collection(self.name)
 
         run = _handler.get_run(collection=self.name, run_id=collection.default_run)
-        self.run = run.run_id
+        self.run = collection.default_run
 
         def _len_dependencies(res_item: tuple[ResolutionName, Resolution]) -> int:
             return len(res_item[1].config.dependencies)
@@ -498,9 +498,7 @@ class DAG:
                 )
             )
 
-            source_to_key_field[source_name] = sources[
-                source_name
-            ].config.key_field.name
+            source_to_key_field[source_name] = sources[source_name].key_field.name
 
         # Join Matchbox IDs to form mapping table
         mapping = source_mb_ids[0]

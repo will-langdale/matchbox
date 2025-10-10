@@ -648,7 +648,7 @@ class Resolution(BaseModel):
 class Run(BaseModel):
     """A run within a collection."""
 
-    run_id: RunID | None = Field(default=None, description="Unique ID of the run")
+    run_id: RunID | None = Field(description="Unique ID of the run")
     is_default: bool = Field(
         default=False,
         description="Whether this run is the default in its collection",

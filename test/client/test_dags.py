@@ -329,7 +329,6 @@ def test_extract_lookup(
 ):
     """Entire lookup can be extracted from DAG."""
     # Make dummy data
-
     foo = source_from_tuple(
         name="foo",
         location_name="sqlite",
@@ -345,30 +344,49 @@ def test_extract_lookup(
         data_tuple=({"col": 10}, {"col": 11}, {"col": 12}),
     ).write_to_location()
 
-    dag = TestkitDAG().dag
+    dag = DAG("companies")
 
-    dag.source(**foo.into_dag()).query().linker(
+    # Mock API
+    # In the beginning, no run
+    matchbox_api.get(f"/collections/{dag.name}").mock(
+        return_value=Response(
+            200,
+            json=Collection(
+                name=dag.name,
+                runs=[],
+                default_run=None,
+            ).model_dump(),
+        )
+    )
+
+    matchbox_api.post(f"/collections/{dag.name}/runs").mock(
+        return_value=Response(
+            200,
+            json=Run(run_id=1, resolutions={}).model_dump(),
+        )
+    )
+
+    # Build dummy DAG
+    dag.new_run().source(**foo.into_dag()).query().linker(
         dag.source(**bar.into_dag()).query(),
         name="root",
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.field=r.field"},
     )
 
-    # Because of FULL OUTER JOIN, we expect some values to be null, and some explosions
-    expected_foo_bar_mapping = pl.DataFrame(
-        [
-            {"id": 1, "foo_key": "1", "bar_key": "a"},
-            {"id": 2, "foo_key": "2", "bar_key": None},
-            {"id": 3, "foo_key": "3", "bar_key": "b"},
-            {"id": 3, "foo_key": "3", "bar_key": "c"},
-        ]
+    # Then the new run
+    matchbox_api.get(f"/collections/{dag.name}").mock(
+        return_value=Response(
+            200,
+            json=Collection(
+                name=dag.name,
+                runs=[1],
+                default_run=1,
+            ).model_dump(),
+        )
     )
 
-    # When selecting single source, we won't explode
-    expected_foo_mapping = expected_foo_bar_mapping.select(["id", "foo_key"]).unique()
-
-    # Mock API
-    matchbox_api.get(f"/collections/{dag.name}/runs/{dag.run}").mock(
+    matchbox_api.get(f"/collections/{dag.name}/runs/1").mock(
         return_value=Response(
             200,
             json=Run(
@@ -376,12 +394,15 @@ def test_extract_lookup(
                 resolutions={
                     foo.name: foo.source.to_resolution(),
                     bar.name: bar.source.to_resolution(),
+                    "root": dag.get_model("root").to_resolution(),
                 },
             ).model_dump(),
         )
     )
 
-    matchbox_api.get("/query", params={"source": "foo"}).mock(
+    matchbox_api.get(
+        "/query", params={"source": "foo", "run_id": 1, "collection": dag.name}
+    ).mock(
         return_value=Response(
             200,
             content=table_to_buffer(
@@ -397,7 +418,9 @@ def test_extract_lookup(
         )
     )
 
-    matchbox_api.get("/query", params={"source": "bar"}).mock(
+    matchbox_api.get(
+        "/query", params={"source": "bar", "run_id": 1, "collection": dag.name}
+    ).mock(
         return_value=Response(
             200,
             content=table_to_buffer(
@@ -412,6 +435,19 @@ def test_extract_lookup(
             ).read(),
         )
     )
+
+    # Because of FULL OUTER JOIN, we expect some values to be null, and some explosions
+    expected_foo_bar_mapping = pl.DataFrame(
+        [
+            {"id": 1, "foo_key": "1", "bar_key": "a"},
+            {"id": 2, "foo_key": "2", "bar_key": None},
+            {"id": 3, "foo_key": "3", "bar_key": "b"},
+            {"id": 3, "foo_key": "3", "bar_key": "c"},
+        ]
+    )
+
+    # When selecting single source, we won't explode
+    expected_foo_mapping = expected_foo_bar_mapping.select(["id", "foo_key"]).unique()
 
     # Case 0: No sources are found
     with pytest.raises(MatchboxResolutionNotFoundError):
@@ -471,6 +507,13 @@ def test_extract_lookup(
         check_row_order=False,
         check_column_order=False,
     )
+
+    # Case 3: Retrieve from reconstituted DAG
+    # This assigns the wrong location to `bar`, but the warehouse is not queried
+    # Worth noting that currently this makes location filters awkward to use
+    # on reconstituted DAGs, as you need to manually assign locations to them
+    reconstituted_dag = DAG("companies").load_default(location=foo.source.location)
+    assert reconstituted_dag.extract_lookup() == foo_bar_mapping
 
 
 def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
@@ -632,6 +675,7 @@ def test_from_resolution():
         t1_dag.add_resolution(
             name=testkit.name,
             resolution=testkit.model.to_resolution(),
+            location=crn_testkit.source.location,
         )
 
     # Verify reconstruction matches original
@@ -648,6 +692,7 @@ def test_from_resolution():
         t2_dag.add_resolution(
             name=linker_model_testkit.name,
             resolution=linker_model_testkit.model.to_resolution(),
+            location=crn_testkit.source.location,
         )
 
 
@@ -815,14 +860,6 @@ def test_dag_load_default_run(
                 runs=[1],
                 default_run=1,
             ).model_dump(),
-        )
-    )
-
-    # Mock run creation
-    matchbox_api.post(f"/collections/{test_dag.name}/runs").mock(
-        return_value=Response(
-            200,
-            json=Run(run_id=2, resolutions={}).model_dump(),
         )
     )
 

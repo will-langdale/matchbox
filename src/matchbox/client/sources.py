@@ -389,12 +389,10 @@ class Source:
                 field_name: SourceField(name=field_name, type=dtype)
                 for field_name, dtype in inferred_types.items()
             }
-            self.typed_key_field = SourceField(name=key_field, type=DataTypes.STRING)
-            self.typed_index_fields = tuple(
-                remote_fields[field] for field in index_fields
-            )
+            self.key_field = SourceField(name=key_field, type=DataTypes.STRING)
+            self.index_fields = tuple(remote_fields[field] for field in index_fields)
         else:
-            self.typed_key_field, self.typed_index_fields = self._validate_fields(
+            self.key_field, self.index_fields = self._validate_fields(
                 key_field, index_fields, SourceField
             )
 
@@ -423,8 +421,8 @@ class Source:
         return SourceConfig(
             location_config=self.location.config,
             extract_transform=self.extract_transform,
-            key_field=self.typed_key_field,
-            index_fields=self.typed_index_fields,
+            key_field=self.key_field,
+            index_fields=self.index_fields,
         )
 
     @property
