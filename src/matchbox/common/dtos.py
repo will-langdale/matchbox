@@ -468,10 +468,28 @@ class QueryConfig(BaseModel):
         """Ensure that resolution settings are compatible."""
         if not self.source_resolutions:
             raise ValueError("At least one source resolution required.")
-        if len(self.source_resolutions) > 1 and not self.model_resolution:
+        first_path = self.source_resolutions[0]
+        if self.model_resolution and (
+            self.model_resolution.collection != first_path.collection
+            or self.model_resolution.run != first_path.run
+        ):
             raise ValueError(
-                "A model resolution must be set if querying from multiple sources"
+                "Incompatible collection and runs across model and source resolutions."
             )
+        if len(self.source_resolutions) > 1:
+            if not self.model_resolution:
+                raise ValueError(
+                    "A model resolution must be set if querying from multiple sources"
+                )
+            if any(
+                [
+                    res.collection != first_path.collection or res.run != first_path.run
+                    for res in self.source_resolutions[1:]
+                ]
+            ):
+                raise ValueError(
+                    "Incompatible collection and runs across source resolutions."
+                )
         return self
 
     @field_validator("cleaning")
