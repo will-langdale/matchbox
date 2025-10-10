@@ -1,6 +1,7 @@
 """Objects to define a DAG which indexes, deduplicates and links data."""
 
 import datetime
+import json
 from collections import defaultdict
 from typing import Self
 
@@ -9,19 +10,34 @@ from pyarrow import Table as ArrowTable
 from matchbox.client import _handler
 from matchbox.client.models import Model
 from matchbox.client.queries import Query
-from matchbox.client.sources import Source
-from matchbox.common.exceptions import MatchboxResolutionNotFoundError
+from matchbox.client.sources import Location, Source
+from matchbox.common.dtos import (
+    CollectionName,
+    ModelResolutionName,
+    Resolution,
+    ResolutionName,
+    ResolutionPath,
+    ResolutionType,
+    RunID,
+    SourceResolutionName,
+)
+from matchbox.common.exceptions import (
+    MatchboxCollectionNotFoundError,
+    MatchboxResolutionNotFoundError,
+)
 from matchbox.common.logging import logger
+from matchbox.common.transform import truth_int_to_float
 
 
 class DAG:
     """Self-sufficient pipeline of indexing, deduping and linking steps."""
 
-    def __init__(self, name: str, new: bool = False):
+    def __init__(self, name: str):
         """Initialises empty DAG."""
-        self.name = name
-        self.nodes: dict[str, Source | Model] = {}
-        self.graph: dict[str, list[str]] = {}
+        self.name: CollectionName = CollectionName(name)
+        self._run: RunID | None = None
+        self.nodes: dict[ResolutionName, Source | Model] = {}
+        self.graph: dict[ResolutionName, list[ResolutionName]] = {}
 
     def _check_dag(self, dag: Self):
         if self != dag:
@@ -38,21 +54,37 @@ class DAG:
             if step.right_query:
                 self._check_dag(step.right_query.dag)
 
-            for resolution_name in step.dependencies:
-                if resolution_name not in self.nodes:
-                    raise ValueError(f"Step {resolution_name} not added to DAG")
-            self.graph[step.name] = step.parents
+            for resolution in step.dependencies:
+                if resolution.name not in self.nodes:
+                    raise ValueError(f"Step {resolution.name} not added to DAG")
+            self.graph[step.name] = [parent.name for parent in step.parents]
         else:
             self.graph[step.name] = []
 
         self.nodes[step.name] = step
 
     @property
-    def final_step(self) -> str:
-        """Returns name of the root node in the DAG.
+    def run(self) -> RunID:
+        """Return run ID if available, else error."""
+        if self._run:
+            return self._run
+
+        raise RuntimeError(
+            "The DAG has not been connected to the server."
+            "Start a new run or load a default one."
+        )
+
+    @run.setter
+    def run(self, run_id: RunID) -> None:
+        """Set run ID manually."""
+        self._run = run_id
+
+    @property
+    def final_step(self) -> Source | Model:
+        """Returns the root node in the DAG.
 
         Returns:
-            The name of the root node in the DAG
+            The root node in the DAG
 
         Raises:
             ValueError: If the DAG does not have a final step
@@ -71,7 +103,7 @@ class DAG:
         elif not apex_nodes:
             raise ValueError("No root node found, DAG might contain cycles")
         else:
-            return apex_nodes.pop()
+            return self.nodes[apex_nodes.pop()]
 
     def source(self, *args, **kwargs) -> Source:
         """Create Source and add it to the DAG."""
@@ -86,6 +118,84 @@ class DAG:
         self._add_step(model)
 
         return model
+
+    def add_resolution(
+        self,
+        name: ResolutionName,
+        resolution: Resolution,
+        location: Location,
+    ) -> None:
+        """Convert a resolution to a Source or Model and add to DAG."""
+        if resolution.resolution_type == ResolutionType.SOURCE:
+            self.source(
+                location=location,
+                name=SourceResolutionName(name),
+                extract_transform=resolution.config.extract_transform,
+                key_field=resolution.config.key_field,
+                index_fields=resolution.config.index_fields,
+                description=resolution.description,
+                infer_types=False,
+            )
+        elif resolution.resolution_type == ResolutionType.MODEL:
+            self.model(
+                name=ModelResolutionName(name),
+                description=resolution.description,
+                model_class=resolution.config.model_class,
+                model_settings=json.loads(resolution.config.model_settings),
+                left_query=Query.from_config(resolution.config.left_query, dag=self),
+                right_query=Query.from_config(resolution.config.right_query, dag=self)
+                if resolution.config.right_query
+                else None,
+                truth=truth_int_to_float(resolution.truth),
+            )
+        else:
+            raise ValueError(f"Unknown resolution type {resolution.resolution_type}")
+
+    def get_source(self, name: ResolutionName) -> Source:
+        """Get a source by name from the DAG.
+
+        Args:
+            name: The name of the source to retrieve.
+
+        Returns:
+            The Source object.
+
+        Raises:
+            ValueError: If the name doesn't exist in the DAG or isn't a Source.
+        """
+        if name not in self.nodes:
+            raise ValueError(f"Source '{name}' not found in DAG")
+
+        node = self.nodes[name]
+        if not isinstance(node, Source):
+            raise ValueError(
+                f"Node '{name}' is not a Source, it's a {type(node).__name__}"
+            )
+
+        return node
+
+    def get_model(self, name: ResolutionName) -> Model:
+        """Get a model by name from the DAG.
+
+        Args:
+            name: The name of the model to retrieve.
+
+        Returns:
+            The Model object.
+
+        Raises:
+            ValueError: If the name doesn't exist in the DAG or isn't a Model.
+        """
+        if name not in self.nodes:
+            raise ValueError(f"Model '{name}' not found in DAG")
+
+        node = self.nodes[name]
+        if not isinstance(node, Model):
+            raise ValueError(
+                f"Node '{name}' is not a Model, it's a {type(node).__name__}"
+            )
+
+        return node
 
     def query(self, *args, **kwargs) -> Query:
         """Create Query object."""
@@ -115,7 +225,7 @@ class DAG:
         Returns:
             String representation of the DAG with status indicators.
         """
-        root_name = self.final_step
+        root_name = self.final_step.name
         skipped = skipped or []
 
         def _get_node_status(name: str) -> str:
@@ -173,6 +283,49 @@ class DAG:
 
         return "\n".join(result)
 
+    def new_run(self) -> Self:
+        """Start a new run."""
+        try:
+            collection = _handler.get_collection(self.name)
+        except MatchboxCollectionNotFoundError:
+            _handler.create_collection(self.name)
+            collection = _handler.get_collection(self.name)
+
+        # Delete non-default runs
+        for run in collection.runs:
+            if run != collection.default_run:
+                _handler.delete_run(collection=self.name, run_id=run, certain=True)
+
+        # Start a new run
+        self.run = _handler.create_run(collection=self.name).run_id
+
+        return self
+
+    def load_default(self, location: Location) -> Self:
+        """Attach to default run in this collection, loading all DAG nodes.
+
+        Args:
+            location: The Location object that will be attached to nodes coming
+                from default Run. Can be updated per-source after instantiation if
+                necessary.
+        """
+        collection = _handler.get_collection(self.name)
+
+        run = _handler.get_run(collection=self.name, run_id=collection.default_run)
+        self.run = collection.default_run
+
+        def _len_dependencies(res_item: tuple[ResolutionName, Resolution]) -> int:
+            return len(res_item[1].config.dependencies)
+
+        sorted_resolutions: tuple[ResolutionName, Resolution] = sorted(
+            run.resolutions.items(), key=_len_dependencies
+        )
+
+        for name, resolution in sorted_resolutions:
+            self.add_resolution(name=name, resolution=resolution, location=location)
+
+        return self
+
     def run_and_sync(
         self,
         full_rerun: bool = False,
@@ -183,7 +336,7 @@ class DAG:
         start_time = datetime.datetime.now()
 
         # Determine order of execution steps
-        root_node = self.final_step
+        root_node = self.final_step.name
 
         def depth_first(node: str, sequence: list):
             sequence.append(node)
@@ -241,6 +394,14 @@ class DAG:
 
         logger.info("\n" + self.draw(start_time=start_time, skipped=skipped_nodes))
 
+    def set_default(self) -> None:
+        """Set the current run as the default for the collection.
+
+        Makes it immutable, then moves the default pointer to it.
+        """
+        _handler.set_run_mutable(collection=self.name, run_id=self.run, mutable=False)
+        _handler.set_run_default(collection=self.name, run_id=self.run, default=True)
+
     def lookup_key(
         self,
         from_source: str,
@@ -259,6 +420,9 @@ class DAG:
                 If an integer, uses that threshold for the specified resolution, and the
                 resolution's cached thresholds for its ancestors
 
+        Returns:
+            Dictionary mapping source names to list of keys within that source.
+
         Examples:
             ```python
             dag.lookup_key(
@@ -272,14 +436,17 @@ class DAG:
             ```
         """
         matches = _handler.match(
-            targets=to_sources,
-            source=from_source,
+            targets=[
+                ResolutionPath(name=target, collection=self.name, run=self.run)
+                for target in to_sources
+            ],
+            source=ResolutionPath(name=from_source, collection=self.name, run=self.run),
             key=key,
-            resolution=self.final_step,
+            resolution=self.final_step.resolution_path,
             threshold=threshold,
         )
 
-        to_sources_results = {m.target: list(m.target_id) for m in matches}
+        to_sources_results = {m.target.name: list(m.target_id) for m in matches}
         # If no matches, _handler will raise
         return {from_source: list(matches[0].source_id), **to_sources_results}
 
@@ -294,56 +461,63 @@ class DAG:
             source_filter: An optional list of source resolution names to filter by.
             location_names: An optional list of location names to filter by.
         """
-        # Get all sources in scope of the resolution
-        point_of_truth = self.final_step
-        source_resolutions = _handler.get_leaf_source_resolutions(name=point_of_truth)
+        # Get all sources in scope of the DAG run
+        sources = {
+            node_name: node
+            for node_name, node in self.nodes.items()
+            if isinstance(node, Source)
+        }
+
+        filtered_source_names = list(sources.keys())
 
         if source_filter:
-            source_resolutions = [
-                s for s in source_resolutions if s.name in source_filter
+            filtered_source_names = [
+                s for s in filtered_source_names if s in source_filter
             ]
 
         if location_names:
-            source_resolutions = [
+            filtered_source_names = [
                 s
-                for s in source_resolutions
-                if s.config.location_config.name in location_names
+                for s in filtered_source_names
+                if sources[s].config.location_config.name in location_names
             ]
 
-        if not source_resolutions:
+        if not filtered_source_names:
             raise MatchboxResolutionNotFoundError("No compatible source was found")
 
         source_mb_ids: list[ArrowTable] = []
         source_to_key_field: dict[str, str] = {}
 
-        for s in source_resolutions:
+        for source_name in filtered_source_names:
             # Get Matchbox IDs from backend
             source_mb_ids.append(
                 _handler.query(
-                    source=s.name, resolution=point_of_truth, return_leaf_id=False
+                    source=sources[source_name].resolution_path,
+                    resolution=self.final_step.resolution_path,
+                    return_leaf_id=False,
                 )
             )
 
-            source_to_key_field[s.name] = s.config.key_field.name
+            source_to_key_field[source_name] = sources[source_name].key_field.name
 
         # Join Matchbox IDs to form mapping table
         mapping = source_mb_ids[0]
         mapping = mapping.rename_columns(
             {
-                "key": source_resolutions[0].config.qualified_key(
-                    source_resolutions[0].name
+                "key": sources[filtered_source_names[0]].config.qualified_key(
+                    filtered_source_names[0]
                 )
             }
         )
-        if len(source_resolutions) > 1:
-            for s, mb_ids in zip(
-                source_resolutions[1:], source_mb_ids[1:], strict=True
+        if len(filtered_source_names) > 1:
+            for source_name, mb_ids in zip(
+                filtered_source_names[1:], source_mb_ids[1:], strict=True
             ):
                 mapping = mapping.join(
                     right_table=mb_ids, keys="id", join_type="full outer"
                 )
                 mapping = mapping.rename_columns(
-                    {"key": s.config.qualified_key(s.name)}
+                    {"key": sources[source_name].config.qualified_key(source_name)}
                 )
 
         return mapping

@@ -63,7 +63,7 @@ from sqlalchemy import create_engine
 
 engine = create_engine('postgresql://')
 
-dag = DAG(name="companies", new=True)
+dag = DAG(name="companies").new_run()
 
 source = dag.source(...) # source parameters must be completed
 

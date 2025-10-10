@@ -8,25 +8,23 @@ from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
 from json import JSONDecodeError
-from typing import Self
+from typing import Any, Self, TypeAlias
 
 import polars as pl
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    GetCoreSchemaHandler,
     field_serializer,
     field_validator,
     model_validator,
 )
+from pydantic_core import core_schema
 from sqlglot import errors, expressions, parse_one
 
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
-from matchbox.common.graph import (
-    ModelResolutionName,
-    ResolutionType,
-    SourceResolutionName,
-)
+from matchbox.common.exceptions import MatchboxNameError
 
 
 class DataTypes(StrEnum):
@@ -173,6 +171,8 @@ class ModelResultsType(StrEnum):
 class BackendResourceType(StrEnum):
     """Enumeration of resources types referenced by client or API."""
 
+    COLLECTION = "collection"
+    RUN = "run"
     RESOLUTION = "resolution"
     CLUSTER = "cluster"
     USER = "user"
@@ -180,9 +180,10 @@ class BackendResourceType(StrEnum):
 
 
 class BackendParameterType(StrEnum):
-    """Enumeration of parameters passable to the API."""
+    """Enumeration of parameter types passable to the API."""
 
     SAMPLE_SIZE = "sample_size"
+    NAME = "name"
 
 
 class BackendUploadType(StrEnum):
@@ -212,6 +213,78 @@ class LocationType(StrEnum):
     """Enumeration of location types."""
 
     RDBMS = "rdbms"
+
+
+class MatchboxName(str):
+    """Sub-class of string which validates names for the Matchbox DB."""
+
+    def __new__(cls, value: str):
+        """Creates new instance of validated name."""
+        if not isinstance(value, str):
+            raise MatchboxNameError("Name must be a string")
+        if not re.match(r"^[a-zA-Z0-9_.-]+$", value):
+            raise MatchboxNameError(
+                f"Name '{value}' is invalid. It can only include "
+                "alphanumeric characters, underscores, dots or hyphens."
+            )
+
+        return super().__new__(cls, value)
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> core_schema.CoreSchema:
+        """Generate core schema for Pydantic compatibility."""
+        return core_schema.no_info_plain_validator_function(
+            cls,
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                lambda x: x, return_schema=core_schema.str_schema()
+            ),
+        )
+
+
+CollectionName: TypeAlias = MatchboxName
+"""Type alias for collection names."""
+
+RunID: TypeAlias = int
+"""Type alias for run IDs."""
+
+SourceResolutionName: TypeAlias = MatchboxName
+"""Type alias for source resolution names."""
+
+ModelResolutionName: TypeAlias = MatchboxName
+"""Type alias for model resolution names."""
+
+ResolutionName: TypeAlias = SourceResolutionName | ModelResolutionName
+"""Type alias for any resolution names."""
+
+
+class ResolutionPath(BaseModel):
+    """Base resolution identifier with collection, run, and name."""
+
+    model_config = ConfigDict(frozen=True)
+
+    collection: CollectionName
+    run: RunID
+    name: ResolutionName
+
+    def __str__(self) -> str:
+        """String representation of the resolution path."""
+        return f"{self.collection}/{self.run}/{self.name}"
+
+
+SourceResolutionPath: TypeAlias = ResolutionPath
+"""Type alias for source resolution paths."""
+
+ModelResolutionPath: TypeAlias = ResolutionPath
+"""Type alias for model resolution paths."""
+
+
+class ResolutionType(StrEnum):
+    """Types of nodes in a resolution."""
+
+    SOURCE = "source"
+    MODEL = "model"
 
 
 class LocationConfig(BaseModel):
@@ -303,6 +376,14 @@ class SourceConfig(BaseModel):
 
         return self
 
+    @property
+    def dependencies(self) -> list[ResolutionPath]:
+        """Return all resolution names that this source needs.
+
+        Provided for symmetry with ModelConfig.
+        """
+        return []
+
     def prefix(self, name: str) -> str:
         """Get the prefix for the source.
 
@@ -376,8 +457,8 @@ class QueryConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    source_resolutions: tuple[SourceResolutionName, ...]
-    model_resolution: ModelResolutionName | None = None
+    source_resolutions: tuple[SourceResolutionPath, ...]
+    model_resolution: ModelResolutionPath | None = None
     combine_type: QueryCombineType = QueryCombineType.CONCAT
     threshold: int | None = None
     cleaning: dict[str, str] | None = None
@@ -387,10 +468,28 @@ class QueryConfig(BaseModel):
         """Ensure that resolution settings are compatible."""
         if not self.source_resolutions:
             raise ValueError("At least one source resolution required.")
-        if len(self.source_resolutions) > 1 and not self.model_resolution:
+        first_path = self.source_resolutions[0]
+        if self.model_resolution and (
+            self.model_resolution.collection != first_path.collection
+            or self.model_resolution.run != first_path.run
+        ):
             raise ValueError(
-                "A model resolution must be set if querying from multiple sources"
+                "Incompatible collection and runs across model and source resolutions."
             )
+        if len(self.source_resolutions) > 1:
+            if not self.model_resolution:
+                raise ValueError(
+                    "A model resolution must be set if querying from multiple sources"
+                )
+            if any(
+                [
+                    res.collection != first_path.collection or res.run != first_path.run
+                    for res in self.source_resolutions[1:]
+                ]
+            ):
+                raise ValueError(
+                    "Incompatible collection and runs across source resolutions."
+                )
         return self
 
     @field_validator("cleaning")
@@ -417,7 +516,7 @@ class QueryConfig(BaseModel):
         return v
 
     @property
-    def dependencies(self) -> list[str]:
+    def dependencies(self) -> list[ResolutionPath]:
         """Return all resolution names that this query needs."""
         deps = list(self.source_resolutions)
         if self.model_resolution:
@@ -427,7 +526,7 @@ class QueryConfig(BaseModel):
 
     @property
     def point_of_truth(self):
-        """Return name of resolution that will be used as point of truth."""
+        """Return path of resolution that will be used as point of truth."""
         if self.model_resolution:
             return self.model_resolution
         return self.source_resolutions[0]
@@ -466,8 +565,17 @@ class ModelConfig(BaseModel):
         """Ensure that a right query is set if and only if model is linker."""
         if self.type == ModelType.DEDUPER and self.right_query is not None:
             raise ValueError("Right query can't be set for dedupers")
-        if self.type == ModelType.LINKER and self.right_query is None:
-            raise ValueError("Right query must be set for linkers")
+        if self.type == ModelType.LINKER:
+            if (
+                self.right_query.source_resolutions[0].collection
+                != self.left_query.source_resolutions[0].collection
+                or self.right_query.source_resolutions[0].run
+                != self.left_query.source_resolutions[0].run
+            ):
+                raise ValueError("Left and right query must share collection and run.")
+            if self.right_query is None:
+                raise ValueError("Right query must be set for linkers")
+
         return self
 
     @field_validator("model_settings", mode="after")
@@ -480,14 +588,23 @@ class ModelConfig(BaseModel):
             raise ValueError("Model settings are not valid JSON") from e
         return value
 
+    @property
+    def dependencies(self) -> list[ResolutionPath]:
+        """Return all resolution names that this model needs."""
+        deps = list(self.left_query.dependencies)
+        if self.right_query:
+            deps.extend(self.right_query.dependencies)
+
+        return deps
+
 
 class Match(BaseModel):
     """A match between primary keys in the Matchbox database."""
 
     cluster: int | None
-    source: str
+    source: SourceResolutionPath
     source_id: set[str] = Field(default_factory=set)
-    target: str
+    target: SourceResolutionPath
     target_id: set[str] = Field(default_factory=set)
 
     @model_validator(mode="after")
@@ -507,19 +624,9 @@ class Match(BaseModel):
         return sorted(id_set)
 
 
-class ModelAncestor(BaseModel):
-    """A model's ancestor and its truth value."""
-
-    name: ModelResolutionName = Field(..., description="Name of the ancestor model")
-    truth: int | None = Field(
-        default=None, description="Truth threshold value", ge=0, le=100, strict=True
-    )
-
-
 class Resolution(BaseModel):
     """Unified resolution type with common fields and discriminated config."""
 
-    name: str = Field(description="Unique name of the resolution")
     description: str | None = Field(default=None, description="Description")
     truth: int | None = Field(default=None, ge=0, le=100, strict=True)
 
@@ -528,20 +635,6 @@ class Resolution(BaseModel):
 
     # Type-specific config as discriminated union
     config: SourceConfig | ModelConfig
-
-    @field_validator("name", mode="after")
-    @classmethod
-    def validate_name(cls, value: str) -> str:
-        """Ensure the name is a valid resolution name.
-
-        Raises:
-            ValueError: If the name is not a valid resolution name.
-        """
-        if not re.match(r"^[a-zA-Z0-9_]+$", value):
-            raise ValueError(
-                "Resolution names must be alphanumeric and underscore only."
-            )
-        return value
 
     @field_validator("description", mode="after")
     @classmethod
@@ -579,11 +672,49 @@ class Resolution(BaseModel):
         return self
 
 
-class ResolutionOperationStatus(BaseModel):
-    """Status response for any resolution operation."""
+class Run(BaseModel):
+    """A run within a collection."""
+
+    run_id: RunID | None = Field(description="Unique ID of the run")
+    is_default: bool = Field(
+        default=False,
+        description="Whether this run is the default in its collection",
+    )
+    is_mutable: bool = Field(
+        default=False, description="Whether this run can be modified"
+    )
+    resolutions: dict[ResolutionName, Resolution] = Field(
+        default_factory=dict,
+        description="Dict of resolution objects by name within this run",
+    )
+
+
+class Collection(BaseModel):
+    """A collection of runs."""
+
+    default_run: RunID | None = Field(
+        default=None, description="ID of default run for this collection"
+    )
+    runs: list[RunID] = Field(
+        default_factory=list, description="List of run IDs in this collection"
+    )
+
+    @model_validator(mode="after")
+    def validate_default_run(self) -> Self:
+        """Check default run is within all runs."""
+        if self.default_run and self.default_run not in self.runs:
+            raise ValueError(
+                "The default run needs to be included in the list of all runs."
+            )
+
+        return self
+
+
+class ResourceOperationStatus(BaseModel):
+    """Status response for any resource operation."""
 
     success: bool
-    name: ModelResolutionName
+    name: ResolutionPath | CollectionName | RunID
     operation: CRUDOperation
     details: str | None = None
 
@@ -598,7 +729,11 @@ class ResolutionOperationStatus(BaseModel):
                             "summary": "Delete operation requires confirmation. ",
                             "value": cls(
                                 success=False,
-                                name="example_model",
+                                name=ModelResolutionPath(
+                                    collection="default",
+                                    run=1,
+                                    name="example_model",
+                                ),
                                 operation=CRUDOperation.DELETE,
                                 details=(
                                     "This operation will delete the resolutions "
@@ -631,7 +766,11 @@ class ResolutionOperationStatus(BaseModel):
                             ),
                             "value": cls(
                                 success=False,
-                                name="example_model",
+                                name=ModelResolutionPath(
+                                    collection="default",
+                                    run=1,
+                                    name="example_model",
+                                ),
                                 operation=CRUDOperation.UPDATE,
                             ).model_dump(),
                         },
@@ -731,4 +870,4 @@ class InvalidParameterError(BaseModel):
     """API error for a custom 422 status code."""
 
     details: str
-    parameter: BackendParameterType
+    parameter: BackendParameterType | None

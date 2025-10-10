@@ -1,7 +1,6 @@
 import polars as pl
 import pytest
 from httpx import Client
-from matplotlib.figure import Figure
 from sqlalchemy import Engine, text
 
 from matchbox.client import _handler
@@ -85,7 +84,7 @@ class TestE2EModelEvaluation:
         # Create DAG
         dw_loc = RelationalDBLocation(name="postgres", client=postgres_warehouse)
 
-        dag = DAG("companies", new=True)
+        dag = DAG("companies").new_run()
         self.__class__.dag = dag
 
         source_a = dag.source(
@@ -166,7 +165,6 @@ class TestE2EModelEvaluation:
         assert pl.Schema(SCHEMA_CLUSTER_EXPANSION) == eval_data.expansion.schema
 
         # We can evaluate local model with cached judgements
-        assert isinstance(eval_data.pr_curve(results), Figure)
         pr = eval_data.precision_recall(results, threshold=0.5)
         assert isinstance(pr, tuple)
         assert len(pr) == 2

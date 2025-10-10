@@ -3,6 +3,7 @@ import logging
 import polars as pl
 import pytest
 from httpx import Client
+from polars.testing import assert_frame_equal
 from sqlalchemy import Engine, text
 
 from matchbox.client.dags import DAG
@@ -138,7 +139,7 @@ class TestE2EPipelineBuilder:
         # === SETUP PHASE ===
         dw_loc = RelationalDBLocation(name="dbname", client=self.warehouse_engine)
 
-        dag = DAG("companies", new=True)
+        dag = DAG("companies").new_run()
 
         # Create source configs
         source_a = dag.source(
@@ -234,33 +235,49 @@ class TestE2EPipelineBuilder:
         logging.info(f"First run produced {first_run_entities} unique entities")
 
         # Lookup works too
+        test_key = final_df.filter(
+            pl.col(source_b.f(source_b.config.key_field.name)).is_not_null()
+        )[source_b.f(source_b.config.key_field.name)][0]
+
         matches = dag.lookup_key(
             from_source=source_b.name,
             to_sources=[source_a.name],
-            key=final_df.filter(
-                pl.col(source_b.f(source_b.config.key_field.name)).is_not_null()
-            )[source_b.f(source_b.config.key_field.name)][0],
+            key=test_key,
         )
         assert len(matches[source_a.name]) >= 1
 
-        # === SECOND RUN (OVERWRITE) ===
+        # Can retrieve whole lookup
+        dag1_lookup = dag.extract_lookup()
 
-        logging.info("Running DAG again to test overwriting")
-        dag.run_and_sync()
+        # Set as new default
+        dag.set_default()
 
-        # Verify second run produces same results
-        final_df_second = link_a_b.query(source_a, source_b).run()
+        # === SECOND RUN ===
 
-        second_run_entities = final_df_second["id"].n_unique()
-        logging.info(f"Second run produced {second_run_entities} unique entities")
+        logging.info("Running DAG again to test downloading and using the default")
 
-        # Should have same number of entities after rerun
-        assert first_run_entities == second_run_entities, (
-            "Expected same results after rerun: "
-            f"{first_run_entities} vs {second_run_entities}"
+        # Load default
+        reconstructed_dag = DAG("companies").load_default(location=dw_loc)
+        assert reconstructed_dag.run == dag.run
+
+        # Can directly read data from default
+        assert matches == reconstructed_dag.lookup_key(
+            from_source=source_b.name,
+            to_sources=[source_a.name],
+            key=test_key,
         )
 
-        # # Basic sanity checks
-        assert len(final_df_second) > 0, "Expected some results from second run"
+        # Start a new run
+        rerun_dag = reconstructed_dag.new_run()
+        assert rerun_dag.run != dag.run
+        rerun_dag.run_and_sync()
+
+        # The lookup is identical
+        assert_frame_equal(
+            pl.from_arrow(rerun_dag.extract_lookup()),
+            pl.from_arrow(dag1_lookup),
+            check_column_order=False,
+            check_row_order=False,
+        )
 
         logging.info("DAG pipeline test completed successfully!")

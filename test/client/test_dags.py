@@ -14,14 +14,32 @@ from matchbox.client.dags import DAG
 from matchbox.client.models import Model
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
-from matchbox.client.sources import Source
+from matchbox.client.sources import RelationalDBLocation, Source
 from matchbox.common.arrow import SCHEMA_QUERY, table_to_buffer
-from matchbox.common.dtos import BackendResourceType, Match, NotFoundError
+from matchbox.common.dtos import (
+    BackendResourceType,
+    Collection,
+    CRUDOperation,
+    Match,
+    NotFoundError,
+    Resolution,
+    ResolutionName,
+    ResolutionPath,
+    ResourceOperationStatus,
+    Run,
+)
 from matchbox.common.exceptions import (
+    MatchboxCollectionNotFoundError,
     MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
 )
-from matchbox.common.factories.sources import source_factory, source_from_tuple
+from matchbox.common.factories.dags import TestkitDAG
+from matchbox.common.factories.models import model_factory
+from matchbox.common.factories.sources import (
+    linked_sources_factory,
+    source_factory,
+    source_from_tuple,
+)
 
 
 @patch.object(Source, "run")
@@ -41,7 +59,7 @@ def test_dag_run_and_sync(
     bar_tkit = source_factory(name="bar", engine=sqlite_warehouse).write_to_location()
     baz_tkit = source_factory(name="baz", engine=sqlite_warehouse).write_to_location()
 
-    dag = DAG(name="dag")
+    dag = TestkitDAG().dag
 
     # Structure: sources can be added
     foo = dag.source(**foo_tkit.into_dag())
@@ -93,7 +111,8 @@ def test_dag_run_and_sync(
 
 def test_dags_missing_dependency(sqlite_warehouse: Engine):
     """Steps cannot be added before their dependencies."""
-    dag = DAG("collection")
+    dag = TestkitDAG().dag
+
     foo = source_factory(name="foo", engine=sqlite_warehouse, dag=dag).source
 
     with pytest.raises(ValueError, match="not added to DAG"):
@@ -111,8 +130,8 @@ def test_dags_missing_dependency(sqlite_warehouse: Engine):
 
 def test_mixing_dags_fails(sqlite_warehouse: Engine):
     """Cannot reference a different DAG when adding a step."""
-    dag = DAG("collection")
-    dag2 = DAG("collection")
+    dag = TestkitDAG().dag
+    dag2 = TestkitDAG().dag
 
     foo_tkit = source_factory(name="foo", engine=sqlite_warehouse)
     foo = dag.source(**foo_tkit.into_dag())
@@ -133,7 +152,7 @@ def test_mixing_dags_fails(sqlite_warehouse: Engine):
 
 def test_dag_name_clash(sqlite_warehouse: Engine):
     """Names across sources and steps must be unique."""
-    dag = DAG("collection")
+    dag = TestkitDAG().dag
 
     foo_tkit = source_factory(name="foo", engine=sqlite_warehouse)
     bar_tkit = source_factory(name="bar", engine=sqlite_warehouse)
@@ -156,9 +175,19 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
     assert dag.graph["d_foo"] == [foo.name]
 
 
-def test_dag_disconnected(sqlite_warehouse: Engine):
+@patch.object(Source, "run")
+@patch.object(Model, "run")
+@patch.object(Source, "sync")
+@patch.object(Model, "sync")
+def test_dag_disconnected(
+    model_sync_mock: Mock,
+    source_sync_mock: Mock,
+    model_run_mock: Mock,
+    source_run_mock: Mock,
+    sqlite_warehouse: Engine,
+):
     """Nodes cannot be disconnected."""
-    dag = DAG("collection")
+    dag = TestkitDAG().dag
 
     foo_tkit = source_factory(name="foo", engine=sqlite_warehouse)
     bar_tkit = source_factory(name="bar", engine=sqlite_warehouse)
@@ -177,7 +206,7 @@ def test_dag_draw(sqlite_warehouse: Engine):
     bar_tkit = source_factory(name="bar", engine=sqlite_warehouse).write_to_location()
     baz_tkit = source_factory(name="baz", engine=sqlite_warehouse).write_to_location()
 
-    dag = DAG(name="default")
+    dag = TestkitDAG().dag
 
     # Structure: sources can be added
     foo = dag.source(**foo_tkit.into_dag())
@@ -300,7 +329,6 @@ def test_extract_lookup(
 ):
     """Entire lookup can be extracted from DAG."""
     # Make dummy data
-
     foo = source_from_tuple(
         name="foo",
         location_name="sqlite",
@@ -317,38 +345,64 @@ def test_extract_lookup(
     ).write_to_location()
 
     dag = DAG("companies")
-    dag.source(**foo.into_dag()).query().linker(
+
+    # Mock API
+    # In the beginning, no run
+    matchbox_api.get(f"/collections/{dag.name}").mock(
+        return_value=Response(
+            200,
+            json=Collection(
+                name=dag.name,
+                runs=[],
+                default_run=None,
+            ).model_dump(),
+        )
+    )
+
+    matchbox_api.post(f"/collections/{dag.name}/runs").mock(
+        return_value=Response(
+            200,
+            json=Run(run_id=1, resolutions={}).model_dump(),
+        )
+    )
+
+    # Build dummy DAG
+    dag.new_run().source(**foo.into_dag()).query().linker(
         dag.source(**bar.into_dag()).query(),
         name="root",
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.field=r.field"},
     )
 
-    # Because of FULL OUTER JOIN, we expect some values to be null, and some explosions
-    expected_foo_bar_mapping = pl.DataFrame(
-        [
-            {"id": 1, "foo_key": "1", "bar_key": "a"},
-            {"id": 2, "foo_key": "2", "bar_key": None},
-            {"id": 3, "foo_key": "3", "bar_key": "b"},
-            {"id": 3, "foo_key": "3", "bar_key": "c"},
-        ]
-    )
-
-    # When selecting single source, we won't explode
-    expected_foo_mapping = expected_foo_bar_mapping.select(["id", "foo_key"]).unique()
-
-    # Mock API
-    matchbox_api.get("/resolutions/root/sources").mock(
+    # Then the new run
+    matchbox_api.get(f"/collections/{dag.name}").mock(
         return_value=Response(
             200,
-            json=[
-                foo.source.to_resolution().model_dump(mode="json"),
-                bar.source.to_resolution().model_dump(mode="json"),
-            ],
+            json=Collection(
+                name=dag.name,
+                runs=[1],
+                default_run=1,
+            ).model_dump(),
         )
     )
 
-    matchbox_api.get("/query", params={"source": "foo"}).mock(
+    matchbox_api.get(f"/collections/{dag.name}/runs/1").mock(
+        return_value=Response(
+            200,
+            json=Run(
+                run_id=1,
+                resolutions={
+                    foo.name: foo.source.to_resolution(),
+                    bar.name: bar.source.to_resolution(),
+                    "root": dag.get_model("root").to_resolution(),
+                },
+            ).model_dump(),
+        )
+    )
+
+    matchbox_api.get(
+        "/query", params={"source": "foo", "run_id": 1, "collection": dag.name}
+    ).mock(
         return_value=Response(
             200,
             content=table_to_buffer(
@@ -364,7 +418,9 @@ def test_extract_lookup(
         )
     )
 
-    matchbox_api.get("/query", params={"source": "bar"}).mock(
+    matchbox_api.get(
+        "/query", params={"source": "bar", "run_id": 1, "collection": dag.name}
+    ).mock(
         return_value=Response(
             200,
             content=table_to_buffer(
@@ -379,6 +435,19 @@ def test_extract_lookup(
             ).read(),
         )
     )
+
+    # Because of FULL OUTER JOIN, we expect some values to be null, and some explosions
+    expected_foo_bar_mapping = pl.DataFrame(
+        [
+            {"id": 1, "foo_key": "1", "bar_key": "a"},
+            {"id": 2, "foo_key": "2", "bar_key": None},
+            {"id": 3, "foo_key": "3", "bar_key": "b"},
+            {"id": 3, "foo_key": "3", "bar_key": "c"},
+        ]
+    )
+
+    # When selecting single source, we won't explode
+    expected_foo_mapping = expected_foo_bar_mapping.select(["id", "foo_key"]).unique()
 
     # Case 0: No sources are found
     with pytest.raises(MatchboxResolutionNotFoundError):
@@ -439,6 +508,13 @@ def test_extract_lookup(
         check_column_order=False,
     )
 
+    # Case 3: Retrieve from reconstituted DAG
+    # This assigns the wrong location to `bar`, but the warehouse is not queried
+    # Worth noting that currently this makes location filters awkward to use
+    # on reconstituted DAGs, as you need to manually assign locations to them
+    reconstituted_dag = DAG("companies").load_default(location=foo.source.location)
+    assert reconstituted_dag.extract_lookup() == foo_bar_mapping
+
 
 def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """The DAG can map between single keys."""
@@ -453,7 +529,8 @@ def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         engine=sqlite_warehouse, name="baz"
     ).write_to_location()
 
-    dag = DAG("companies")
+    dag = TestkitDAG().dag
+
     foo = dag.source(**foo_testkit.into_dag())
     bar = dag.source(**bar_testkit.into_dag())
     baz = dag.source(**baz_testkit.into_dag())
@@ -470,11 +547,15 @@ def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         model_settings={"comparisons": "l.field=r.field"},
     )
 
+    foo_path = ResolutionPath(name="foo", collection=dag.name, run=dag.run)
+    bar_path = ResolutionPath(name="bar", collection=dag.name, run=dag.run)
+    baz_path = ResolutionPath(name="baz", collection=dag.name, run=dag.run)
+
     mock_match1 = Match(
-        cluster=1, source="foo", source_id={"a"}, target="bar", target_id={"b"}
+        cluster=1, source=foo_path, source_id={"a"}, target=bar_path, target_id={"b"}
     )
     mock_match2 = Match(
-        cluster=1, source="foo", source_id={"a"}, target="baz", target_id={"b"}
+        cluster=1, source=foo_path, source_id={"a"}, target=baz_path, target_id={"b"}
     )
     # The standard JSON serialiser does not handle Pydantic objects
     serialised_matches = json.dumps(
@@ -498,7 +579,8 @@ def test_lookup_key_404_source(matchbox_api: MockRouter):
     source_testkit = source_factory(name="source")
     target_testkit = source_factory(name="target")
 
-    dag = DAG("companies")
+    dag = TestkitDAG().dag
+
     dag.source(**source_testkit.into_dag()).query().linker(
         dag.source(**target_testkit.into_dag()).query(),
         name="root",
@@ -531,7 +613,8 @@ def test_lookup_key_no_matches(matchbox_api: MockRouter, sqlite_warehouse: Engin
         engine=sqlite_warehouse, name="target"
     ).write_to_location()
 
-    dag = DAG("companies")
+    dag = TestkitDAG().dag
+
     dag.source(**source_testkit.into_dag()).query().linker(
         dag.source(**target_testkit.into_dag()).query(),
         name="root",
@@ -547,3 +630,317 @@ def test_lookup_key_no_matches(matchbox_api: MockRouter, sqlite_warehouse: Engin
         MatchboxEmptyServerResponse, match="The match operation returned no data"
     ):
         dag.lookup_key(from_source="source", to_sources=["target"], key="pk1")
+
+
+def test_from_resolution():
+    """Test reconstructing Sources and Models from a Resolution."""
+    # Create test data
+    test_dag = TestkitDAG().dag
+
+    # Create test sources and model
+    linked_testkit = linked_sources_factory(dag=test_dag)
+    crn_testkit = linked_testkit.sources["crn"]
+    duns_testkit = linked_testkit.sources["duns"]
+
+    deduper_model_testkit = model_factory(
+        name="deduper",
+        left_testkit=crn_testkit,
+        true_entities=linked_testkit.true_entities,
+        dag=test_dag,
+    )
+    linker_model_testkit = model_factory(
+        name="linker",
+        left_testkit=deduper_model_testkit,
+        right_testkit=duns_testkit,
+        true_entities=linked_testkit.true_entities,
+        dag=test_dag,
+    )
+
+    # Add to DAG
+    test_dag.source(**crn_testkit.into_dag())
+    test_dag.source(**duns_testkit.into_dag())
+    test_dag.model(**deduper_model_testkit.into_dag())
+    test_dag.model(**linker_model_testkit.into_dag())
+
+    # Test 1: Add all resolutions to the DAG in order
+    t1_dag = TestkitDAG().dag
+
+    for testkit in [crn_testkit, duns_testkit]:
+        t1_dag.add_resolution(
+            name=testkit.name,
+            resolution=testkit.source.to_resolution(),
+            location=testkit.source.location,
+        )
+    for testkit in [deduper_model_testkit, linker_model_testkit]:
+        t1_dag.add_resolution(
+            name=testkit.name,
+            resolution=testkit.model.to_resolution(),
+            location=crn_testkit.source.location,
+        )
+
+    # Verify reconstruction matches original
+    assert t1_dag.name == test_dag.name
+    assert t1_dag.run == test_dag.run
+    for name, resolution in t1_dag.nodes.items():
+        assert resolution.config == test_dag.nodes[name].config
+    assert t1_dag.graph == test_dag.graph
+
+    # Test 2: Add resolutions out of order
+    t2_dag = TestkitDAG().dag
+
+    with pytest.raises(ValueError, match="not found in DAG"):
+        t2_dag.add_resolution(
+            name=linker_model_testkit.name,
+            resolution=linker_model_testkit.model.to_resolution(),
+            location=crn_testkit.source.location,
+        )
+
+
+def test_dag_creates_new_collection(
+    matchbox_api: MockRouter,
+    sqlite_warehouse: Engine,
+):
+    """Connect creates a new collection when it doesn't exist."""
+    dag = DAG(name="test_collection")
+
+    # Mock collection not found, then found after creation
+    matchbox_api.get("/collections/test_collection").mock(
+        side_effect=[
+            Response(
+                404,
+                json=NotFoundError(
+                    details="Collection not found",
+                    entity=BackendResourceType.COLLECTION,
+                ).model_dump(),
+            ),
+            Response(
+                200,
+                json=Collection(
+                    name="test_collection",
+                    runs=[],
+                    default_run=None,
+                ).model_dump(),
+            ),
+        ]
+    )
+
+    # Mock collection creation
+    matchbox_api.post("/collections/test_collection").mock(
+        return_value=Response(
+            200,
+            json=ResourceOperationStatus(
+                success=True,
+                name="test_collection",
+                operation=CRUDOperation.CREATE,
+            ).model_dump(),
+        )
+    )
+
+    # Mock run creation
+    matchbox_api.post("/collections/test_collection/runs").mock(
+        return_value=Response(
+            200,
+            json=Run(run_id=1, resolutions={}).model_dump(),
+        )
+    )
+
+    # Connect the DAG
+    result = dag.new_run()
+
+    # Verify
+    assert result == dag
+    assert dag.run == 1
+
+
+@pytest.mark.parametrize(
+    ("has_existing_runs", "expected_run_id"),
+    [
+        pytest.param(False, 1, id="no_existing_runs"),
+        pytest.param(True, 4, id="with_existing_runs"),
+    ],
+)
+def test_dag_uses_existing_collection(
+    matchbox_api: MockRouter, has_existing_runs: bool, expected_run_id: int
+):
+    """New runs can be started from existing collection."""
+    dag = DAG(name="test_collection")
+
+    # Mock existing collection
+    existing_runs = [2, 3] if has_existing_runs else []
+    matchbox_api.get("/collections/test_collection").mock(
+        return_value=Response(
+            200,
+            json=Collection(
+                name="test_collection",
+                runs=existing_runs,
+                default_run=None,
+            ).model_dump(),
+        )
+    )
+
+    # Mock deleting non-default runs
+    if has_existing_runs:
+        for run_id in existing_runs:
+            matchbox_api.delete(f"/collections/test_collection/runs/{run_id}").mock(
+                return_value=Response(
+                    200,
+                    json=ResourceOperationStatus(
+                        success=True,
+                        name=run_id,
+                        operation=CRUDOperation.DELETE,
+                    ).model_dump(),
+                )
+            )
+
+    # Mock run creation
+    matchbox_api.post("/collections/test_collection/runs").mock(
+        return_value=Response(
+            200,
+            json=Run(run_id=expected_run_id, resolutions={}).model_dump(),
+        )
+    )
+
+    # Connect the DAG
+    result = dag.new_run()
+
+    # Verify
+    assert result == dag
+    assert dag.run == expected_run_id
+
+
+def test_dag_load_default_run(
+    matchbox_api: MockRouter,
+    sqlite_warehouse: Engine,
+):
+    """Can load default run with sources and optionally models."""
+    # Create test data
+    test_dag = TestkitDAG().dag
+
+    # Create test sources and model
+    linked_testkit = linked_sources_factory(dag=test_dag)
+    crn_testkit = linked_testkit.sources["crn"]
+    duns_testkit = linked_testkit.sources["duns"]
+
+    deduper_model_testkit = model_factory(
+        name="deduper",
+        left_testkit=crn_testkit,
+        true_entities=linked_testkit.true_entities,
+        dag=test_dag,
+    )
+    linker_model_testkit = model_factory(
+        name="linker",
+        left_testkit=deduper_model_testkit,
+        right_testkit=duns_testkit,
+        true_entities=linked_testkit.true_entities,
+        dag=test_dag,
+    )
+
+    # Add to DAG
+    test_dag.source(**crn_testkit.into_dag())
+    test_dag.source(**duns_testkit.into_dag())
+    test_dag.model(**deduper_model_testkit.into_dag())
+    test_dag.model(**linker_model_testkit.into_dag())
+
+    # Create default Run
+    resolutions: dict[ResolutionName, Resolution] = {
+        crn_testkit.name: crn_testkit.source.to_resolution(),
+        duns_testkit.name: duns_testkit.source.to_resolution(),
+        deduper_model_testkit.name: deduper_model_testkit.model.to_resolution(),
+        linker_model_testkit.name: linker_model_testkit.model.to_resolution(),
+    }
+
+    run = Run(run_id=1, resolutions=resolutions)
+
+    # Mock existing collection with default run
+    matchbox_api.get(f"/collections/{test_dag.name}").mock(
+        return_value=Response(
+            200,
+            json=Collection(
+                name=test_dag.name,
+                runs=[1],
+                default_run=1,
+            ).model_dump(),
+        )
+    )
+
+    # Mock getting default run
+    matchbox_api.get(f"/collections/{test_dag.name}/runs/1").mock(
+        return_value=Response(
+            200,
+            json=run.model_dump(),
+        )
+    )
+
+    # Load default run
+    fresh_dag = DAG(name=test_dag.name)
+    location = RelationalDBLocation(name="db", client=sqlite_warehouse)
+    fresh_dag = fresh_dag.load_default(location=location)
+
+    # Verify reconstruction matches original
+    assert fresh_dag.name == test_dag.name
+    assert fresh_dag.run == 1
+    assert set(fresh_dag.nodes.keys()) == set(test_dag.nodes.keys())
+    assert fresh_dag.graph == test_dag.graph
+
+    # If the collection is not available, errors
+    matchbox_api.get(f"/collections/{test_dag.name}/runs/1").mock(
+        return_value=Response(
+            404,
+            json=NotFoundError(
+                details="Collection not found",
+                entity=BackendResourceType.COLLECTION,
+            ).model_dump(),
+        ),
+    )
+
+    with pytest.raises(MatchboxCollectionNotFoundError):
+        DAG(name=test_dag.name).load_default(location=location)
+
+
+def test_dag_set_default_ok(matchbox_api: MockRouter):
+    """Set default makes run immutable and sets as default."""
+    # Create test data
+    dag = TestkitDAG().dag
+
+    # Mock set mutable
+    api_mutable = matchbox_api.patch(
+        f"/collections/{dag.name}/runs/{dag.run}/mutable"
+    ).mock(
+        return_value=Response(
+            200,
+            json=ResourceOperationStatus(
+                success=True,
+                name=dag.run,
+                operation=CRUDOperation.UPDATE,
+            ).model_dump(),
+        )
+    )
+
+    # Mock set default
+    api_default = matchbox_api.patch(
+        f"/collections/{dag.name}/runs/{dag.run}/default"
+    ).mock(
+        return_value=Response(
+            200,
+            json=ResourceOperationStatus(
+                success=True,
+                name=dag.run,
+                operation=CRUDOperation.UPDATE,
+            ).model_dump(),
+        )
+    )
+
+    # Set as default
+    dag.set_default()
+
+    # Verify both endpoints were called
+    assert api_mutable.called
+    assert api_default.called
+
+
+def test_dag_set_default_not_connected():
+    """Set default raises error when DAG is not connected."""
+    dag = DAG(name="test_collection")
+
+    with pytest.raises(RuntimeError, match="has not been connected"):
+        dag.set_default()

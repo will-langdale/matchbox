@@ -6,23 +6,29 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 import polars as pl
 from pyarrow import Table
 from pydantic import BaseModel
-from sqlalchemy import and_, bindparam, delete, func, or_, select
+from sqlalchemy import and_, bindparam, delete, func, or_, select, update
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.dtos import Match, Resolution
+from matchbox.common.dtos import (
+    Collection,
+    CollectionName,
+    Match,
+    ModelResolutionPath,
+    Resolution,
+    ResolutionPath,
+    ResolutionType,
+    Run,
+    RunID,
+    SourceResolutionPath,
+)
 from matchbox.common.eval import Judgement as CommonJudgement
 from matchbox.common.eval import ModelComparison
 from matchbox.common.exceptions import (
+    MatchboxCollectionAlreadyExists,
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
     MatchboxNoJudgements,
-)
-from matchbox.common.graph import (
-    ModelResolutionName,
-    ResolutionGraph,
-    ResolutionName,
-    ResolutionType,
-    SourceResolutionName,
+    MatchboxRunNotWriteable,
 )
 from matchbox.common.logging import logger
 from matchbox.server.base import MatchboxDBAdapter, MatchboxSnapshot
@@ -34,13 +40,14 @@ from matchbox.server.postgresql.db import (
 from matchbox.server.postgresql.orm import (
     Clusters,
     ClusterSourceKey,
+    Collections,
     Contains,
     EvalJudgements,
     PKSpace,
     Probabilities,
-    ResolutionFrom,
     Resolutions,
     Results,
+    Runs,
     SourceConfigs,
     Users,
 )
@@ -48,7 +55,6 @@ from matchbox.server.postgresql.utils import evaluation
 from matchbox.server.postgresql.utils.db import (
     compile_sql,
     dump,
-    get_resolution_graph,
     restore,
 )
 from matchbox.server.postgresql.utils.insert import (
@@ -177,15 +183,15 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def query(  # noqa: D102
         self,
-        source: SourceResolutionName,
-        resolution: ResolutionName | None = None,
+        source: SourceResolutionPath,
+        point_of_truth: ResolutionPath | None = None,
         threshold: int | None = None,
         return_leaf_id: bool = False,
         limit: int | None = None,
     ) -> ArrowTable:
         return query(
             source=source,
-            resolution=resolution,
+            point_of_truth=point_of_truth,
             threshold=threshold,
             return_leaf_id=return_leaf_id,
             limit=limit,
@@ -194,25 +200,148 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def match(  # noqa: D102
         self,
         key: str,
-        source: SourceResolutionName,
-        targets: list[SourceResolutionName],
-        resolution: ResolutionName,
+        source: SourceResolutionPath,
+        targets: list[SourceResolutionPath],
+        point_of_truth: ResolutionPath,
         threshold: int | None = None,
     ) -> list[Match]:
         return match(
             key=key,
             source=source,
             targets=targets,
-            resolution=resolution,
+            point_of_truth=point_of_truth,
             threshold=threshold,
         )
 
+    # Collection management
+
+    def create_collection(self, name: CollectionName) -> Collection:  # noqa: D102
+        with MBDB.get_session() as session:
+            if (session.query(Collections).filter_by(name=name).first()) is None:
+                new_collection = Collections(name=name)
+                session.add(new_collection)
+                session.commit()
+                return new_collection.to_dto()
+            else:
+                raise MatchboxCollectionAlreadyExists
+
+    def get_collection(  # noqa: D102
+        self, name: CollectionName
+    ) -> Collection:
+        with MBDB.get_session() as session:
+            collection_orm = Collections.from_name(name, session)
+            return collection_orm.to_dto()
+
+    def list_collections(self) -> list[CollectionName]:  # noqa: D102
+        with MBDB.get_session() as session:
+            collections = (
+                session.execute(select(Collections.name).order_by(Collections.name))
+                .scalars()
+                .all()
+            )
+            return list(collections)
+
+    def delete_collection(self, name: CollectionName, certain: bool) -> None:  # noqa: D102
+        with MBDB.get_session() as session:
+            collection_orm = Collections.from_name(name, session)
+
+            if not certain:
+                version_names = [v.name for v in collection_orm.versions]
+                raise MatchboxDeletionNotConfirmed(children=version_names)
+
+            session.execute(
+                delete(Collections).where(
+                    Collections.collection_id == collection_orm.collection_id
+                )
+            )
+            session.commit()
+
+    # Run management
+
+    def create_run(self, collection: CollectionName) -> Run:  # noqa: D102
+        with MBDB.get_session() as session:
+            # Can raise MatchboxCollectionNotFoundError
+            collection_orm = Collections.from_name(collection, session)
+
+            new_run = Runs(
+                collection_id=collection_orm.collection_id,
+                is_mutable=True,
+                is_default=False,
+            )
+            session.add(new_run)
+            session.commit()
+
+            return new_run.to_dto()
+
+    def set_run_mutable(  # noqa: D102
+        self, collection: CollectionName, run_id: RunID, mutable: bool
+    ) -> Run:
+        with MBDB.get_session() as session:
+            run_orm = Runs.from_id(collection, run_id, session)
+            run_orm.is_mutable = mutable
+            session.commit()
+
+            return run_orm.to_dto()
+
+    def set_run_default(  # noqa: D102
+        self, collection: CollectionName, run_id: RunID, default: bool
+    ) -> Run:
+        with MBDB.get_session() as session:
+            run_orm = Runs.from_id(collection, run_id, session)
+            if default:
+                if run_orm.is_mutable:
+                    raise ValueError("Cannot set as default a mutable run")
+                # Unset any existing default run for the collection
+                session.execute(
+                    update(Runs)
+                    .where(
+                        Runs.collection_id == run_orm.collection_id,
+                        Runs.is_default.is_(True),
+                    )
+                    .values(is_default=False)
+                )
+
+            run_orm.is_default = default
+            session.commit()
+
+            return run_orm.to_dto()
+
+    def get_run(self, collection: CollectionName, run_id: RunID) -> Run:  # noqa: D102
+        with MBDB.get_session() as session:
+            run_orm = Runs.from_id(collection, run_id, session)
+            return run_orm.to_dto()
+
+    def delete_run(  # noqa: D102
+        self, collection: CollectionName, run_id: RunID, certain: bool
+    ) -> None:
+        with MBDB.get_session() as session:
+            run_orm = Runs.from_id(collection, run_id, session)
+
+            if not certain:
+                resolution_names = [res.name for res in run_orm.resolutions]
+                raise MatchboxDeletionNotConfirmed(children=resolution_names)
+
+            session.execute(delete(Runs).where(Runs.run_id == run_orm.run_id))
+            session.commit()
+
     # Resolution management
 
-    def insert_resolution(self, resolution: Resolution) -> None:  # noqa: D102
-        log_prefix = f"Insert {resolution.name}"
+    def _check_writeable(self, path: ResolutionPath):
+        run = Runs.from_id(collection=path.collection, run_id=path.run)
+        if not run.is_mutable:
+            raise MatchboxRunNotWriteable(
+                f"Version {path.run} in collection {path.collection} is immutable"
+            )
+
+    def create_resolution(  # noqa: D102
+        self, resolution: Resolution, path: ResolutionPath
+    ) -> None:
+        self._check_writeable(path)
+        log_prefix = f"Insert {path.name}"
         with MBDB.get_session() as session:
-            resolution_orm = Resolutions.from_dto(resolution, session)
+            resolution_orm = Resolutions.from_dto(
+                resolution=resolution, path=path, session=session
+            )
             session.commit()
 
             logger.info(
@@ -220,17 +349,18 @@ class MatchboxPostgres(MatchboxDBAdapter):
             )
 
     def get_resolution(  # noqa: D102
-        self, name: ResolutionName, validate: ResolutionType | None = None
+        self, path: ResolutionPath, validate: ResolutionType | None = None
     ) -> Resolution:
         with MBDB.get_session() as session:
-            resolution = Resolutions.from_name(
-                name=name, res_type=validate, session=session
+            resolution = Resolutions.from_path(
+                path=path, res_type=validate, session=session
             )
             return resolution.to_dto()
 
-    def delete_resolution(self, name: ResolutionName, certain: bool) -> None:  # noqa: D102
+    def delete_resolution(self, path: ResolutionPath, certain: bool) -> None:  # noqa: D102
+        self._check_writeable(path)
         with MBDB.get_session() as session:
-            resolution = Resolutions.from_name(name=name, session=session)
+            resolution = Resolutions.from_path(path=path, session=session)
             if certain:
                 delete_stmt = delete(Resolutions).where(
                     Resolutions.resolution_id.in_(
@@ -246,72 +376,47 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 children = [r.name for r in resolution.descendants]
                 raise MatchboxDeletionNotConfirmed(children=children)
 
-    def get_leaf_source_resolutions(self, name: ResolutionName) -> list[Resolution]:  # noqa: D102
-        with MBDB.get_session() as session:
-            resolution = Resolutions.from_name(
-                name=name, res_type=ResolutionType.MODEL, session=session
-            )
-
-            source_resolutions = (
-                session.query(Resolutions)
-                .join(
-                    ResolutionFrom, Resolutions.resolution_id == ResolutionFrom.parent
-                )
-                .filter(
-                    ResolutionFrom.child == resolution.resolution_id,
-                    Resolutions.type == ResolutionType.SOURCE.value,
-                )
-                .all()
-            )
-
-            return [r.to_dto() for r in source_resolutions]
-
-    def get_resolution_graph(self) -> ResolutionGraph:  # noqa: D102
-        return get_resolution_graph()
-
     # Data insertion
 
     def insert_source_data(  # noqa: D102
-        self, name: SourceResolutionName, data_hashes: Table
+        self, path: SourceResolutionPath, data_hashes: Table
     ) -> None:
+        self._check_writeable(path)
         insert_hashes(
-            name=name,
-            data_hashes=data_hashes,
-            batch_size=self.settings.batch_size,
+            path=path, data_hashes=data_hashes, batch_size=self.settings.batch_size
         )
 
-    def insert_model_data(self, name: ModelResolutionName, results: Table) -> None:  # noqa: D102
-        insert_results(
-            name=name,
-            results=results,
-            batch_size=self.settings.batch_size,
-        )
+    def insert_model_data(self, path: ModelResolutionPath, results: Table) -> None:  # noqa: D102
+        self._check_writeable(path)
+        insert_results(path=path, results=results, batch_size=self.settings.batch_size)
 
-    def get_model_data(self, name: ModelResolutionName) -> Table:  # noqa: D102
-        results_query = (
-            select(Results.left_id, Results.right_id, Results.probability)
-            .join(
-                Resolutions,
-                Results.resolution_id == Resolutions.resolution_id,
+    def get_model_data(self, path: ModelResolutionPath) -> Table:  # noqa: D102
+        with MBDB.get_session() as session:
+            resolution = Resolutions.from_path(
+                path=path, res_type=ResolutionType.MODEL, session=session
             )
-            .where(Resolutions.name == name, Resolutions.type == ResolutionType.MODEL)
-        )
+
+            results_query = select(
+                Results.left_id, Results.right_id, Results.probability
+            ).where(Results.resolution_id == resolution.resolution_id)
+
         with MBDB.get_adbc_connection() as conn:
             stmt: str = compile_sql(results_query)
             return sql_to_df(
                 stmt=stmt, connection=conn.dbapi_connection, return_type="arrow"
             )
 
-    def set_model_truth(self, name: ModelResolutionName, truth: int) -> None:  # noqa: D102
+    def set_model_truth(self, path: ModelResolutionPath, truth: int) -> None:  # noqa: D102
         with MBDB.get_session() as session:
-            resolution = Resolutions.from_name(
-                name=name, res_type=ResolutionType.MODEL, session=session
+            self._check_writeable(path)
+            resolution = Resolutions.from_path(
+                path=path, res_type=ResolutionType.MODEL, session=session
             )
             resolution.truth = truth
             session.commit()
 
-    def get_model_truth(self, name: ModelResolutionName) -> int:  # noqa: D102
-        resolution = Resolutions.from_name(name=name, res_type=ResolutionType.MODEL)
+    def get_model_truth(self, path: ModelResolutionPath) -> int:  # noqa: D102
+        resolution = Resolutions.from_path(path=path, res_type=ResolutionType.MODEL)
         return resolution.truth
 
     # Data management
@@ -343,56 +448,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
             )
 
         return True
-
-    def validate_hashes(self, hashes: list[bytes]) -> bool:  # noqa: D102
-        with MBDB.get_session() as session:
-            data_inner_join = (
-                session.query(Clusters)
-                .filter(
-                    Clusters.cluster_hash.in_(
-                        bindparam(
-                            "ins_hashs",
-                            hashes,
-                            expanding=True,
-                        )
-                    )
-                )
-                .all()
-            )
-
-        existing_hashes = {item.cluster_hash for item in data_inner_join}
-        missing_hashes = set(hashes) - existing_hashes
-
-        if missing_hashes:
-            raise MatchboxDataNotFound(
-                message="Some items don't exist in Clusters table.",
-                table=Clusters.__tablename__,
-                data=missing_hashes,
-            )
-
-        return True
-
-    def cluster_id_to_hash(self, ids: list[int]) -> dict[int, bytes | None]:  # noqa: D102
-        initial_dict = {id: None for id in ids}
-
-        with MBDB.get_session() as session:
-            data_inner_join = (
-                session.query(Clusters)
-                .filter(
-                    Clusters.cluster_id.in_(
-                        bindparam(
-                            "ins_ids",
-                            ids,
-                            expanding=True,
-                        )
-                    )
-                )
-                .all()
-            )
-
-        return initial_dict | {
-            item.cluster_id: item.cluster_hash for item in data_inner_join
-        }
 
     def dump(self) -> MatchboxSnapshot:  # noqa: D102
         return dump()
@@ -458,15 +513,15 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def get_judgements(self) -> tuple[Table, Table]:  # noqa: D102
         return evaluation.get_judgements()
 
-    def compare_models(self, resolutions: list[ModelResolutionName]) -> ModelComparison:  # noqa: D102
+    def compare_models(self, paths: list[ModelResolutionPath]) -> ModelComparison:  # noqa: D102
         judgements, expansion = self.get_judgements()
         if not len(judgements):
             raise MatchboxNoJudgements()
         return evaluation.compare_models(
-            resolutions, pl.from_arrow(judgements), pl.from_arrow(expansion)
+            paths, pl.from_arrow(judgements), pl.from_arrow(expansion)
         )
 
     def sample_for_eval(  # noqa: D102
-        self, n: int, resolution: ModelResolutionName, user_id: int
+        self, n: int, path: ModelResolutionPath, user_id: int
     ) -> ArrowTable:
-        return evaluation.sample(n, resolution, user_id)
+        return evaluation.sample(n, path, user_id)

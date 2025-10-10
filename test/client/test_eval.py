@@ -8,11 +8,11 @@ from pyarrow import Table
 from respx import MockRouter
 from sqlalchemy import Engine
 
-from matchbox.client.dags import DAG
 from matchbox.client.eval import get_samples
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, table_to_buffer
 from matchbox.common.exceptions import MatchboxSourceTableError
+from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.sources import source_from_tuple
 
 
@@ -51,7 +51,8 @@ def test_get_samples(
         engine=sqlite_warehouse,
     ).write_to_location()
 
-    dag = DAG("companies", new=True)
+    dag = TestkitDAG().dag
+
     foo = dag.source(**foo_testkit.into_dag())
     bar = dag.source(**bar_testkit.into_dag())
     baz = dag.source(**baz_testkit.into_dag())
@@ -68,17 +69,17 @@ def test_get_samples(
     )
 
     # Mock API endpoints
-    matchbox_api.get("/resolutions/foo").mock(
+    matchbox_api.get(f"/collections/{dag.name}/runs/{dag.run}/resolutions/foo").mock(
         return_value=Response(
             200, content=foo_testkit.source.to_resolution().model_dump_json()
         )
     )
-    matchbox_api.get("/resolutions/bar").mock(
+    matchbox_api.get(f"/collections/{dag.name}/runs/{dag.run}/resolutions/bar").mock(
         return_value=Response(
             200, content=bar_testkit.source.to_resolution().model_dump_json()
         )
     )
-    matchbox_api.get("/resolutions/baz").mock(
+    matchbox_api.get(f"/collections/{dag.name}/runs/{dag.run}/resolutions/baz").mock(
         return_value=Response(
             200, content=baz_testkit.source.to_resolution().model_dump_json()
         )

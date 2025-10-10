@@ -20,7 +20,7 @@ from matchbox.common.dtos import (
     ModelConfig,
     ModelType,
     NotFoundError,
-    ResolutionOperationStatus,
+    ResourceOperationStatus,
     UploadStage,
     UploadStatus,
 )
@@ -29,7 +29,9 @@ from matchbox.common.exceptions import (
     MatchboxServerFileError,
 )
 from matchbox.common.factories.models import MockLinker, model_factory
-from matchbox.common.factories.sources import source_factory
+from matchbox.common.factories.sources import (
+    source_factory,
+)
 
 
 def test_init_and_run_model(sqlite_warehouse: Engine, matchbox_api: MockRouter):
@@ -103,7 +105,9 @@ def test_model_sync(matchbox_api: MockRouter):
     testkit = model_factory(model_type="linker")
 
     # Mock endpoints
-    get_route = matchbox_api.get(f"/resolutions/{testkit.model.name}").mock(
+    get_route = matchbox_api.get(
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
+    ).mock(
         return_value=Response(
             404,
             json=NotFoundError(
@@ -111,10 +115,12 @@ def test_model_sync(matchbox_api: MockRouter):
             ).model_dump(),
         )
     )
-    insert_config_route = matchbox_api.post("/resolutions").mock(
+    insert_config_route = matchbox_api.post(
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
+    ).mock(
         return_value=Response(
             201,
-            json=ResolutionOperationStatus(
+            json=ResourceOperationStatus(
                 success=True,
                 name=testkit.model.name,
                 operation=CRUDOperation.CREATE,
@@ -123,11 +129,11 @@ def test_model_sync(matchbox_api: MockRouter):
     )
 
     set_truth_route = matchbox_api.patch(
-        f"/resolutions/{testkit.model.name}/truth"
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}/truth"
     ).mock(
         return_value=Response(
             200,
-            json=ResolutionOperationStatus(
+            json=ResourceOperationStatus(
                 success=True,
                 name=testkit.model.name,
                 operation=CRUDOperation.UPDATE,
@@ -136,7 +142,7 @@ def test_model_sync(matchbox_api: MockRouter):
     )
 
     insert_results_route = matchbox_api.post(
-        f"/resolutions/{testkit.model.name}/data"
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}/data"
     ).mock(
         return_value=Response(
             202,
@@ -220,9 +226,9 @@ def test_model_sync(matchbox_api: MockRouter):
 
     # Mock earlier endpoint generating a name clash
     source = source_factory().source
-    matchbox_api.get(f"/resolutions/{testkit.model.name}").mock(
-        return_value=Response(200, json=source.to_resolution().model_dump())
-    )
+    matchbox_api.get(
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
+    ).mock(return_value=Response(200, json=source.to_resolution().model_dump()))
 
     with pytest.raises(ValueError, match="existing resolution"):
         testkit.model.sync()
@@ -258,11 +264,12 @@ def test_delete_resolution(matchbox_api: MockRouter):
 
     # Mock the DELETE endpoint with success response
     route = matchbox_api.delete(
-        f"/resolutions/{testkit.model.name}", params={"certain": True}
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}",
+        params={"certain": True},
     ).mock(
         return_value=Response(
             200,
-            json=ResolutionOperationStatus(
+            json=ResourceOperationStatus(
                 success=True,
                 name=testkit.model.name,
                 operation=CRUDOperation.DELETE,
@@ -286,10 +293,12 @@ def test_delete_resolution_needs_confirmation(matchbox_api: MockRouter):
 
     # Mock the DELETE endpoint with 409 confirmation required response
     error_details = "Cannot delete model with dependent models: dedupe1, dedupe2"
-    route = matchbox_api.delete(f"/resolutions/{testkit.model.name}").mock(
+    route = matchbox_api.delete(
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
+    ).mock(
         return_value=Response(
             409,
-            json=ResolutionOperationStatus(
+            json=ResourceOperationStatus(
                 success=False,
                 name=testkit.model.name,
                 operation=CRUDOperation.DELETE,

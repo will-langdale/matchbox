@@ -78,10 +78,10 @@ You're now ready to create your first [`DAG`][matchbox.client.dags.DAG].
 === "Example"
     ```python
     from matchbox.client.dags import DAG
-    dag = DAG(name="companies", new=True)
+    dag = DAG(name="companies").new_run()
     ```
 
-A DAG needs a name, which will be used to identify this DAG once you publish it to the Matchbox server. You also need to specify that this is a new, unpublished DAG. If you don't do that, Matchbox will look for a DAG with this name that was already published.
+A DAG needs a name, which will be used to identify this DAG once you publish it to the Matchbox server. You also need to use the `.new_run()` method to prepare the DAG to send results to the server.
 
 This DAG will own all the sources and models you define later.
 
@@ -418,7 +418,7 @@ Once you're happy with your results, you need to publish your DAG so that other 
 
 === "Example"
     ```python    
-    dag.publish()
+    dag.set_default()
     ```
 
 
@@ -527,16 +527,18 @@ This example demonstrates how you can:
 
 ### Re-run a previous DAG
 
-You might want to publish a new version of your DAG based on newer data. You can retrieve the old DAG and inspect it. You can't sync or publish it, as it will be read-only. However, you can generate a new version from it explicitly
+You might want to publish a new run of your DAG based on newer data. You can retrieve the old DAG and inspect it. You can't sync or publish it, as it will be read-only. However, you can generate a new run from it explicitly
 
 === "Example"
     ```python    
-    # Retrieve published DAG
-    old_dag = DAG(name="companies")
-    # Generate a new DAG from it
-    new_dag = old_dag.clone()
-    new_dag.run_and_sync()
-    new_dag.publish()
+    # Create a new DAG identical to the previous default
+    dag = DAG(name="companies").load_default(
+        location=RelationalDBLocation(name="dbname", client=engine)
+    ).new_run()
+    # Run new DAG
+    dag.run_and_sync()
+    # Make the DAG the new default
+    dag.set_default()
     ```
 
 ## Best practices

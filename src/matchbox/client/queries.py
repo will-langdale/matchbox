@@ -11,20 +11,23 @@ from sqlglot import expressions, parse_one
 from sqlglot import select as sqlglot_select
 
 from matchbox.client import _handler
-from matchbox.client.models import Model
 from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
-from matchbox.client.sources import Source
 from matchbox.common.db import QueryReturnClass, QueryReturnType
 from matchbox.common.dtos import (
     QueryCombineType,
     QueryConfig,
 )
+from matchbox.common.transform import truth_float_to_int, truth_int_to_float
 
 if TYPE_CHECKING:
     from matchbox.client.dags import DAG
+    from matchbox.client.models import Model
+    from matchbox.client.sources import Source
 else:
     DAG = Any
+    Model = Any
+    Source = Any
 
 
 class Query:
@@ -71,12 +74,54 @@ class Query:
         self.dag = dag
         self.sources = sources
         self.model = model
-        self.config = QueryConfig(
-            source_resolutions=[source.name for source in sources],
-            model_resolution=model.name if model else None,
-            combine_type=combine_type,
-            threshold=int(threshold * 100) if threshold else None,
-            cleaning=cleaning,
+        self.combine_type = combine_type
+        self.threshold = threshold
+        self.cleaning = cleaning
+
+    @property
+    def config(self) -> QueryConfig:
+        """The query configuration for the current DAG."""
+        return QueryConfig(
+            source_resolutions=[source.resolution_path for source in self.sources],
+            model_resolution=self.model.resolution_path if self.model else None,
+            combine_type=self.combine_type,
+            threshold=truth_float_to_int(self.threshold) if self.threshold else None,
+            cleaning=self.cleaning,
+        )
+
+    @classmethod
+    def from_config(cls, config: QueryConfig, dag: DAG) -> Self:
+        """Create query from config.
+
+        The DAG must have had relevant sources and model added already.
+
+        Args:
+            config: The QueryConfig to reconstruct from.
+            dag: The DAG containing the sources and model.
+
+        Returns:
+            A reconstructed Query instance.
+        """
+        # Get sources from DAG
+        sources = [dag.get_source(res.name) for res in config.source_resolutions]
+
+        # Get model if specified
+        model = (
+            dag.get_model(config.model_resolution.name)
+            if config.model_resolution
+            else None
+        )
+
+        # Convert threshold back to float
+        threshold = truth_int_to_float(config.threshold) if config.threshold else None
+
+        return cls(
+            *sources,
+            dag=dag,
+            model=model,
+            combine_type=config.combine_type,
+            threshold=threshold,
+            cleaning=config.cleaning,
         )
 
     def run(
@@ -113,8 +158,8 @@ class Query:
         for source in self.sources:
             mb_ids = pl.from_arrow(
                 _handler.query(
-                    source=source.name,
-                    resolution=self.model.name if self.model else None,
+                    source=source.resolution_path,
+                    resolution=self.model.resolution_path if self.model else None,
                     threshold=self.config.threshold,
                     return_leaf_id=return_leaf_id,
                 )
@@ -198,12 +243,13 @@ class Query:
         if self.raw_data is None:
             raise RuntimeError("No raw data is stored in this query.")
 
-        self.config = self.config.model_copy(update={"cleaning": cleaning})
-
         self.data = _convert_df(
             data=clean(data=self.raw_data, cleaning_dict=cleaning),
             return_type=return_type,
         )
+
+        self.cleaning = cleaning
+
         return self.data
 
     def deduper(

@@ -8,7 +8,7 @@ Given a key and a source, you can retrieve all keys resolving to the same entity
     ```python
     from matchbox.client.dags import DAG
 
-    matches = DAG("companies").lookup_key(
+    matches = DAG("companies").load_default().lookup_key(
         from_source="datahub_companies",
         to_sources=["companies_house"],
         key="8534735",
@@ -32,5 +32,5 @@ You can download an entire lookup as a PyArrow table.
     ```python
     from matchbox.client.dags import DAG
 
-    lookup = DAG("companies").extract_lookup()
+    lookup = DAG("companies").load_default().extract_lookup()
     ```

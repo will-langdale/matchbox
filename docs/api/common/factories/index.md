@@ -51,7 +51,7 @@ source_testkit = source_factory()
 
 # Setup store
 tracker = InMemoryUploadTracker()
-upload_id = tracker.add_source(source_testkit.source_config)
+upload_id = tracker.add_source(source_testkit.source.resolution_path)
 ```
 
 
@@ -83,7 +83,7 @@ source_factory(
 By default, each `SourceTestkit` or `ModelTestkit` creates a new [`DAG`][matchbox.client.dags.DAG]. If membership to the right DAG is important, you can either set it manually:
 
 ```python
-dag = DAG("companies", new=True)
+dag = DAG("companies")
 source_testkit = source_factory(dag=dag)
 ```
 
@@ -91,7 +91,7 @@ Or, you can unpack your objects into `DAG` methods:
 
 ```python
 source_testkit = source_factory()
-dag = DAG("companies", new=True)
+dag = DAG("companies")
 dag.source(**source_testkit.into_dag())
 ```
 

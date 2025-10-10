@@ -1,6 +1,7 @@
 """Functions and classes to define, run and register models."""
 
 import inspect
+import json
 import warnings
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
@@ -10,18 +11,25 @@ from matchbox.client._settings import settings
 from matchbox.client.models import dedupers, linkers
 from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
+from matchbox.client.queries import Query
 from matchbox.client.results import Results
-from matchbox.common.dtos import ModelConfig, ModelType, Resolution
+from matchbox.common.dtos import (
+    ModelConfig,
+    ModelResolutionName,
+    ModelResolutionPath,
+    ModelType,
+    Resolution,
+    ResolutionPath,
+    ResolutionType,
+)
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
-from matchbox.common.graph import ResolutionType
 from matchbox.common.logging import logger
+from matchbox.common.transform import truth_float_to_int, truth_int_to_float
 
 if TYPE_CHECKING:
     from matchbox.client.dags import DAG
-    from matchbox.client.queries import Query
 else:
     DAG = Any
-    Query = Any
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -98,46 +106,48 @@ class Model:
         self.dag = dag
         self.name = name
         self.description = description
-        self._truth: int = _truth_float_to_int(truth)
+        self._truth: int = truth_float_to_int(truth)
         self.left_query = left_query
         self.right_query = right_query
         self.results: Results | None = None
 
         if isinstance(model_class, str):
-            model_class: type[Linker | Deduper] = _MODEL_CLASSES[model_class]
-        self.model_instance = model_class(settings=model_settings)
+            self.model_class: type[Linker | Deduper] = _MODEL_CLASSES[model_class]
+        else:
+            self.model_class = model_class
+        self.model_instance = self.model_class(settings=model_settings)
 
-        model_type: ModelType = (
-            ModelType.LINKER if issubclass(model_class, Linker) else ModelType.DEDUPER
+        self.model_type: ModelType = (
+            ModelType.LINKER
+            if issubclass(self.model_class, Linker)
+            else ModelType.DEDUPER
         )
 
         if isinstance(model_settings, dict):
             SettingsClass = self.model_instance.__annotations__["settings"]
-            model_settings = SettingsClass(**model_settings)
+            self.model_settings = SettingsClass(**model_settings)
+        else:
+            self.model_settings = model_settings
 
-        serialised_settings = model_settings.model_dump_json()
-
-        self.config = ModelConfig(
-            type=model_type,
-            model_class=model_class.__name__,
-            model_settings=serialised_settings,
-            left_query=left_query.config,
-            right_query=right_query.config if right_query else None,
+    @property
+    def config(self) -> ModelConfig:
+        """Generate config DTO from Model."""
+        return ModelConfig(
+            type=self.model_type,
+            model_class=self.model_class.__name__,
+            model_settings=self.model_settings.model_dump_json(),
+            left_query=self.left_query.config,
+            right_query=self.right_query.config if self.right_query else None,
         )
 
     @property
-    def dependencies(self) -> list[str]:
-        """Returns all resolution names this model needs as implied by the queries."""
-        if self.right_query:
-            return (
-                self.left_query.config.dependencies
-                + self.right_query.config.dependencies
-            )
-        return self.left_query.config.dependencies
+    def dependencies(self) -> list[ResolutionPath]:
+        """Returns all resolution paths this model needs as implied by the queries."""
+        return self.config.dependencies
 
     @property
-    def parents(self) -> list[str]:
-        """Returns all points of truth input to this model."""
+    def parents(self) -> list[ResolutionPath]:
+        """Returns all resolution paths directly input to this model."""
         if self.right_query:
             return [
                 self.left_query.config.point_of_truth,
@@ -148,7 +158,6 @@ class Model:
     def to_resolution(self) -> Resolution:
         """Convert to Resolution for API calls."""
         return Resolution(
-            name=self.name,
             description=self.description,
             truth=self._truth,
             resolution_type=ResolutionType.MODEL,
@@ -156,37 +165,53 @@ class Model:
         )
 
     @classmethod
-    def from_resolution(cls, resolution: Resolution, dag: DAG) -> "Model":
+    def from_resolution(
+        cls,
+        resolution: Resolution,
+        resolution_name: str,
+        dag: DAG,
+    ) -> "Model":
         """Reconstruct from Resolution."""
         if resolution.resolution_type != ResolutionType.MODEL:
             raise ValueError("Resolution must be of type 'model'")
 
         return cls(
             dag=dag,
-            name=resolution.name,
+            name=ModelResolutionName(resolution_name),
             description=resolution.description,
             model_class=resolution.config.model_class,
-            model_settings=resolution.config.model_settings,
-            left_query=resolution.config.left_query,
-            right_query=resolution.config.right_query,
-            truth=resolution.truth,
+            model_settings=json.loads(resolution.config.model_settings),
+            left_query=Query.from_config(resolution.config.left_query, dag=dag),
+            right_query=Query.from_config(resolution.config.right_query, dag=dag)
+            if resolution.config.right_query
+            else None,
+            truth=truth_int_to_float(resolution.truth),
+        )
+
+    @property
+    def resolution_path(self) -> ModelResolutionPath:
+        """Returns the model resolution path."""
+        return ModelResolutionPath(
+            collection=self.dag.name,
+            run=self.dag.run,
+            name=self.name,
         )
 
     @property
     def truth(self) -> float | None:
         """Returns the truth threshold for the model as a float."""
         if self._truth is not None:
-            return _truth_int_to_float(self._truth)
+            return truth_int_to_float(self._truth)
         return None
 
     @truth.setter
     def truth(self, truth: float) -> None:
         """Set the truth threshold for the model."""
-        self._truth = _truth_float_to_int(truth)
+        self._truth = truth_float_to_int(truth)
 
     def delete(self, certain: bool = False) -> bool:
         """Delete the model from the database."""
-        result = _handler.delete_resolution(name=self.name, certain=certain)
+        result = _handler.delete_resolution(path=self.resolution_path, certain=certain)
         return result.success
 
     def run(self, for_validation: bool = False, full_rerun: bool = False) -> Results:
@@ -239,28 +264,28 @@ class Model:
         """Send the model config, truth and results to the server."""
         resolution = self.to_resolution()
         try:
-            existing_resolution = _handler.get_resolution(name=self.name)
+            existing_resolution = _handler.get_resolution(path=self.resolution_path)
         except MatchboxResolutionNotFoundError:
             existing_resolution = None
         # Check if config matches
         if existing_resolution:
             if existing_resolution.config != self.config:
                 raise ValueError(
-                    f"Resolution {self.name} already exists with different "
+                    f"Resolution {self.resolution_path} already exists with different "
                     "configuration. Please delete the existing resolution "
                     "or use a different name. "
                 )
             else:
-                log_prefix = f"Resolution {self.name}"
+                log_prefix = f"Resolution {self.resolution_path}"
                 logger.warning("Already exists. Passing.", prefix=log_prefix)
         else:
-            _handler.create_resolution(resolution=resolution)
+            _handler.create_resolution(resolution=resolution, path=self.resolution_path)
 
-        _handler.set_truth(name=self.name, truth=self._truth)
+        _handler.set_truth(path=self.resolution_path, truth=self._truth)
 
         if self.results and len(self.results.probabilities):
             _handler.set_data(
-                name=self.name,
+                path=self.resolution_path,
                 data=self.results.probabilities,
                 validate_type=ResolutionType.MODEL,
             )
@@ -272,20 +297,4 @@ class Model:
 
     def query(self, *sources, **kwargs) -> Query:
         """Generate a query for this model."""
-        return self.dag.query(*sources, **kwargs, model=self)
-
-
-def _truth_float_to_int(truth: float) -> int:
-    """Convert user input float truth values to int."""
-    if isinstance(truth, float) and 0.0 <= truth <= 1.0:
-        return round(truth * 100)
-    else:
-        raise ValueError(f"Truth value {truth} not a valid probability")
-
-
-def _truth_int_to_float(truth: int) -> float:
-    """Convert backend int truth values to float."""
-    if isinstance(truth, int) and 0 <= truth <= 100:
-        return float(truth / 100)
-    else:
-        raise ValueError(f"Truth value {truth} not valid")
+        return Query(*sources, **kwargs, model=self, dag=self.dag)
