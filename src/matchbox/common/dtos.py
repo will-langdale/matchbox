@@ -565,8 +565,17 @@ class ModelConfig(BaseModel):
         """Ensure that a right query is set if and only if model is linker."""
         if self.type == ModelType.DEDUPER and self.right_query is not None:
             raise ValueError("Right query can't be set for dedupers")
-        if self.type == ModelType.LINKER and self.right_query is None:
-            raise ValueError("Right query must be set for linkers")
+        if self.type == ModelType.LINKER:
+            if (
+                self.right_query.source_resolutions[0].collection
+                != self.left_query.source_resolutions[0].collection
+                or self.right_query.source_resolutions[0].run
+                != self.left_query.source_resolutions[0].run
+            ):
+                raise ValueError("Left and right query must share collection and run.")
+            if self.right_query is None:
+                raise ValueError("Right query must be set for linkers")
+
         return self
 
     @field_validator("model_settings", mode="after")
