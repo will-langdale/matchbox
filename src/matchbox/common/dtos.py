@@ -16,10 +16,12 @@ from pydantic import (
     ConfigDict,
     Field,
     GetCoreSchemaHandler,
+    GetJsonSchemaHandler,
     field_serializer,
     field_validator,
     model_validator,
 )
+from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema
 from sqlglot import errors, expressions, parse_one
 
@@ -218,11 +220,13 @@ class LocationType(StrEnum):
 class MatchboxName(str):
     """Sub-class of string which validates names for the Matchbox DB."""
 
+    PATTERN = r"^[a-zA-Z0-9_.-]+$"
+
     def __new__(cls, value: str):
         """Creates new instance of validated name."""
         if not isinstance(value, str):
             raise MatchboxNameError("Name must be a string")
-        if not re.match(r"^[a-zA-Z0-9_.-]+$", value):
+        if not re.match(cls.PATTERN, value):
             raise MatchboxNameError(
                 f"Name '{value}' is invalid. It can only include "
                 "alphanumeric characters, underscores, dots or hyphens."
@@ -241,6 +245,22 @@ class MatchboxName(str):
                 lambda x: x, return_schema=core_schema.str_schema()
             ),
         )
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        schema: core_schema.CoreSchema,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        """Generate JSON schema for OpenAPI documentation."""
+        json_schema = handler(core_schema.str_schema())
+        json_schema.update(
+            {
+                "type": "string",
+                "pattern": cls.PATTERN,
+            }
+        )
+        return json_schema
 
 
 CollectionName: TypeAlias = MatchboxName
