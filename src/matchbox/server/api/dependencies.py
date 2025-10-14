@@ -5,8 +5,9 @@ import logging
 import sys
 import time
 from base64 import urlsafe_b64decode
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
-from typing import Annotated, AsyncGenerator, Generator
+from typing import Annotated
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.serialization import load_pem_public_key

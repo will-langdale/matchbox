@@ -2,28 +2,26 @@
 
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Generator
 from datetime import datetime
 from functools import partial
-from typing import TYPE_CHECKING, Any, Generator
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import redis
-from celery import Celery
-from fastapi import (
-    UploadFile,
-)
+from celery import Celery, Task
+from fastapi import UploadFile
 from pyarrow import parquet as pq
 from pydantic import BaseModel
 
 from matchbox.common.dtos import (
     BackendUploadType,
-    ModelConfig,
+    ResolutionPath,
     UploadStage,
     UploadStatus,
 )
 from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.logging import logger
-from matchbox.common.sources import SourceConfig
 from matchbox.server.base import (
     MatchboxDBAdapter,
     MatchboxServerSettings,
@@ -36,6 +34,11 @@ if TYPE_CHECKING:
 else:
     S3Client = Any
 
+from celery.exceptions import MaxRetriesExceededError
+from celery.utils.log import get_task_logger
+
+celery_logger = get_task_logger(__name__)
+
 # -- Upload trackers --
 
 
@@ -43,7 +46,7 @@ class UploadEntry(BaseModel):
     """Entry in upload tracker, combining private metadata and public upload status."""
 
     status: UploadStatus
-    metadata: SourceConfig | ModelConfig
+    path: ResolutionPath
 
 
 class UploadTracker(ABC):
@@ -51,13 +54,13 @@ class UploadTracker(ABC):
 
     @staticmethod
     def _create_entry(
-        metadata: SourceConfig | ModelConfig, upload_type: BackendUploadType
+        path: ResolutionPath, upload_type: BackendUploadType
     ) -> UploadEntry:
         """Create initial UploadEntry object."""
         upload_id = str(uuid.uuid4())
 
         return UploadEntry(
-            metadata=metadata,
+            path=path,
             status=UploadStatus(
                 id=upload_id,
                 stage=UploadStage.AWAITING_UPLOAD,
@@ -80,18 +83,18 @@ class UploadTracker(ABC):
         if details:
             status.details = details
 
-        return UploadEntry(status=status, metadata=entry.metadata)
+        return UploadEntry(status=status, path=entry.path)
 
-    def add_source(self, metadata: SourceConfig) -> str:
-        """Register source metadata and return ID."""
-        entry = self._create_entry(metadata, BackendUploadType.INDEX)
+    def add_source(self, path: ResolutionPath) -> str:
+        """Register source resolution and return ID."""
+        entry = self._create_entry(path, BackendUploadType.INDEX)
         self._register_entry(entry)
 
         return entry.status.id
 
-    def add_model(self, metadata: ModelConfig) -> str:
-        """Register model results metadata and return ID."""
-        entry = self._create_entry(metadata, BackendUploadType.RESULTS)
+    def add_model(self, path: ResolutionPath) -> str:
+        """Register model resolution and return ID."""
+        entry = self._create_entry(path, BackendUploadType.RESULTS)
         self._register_entry(entry)
 
         return entry.status.id
@@ -103,7 +106,7 @@ class UploadTracker(ABC):
 
     @abstractmethod
     def get(self, upload_id: str) -> UploadEntry | None:
-        """Retrieve metadata by ID if not expired."""
+        """Retrieve entry by ID if not expired."""
         ...
 
     @abstractmethod
@@ -249,8 +252,7 @@ def s3_to_recordbatch(
 
     parquet_file = pq.ParquetFile(buffer)
 
-    for batch in parquet_file.iter_batches(batch_size=batch_size):
-        yield batch
+    yield from parquet_file.iter_batches(batch_size=batch_size)
 
 
 # -- Upload tasks --
@@ -262,6 +264,8 @@ CELERY_TRACKER: UploadTracker | None = None
 
 celery = Celery("matchbox", broker=CELERY_SETTINGS.redis_uri)
 celery.conf.update(
+    # Hard time limit for tasks (in seconds)
+    task_time_limit=CELERY_SETTINGS.uploads_expiry_minutes * 60,
     # Only acknowledge task (remove it from queue) after task completion
     task_acks_late=True,
     # Reduce pre-fetching (workers reserving tasks while they're still busy)
@@ -307,9 +311,9 @@ def process_upload(
         )
 
         if upload.status.entity == BackendUploadType.INDEX:
-            backend.index(source_config=upload.metadata, data_hashes=data)
+            backend.insert_source_data(path=upload.path, data_hashes=data)
         elif upload.status.entity == BackendUploadType.RESULTS:
-            backend.set_model_results(name=upload.metadata.name, results=data)
+            backend.insert_model_data(path=upload.path, results=data)
         else:
             raise ValueError(f"Unknown upload type: {upload.status.entity}")
 
@@ -329,7 +333,7 @@ def process_upload(
         details = (
             f"Error: {e}. Context: "
             f"Upload type: {getattr(upload.status, 'entity', 'unknown')}, "
-            f"SourceConfig: {getattr(upload, 'metadata', 'unknown')}"
+            f"Resolution path: {getattr(upload, 'path', 'unknown')}"
         )
         tracker.update(
             upload_id,
@@ -340,14 +344,15 @@ def process_upload(
     finally:
         try:
             s3_client.delete_object(Bucket=bucket, Key=filename)
-        except Exception as delete_error:
+        except Exception as delete_error:  # noqa: BLE001
             logger.error(
                 f"Failed to delete S3 file {bucket}/{filename}: {delete_error}"
             )
 
 
-@celery.task(ignore_result=True)
+@celery.task(ignore_result=True, bind=True, max_retries=3)
 def process_upload_celery(
+    self: Task,
     upload_type: str,
     resolution_name: str,
     upload_id: str,
@@ -357,15 +362,38 @@ def process_upload_celery(
     """Celery task to process uploaded file, with only serialisable arguments."""
     initialise_celery_worker()
 
-    partial(
+    celery_logger.info(
+        "Uploading data for resolution %s, ID %s", resolution_name, upload_id
+    )
+
+    upload_function = partial(
         process_upload,
         backend=CELERY_BACKEND,
         tracker=CELERY_TRACKER,
         s3_client=CELERY_BACKEND.settings.datastore.get_client(),
-    )(
-        upload_type=upload_type,
-        resolution_name=resolution_name,
-        upload_id=upload_id,
-        bucket=bucket,
-        filename=filename,
     )
+
+    try:
+        upload_function(
+            upload_type=upload_type,
+            resolution_name=resolution_name,
+            upload_id=upload_id,
+            bucket=bucket,
+            filename=filename,
+        )
+    except Exception as exc:  # noqa: BLE001
+        celery_logger.error(
+            "Upload failed for resolution %s, ID %s. Retrying...",
+            resolution_name,
+            upload_id,
+        )
+        try:
+            raise self.retry(exc=exc) from None
+        except MaxRetriesExceededError:
+            if CELERY_TRACKER:
+                CELERY_TRACKER.update(
+                    upload_id, UploadStage.FAILED, f"Max retries exceeded: {exc}"
+                )
+            raise
+
+    celery_logger.info("Upload complete for %s, ID %s", resolution_name, upload_id)

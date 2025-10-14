@@ -6,7 +6,7 @@ import cProfile
 import io
 import pstats
 import uuid
-from typing import Generator
+from collections.abc import Generator
 
 import pyarrow as pa
 from adbc_driver_manager import ProgrammingError as ADBCProgrammingError
@@ -23,40 +23,9 @@ from sqlalchemy.sql.type_api import TypeEngine
 from matchbox.common.exceptions import (
     MatchboxDatabaseWriteError,
 )
-from matchbox.common.graph import (
-    ResolutionEdge,
-    ResolutionGraph,
-    ResolutionNode,
-    ResolutionNodeType,
-)
 from matchbox.common.logging import logger
 from matchbox.server.base import MatchboxBackends, MatchboxSnapshot
 from matchbox.server.postgresql.db import MBDB
-from matchbox.server.postgresql.orm import ResolutionFrom, Resolutions
-
-# Retrieval
-
-
-def get_resolution_graph() -> ResolutionGraph:
-    """Retrieves the resolution graph."""
-    G = ResolutionGraph(nodes=set(), edges=set())
-    with MBDB.get_session() as session:
-        for resolution in session.query(Resolutions).all():
-            G.nodes.add(
-                ResolutionNode(
-                    id=resolution.resolution_id,
-                    name=resolution.name,
-                    type=ResolutionNodeType(resolution.type),
-                )
-            )
-
-        for edge in (
-            session.query(ResolutionFrom).filter(ResolutionFrom.level == 1).all()
-        ):
-            G.edges.add(ResolutionEdge(parent=edge.parent, child=edge.child))
-
-    return G
-
 
 # Data management
 
@@ -313,5 +282,5 @@ def ingest_to_temporary_table(
             with MBDB.get_session() as session:
                 temp_table.drop(session.bind, checkfirst=True)
                 session.commit()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to drop temp table {temp_table_name}: {e}")

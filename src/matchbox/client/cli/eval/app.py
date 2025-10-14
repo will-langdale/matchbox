@@ -17,8 +17,8 @@ from matchbox.client.cli.eval.state import EvaluationState
 from matchbox.client.cli.eval.utils import EvalData, get_samples, temp_warehouse
 from matchbox.client.cli.eval.widgets.status import StatusBar
 from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
+from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.exceptions import MatchboxClientSettingsException
-from matchbox.common.graph import DEFAULT_RESOLUTION, ModelResolutionName
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class EntityResolutionApp(App):
 
     def __init__(
         self,
-        resolution: ModelResolutionName = DEFAULT_RESOLUTION,
+        resolution: ModelResolutionPath,
         num_samples: int = 100,
         user: str | None = None,
         warehouse: str | None = None,
@@ -86,7 +86,7 @@ class EntityResolutionApp(App):
         """Load evaluation samples from the server."""
         samples_dict = await self._fetch_additional_samples(self.state.sample_limit)
         if samples_dict:
-            # samples_dict now contains EvaluationItems, not DataFrames
+            # samples_dict contains EvaluationItems (converted by get_samples)
             self.state.queue.add_items(list(samples_dict.values()))
 
     async def load_eval_data(self) -> None:
@@ -201,7 +201,6 @@ class EntityResolutionApp(App):
                     resolution=self.state.resolution,
                     user_id=self.state.user_id,
                     clients={},
-                    use_default_client=True,
                     default_client=default_client,
                 )
             except Exception:  # noqa: BLE001

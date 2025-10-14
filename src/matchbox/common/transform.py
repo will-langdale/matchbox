@@ -1,11 +1,11 @@
 """Functions to transform data between tabular and graph structures."""
 
 from collections import defaultdict
-from typing import Any, Callable, Generic, Hashable, Iterable, Self, TypeVar
+from collections.abc import Callable, Hashable, Iterable
+from typing import Any, Generic, Self, TypeVar
 
 import numpy as np
-import pyarrow as pa
-import pyarrow.compute as pc
+import polars as pl
 import rustworkx as rx
 
 from matchbox.common.hash import HASH_FUNC, IntMap, hash_values
@@ -14,46 +14,41 @@ T = TypeVar("T", bound=Hashable)
 
 
 def to_clusters(
-    results: pa.Table,
-    dtype: pa.DataType = pa.large_binary,
+    results: pl.DataFrame,
+    dtype: pl.DataType = pl.Int64,
     hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
-) -> pa.Table:
+) -> pl.DataFrame:
     """Converts probabilities into connected components formed at each threshold.
 
     Args:
-        results: Arrow table with columns ['left_id', 'right_id', 'probability']
-        dtype: Arrow data type for the parent and child columns
+        results: Polars dataframe with columns ['left_id', 'right_id', 'probability']
+        dtype: Polars data type for the parent and child columns
         hash_func: Function to hash the parent and child values
 
     Returns:
-        Arrow table of parent, child, threshold, sorted by probability descending.
+        Polars dataframe of parent, child, threshold, sorted by probability descending.
     """
     G = rx.PyGraph()
     added: dict[bytes, int] = {}
     components: dict[str, list] = {"parent": [], "child": [], "threshold": []}
 
     # Sort probabilities descending and select relevant columns
-    results = results.sort_by([("probability", "descending")])
+    results = results.sort(by="probability", descending=True)
     results = results.select(["left_id", "right_id", "probability"])
 
     # Get unique probability thresholds, sorted
-    thresholds = pc.unique(results.column("probability")).sort(order="descending")
+    thresholds = results["probability"].unique().sort(descending=True)
 
     # Process edges grouped by probability threshold
     for prob in thresholds:
-        threshold_edges = results.filter(pc.equal(results.column("probability"), prob))
+        threshold_edges = results.filter(pl.col("probability") == prob)
 
         # Get state before adding this batch of edges
         old_components = {frozenset(comp) for comp in rx.connected_components(G)}
 
         # Add all nodes and edges at this probability threshold
-        edge_values = list(
-            zip(
-                threshold_edges.column("left_id").to_pylist(),
-                threshold_edges.column("right_id").to_pylist(),
-                strict=True,
-            )
-        )
+        edge_values = threshold_edges.select(["left_id", "right_id"]).rows()
+
         for left, right in edge_values:
             for hash_val in (left, right):
                 if hash_val not in added:
@@ -74,21 +69,19 @@ def to_clusters(
             components["child"].extend(children)
             components["threshold"].extend([prob] * len(children))
 
-    return pa.Table.from_pydict(
+    return pl.from_dict(
         components,
-        schema=pa.schema(
-            [("parent", dtype()), ("child", dtype()), ("threshold", pa.uint8())]
-        ),
+        schema=[("parent", dtype), ("child", dtype), ("threshold", pl.UInt8)],
     )
 
 
 def graph_results(
-    probabilities: pa.Table, all_nodes: Iterable[int] | None = None
+    probabilities: pl.DataFrame, all_nodes: Iterable[int] | None = None
 ) -> tuple[rx.PyDiGraph, np.ndarray, np.ndarray]:
     """Convert probability table to graph representation.
 
     Args:
-        probabilities: PyArrow table with 'left_id', 'right_id' columns
+        probabilities: Polars dataframe with 'left_id', 'right_id' columns
         all_nodes: superset of node identities figuring in probabilities table.
             Used to optionally add isolated nodes to the graph.
 
@@ -99,17 +92,26 @@ def graph_results(
         - A list mapping the 'right_id' probabilities to node indices in the graph
     """
     # Create index to use in graph
-    unique = pc.unique(
-        pa.concat_arrays(
-            [
-                probabilities["left_id"].combine_chunks(),
-                probabilities["right_id"].combine_chunks(),
-            ]
-        )
+    unique = (
+        pl.concat([probabilities["left_id"], probabilities["right_id"]], rechunk=True)
+        .unique(maintain_order=True)
+        .rename("unique_ids")
+        .to_frame()
+        .with_row_index()
     )
 
-    left_indices = pc.index_in(probabilities["left_id"], unique).to_numpy()
-    right_indices = pc.index_in(probabilities["right_id"], unique).to_numpy()
+    left_indices = (
+        probabilities.select("left_id")
+        .join(unique, left_on="left_id", right_on="unique_ids", maintain_order="left")
+        .to_series(1)
+        .to_numpy()
+    )
+    right_indices = (
+        probabilities.select("right_id")
+        .join(unique, left_on="right_id", right_on="unique_ids", maintain_order="left")
+        .to_series(1)
+        .to_numpy()
+    )
 
     # Create and process graph
     n_nodes = len(unique)
@@ -119,7 +121,7 @@ def graph_results(
     graph.add_nodes_from(range(n_nodes))
 
     if all_nodes is not None:
-        isolated_nodes = len(set(all_nodes) - set(unique.to_pylist()))
+        isolated_nodes = len(set(all_nodes) - set(unique["unique_ids"].to_list()))
         graph.add_nodes_from(range(isolated_nodes))
 
     edges = tuple(zip(left_indices, right_indices, strict=True))
@@ -300,3 +302,19 @@ class Cluster:
             probability=probability,
             leaves=list(unique_dict.values()),
         )
+
+
+def truth_float_to_int(truth: float) -> int:
+    """Convert user input float truth values to int."""
+    if isinstance(truth, float) and 0.0 <= truth <= 1.0:
+        return round(truth * 100)
+    else:
+        raise ValueError(f"Truth value {truth} not a valid probability")
+
+
+def truth_int_to_float(truth: int) -> float:
+    """Convert backend int truth values to float."""
+    if isinstance(truth, int) and 0 <= truth <= 100:
+        return float(truth / 100)
+    else:
+        raise ValueError(f"Truth value {truth} not valid")

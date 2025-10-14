@@ -1,5 +1,4 @@
 import polars as pl
-import pyarrow as pa
 import pytest
 
 from matchbox.common.arrow import SCHEMA_CLUSTER_EXPANSION, SCHEMA_JUDGEMENTS
@@ -21,9 +20,9 @@ def test_judgement_validation():
 def test_precision_recall_fails():
     """Test instances where PR computation raises."""
     # No judgements
-    model = pa.Table.from_pylist([{"root": 12, "leaf": 1}, {"root": 12, "leaf": 2}])
-    empty_judgements = pa.Table.from_pylist([], schema=SCHEMA_JUDGEMENTS)
-    empty_expansion = pa.Table.from_pylist([], schema=SCHEMA_CLUSTER_EXPANSION)
+    model = pl.DataFrame([{"root": 12, "leaf": 1}, {"root": 12, "leaf": 2}])
+    empty_judgements = pl.DataFrame([], schema=pl.Schema(SCHEMA_JUDGEMENTS))
+    empty_expansion = pl.DataFrame([], schema=pl.Schema(SCHEMA_CLUSTER_EXPANSION))
 
     with pytest.raises(ValueError, match="Judgements data"):
         precision_recall(
@@ -33,9 +32,9 @@ def test_precision_recall_fails():
         )
 
     # No model root-leaf
-    empty_model = pa.Table.from_pylist([])
-    judgements = pa.Table.from_pylist([{"shown": 12, "endorsed": 12}])
-    expansion = pa.Table.from_pylist([{"root": 12, "leaves": [1, 2]}])
+    empty_model = pl.DataFrame([])
+    judgements = pl.DataFrame([{"shown": 12, "endorsed": 12}])
+    expansion = pl.DataFrame([{"root": 12, "leaves": [1, 2]}])
 
     with pytest.raises(ValueError, match="Model data"):
         precision_recall(
@@ -48,7 +47,7 @@ def test_precision_recall():
     # In this test, one-digit cluster IDs are for source clusters.
     # Multiple-digit cluster IDs decompose to source cluster IDs.
     # For example, 123 maps to 1,2,3
-    model1 = pa.Table.from_pylist(
+    model1 = pl.DataFrame(
         [
             # (1,2,3)
             {"root": 123, "leaf": 1},
@@ -66,7 +65,7 @@ def test_precision_recall():
         ]
     )
 
-    model2 = pa.Table.from_pylist(
+    model2 = pl.DataFrame(
         [
             # (1,3)
             {"root": 13, "leaf": 1},
@@ -83,7 +82,7 @@ def test_precision_recall():
         ]
     )
 
-    judgement_cluster_expansion = pa.Table.from_pylist(
+    judgement_cluster_expansion = pl.DataFrame(
         [
             {"root": 123, "leaves": [1, 2, 3]},
             {"root": 67, "leaves": [6, 7]},
@@ -92,7 +91,7 @@ def test_precision_recall():
         ]
     )
 
-    judgements = pa.Table.from_pylist(
+    judgements = pl.DataFrame(
         [
             # Ambiguous but more positive than negative
             {"shown": 123, "endorsed": 12},
@@ -214,7 +213,7 @@ def test_evaldata_unified_pr_calculation():
     import unittest.mock
 
     # Create mock handler that returns our test data
-    judgements = pa.table(
+    judgements = pl.DataFrame(
         {
             "user_id": [1, 1],
             "shown": [100, 100],
@@ -222,16 +221,16 @@ def test_evaldata_unified_pr_calculation():
         }
     )
 
-    expansion = pa.table(
+    expansion = pl.DataFrame(
         {
             "root": [100, 200, 3],
             "leaves": [[1, 2, 3], [1, 2], [3]],
         }
     )
 
-    model_root_leaf = pa.table({"root": [1, 2], "leaf": [1, 2]})
+    model_root_leaf = pl.DataFrame({"root": [1, 2], "leaf": [1, 2]})
 
-    probabilities = pa.table(
+    probabilities = pl.DataFrame(
         {
             "left_id": [1, 2],
             "right_id": [2, 3],
@@ -278,7 +277,7 @@ def test_evaldata_matches_precision_recall():
     from matchbox.common.eval import precision_recall
 
     # Use the exact same test data as test_precision_recall
-    model1 = pa.Table.from_pylist(
+    model1 = pl.DataFrame(
         [
             # (1,2,3)
             {"root": 123, "leaf": 1},
@@ -296,7 +295,7 @@ def test_evaldata_matches_precision_recall():
         ]
     )
 
-    judgement_cluster_expansion = pa.Table.from_pylist(
+    judgement_cluster_expansion = pl.DataFrame(
         [
             {"root": 123, "leaves": [1, 2, 3]},
             {"root": 67, "leaves": [6, 7]},
@@ -305,7 +304,7 @@ def test_evaldata_matches_precision_recall():
         ]
     )
 
-    judgements = pa.Table.from_pylist(
+    judgements = pl.DataFrame(
         [
             # Ambiguous but more positive than negative
             {"shown": 123, "endorsed": 12, "user_id": 1},
@@ -376,7 +375,7 @@ def test_evaldata_optimization_consistency():
     import unittest.mock
 
     # Simple test case with known results
-    judgements = pa.table(
+    judgements = pl.DataFrame(
         {
             "user_id": [1],
             "shown": [100],
@@ -384,14 +383,14 @@ def test_evaldata_optimization_consistency():
         }
     )
 
-    expansion = pa.table(
+    expansion = pl.DataFrame(
         {
             "root": [100],
             "leaves": [[1, 2]],
         }
     )
 
-    model_root_leaf = pa.table({"root": [1, 1], "leaf": [1, 2]})
+    model_root_leaf = pl.DataFrame({"root": [1, 1], "leaf": [1, 2]})
 
     # Mock the handler
     with unittest.mock.patch(
@@ -421,7 +420,7 @@ def test_evaldata_handles_edge_cases():
     from matchbox.common.eval import precision_recall
 
     # Model with various clusters
-    model = pa.Table.from_pylist(
+    model = pl.DataFrame(
         [
             # Cluster that will be endorsed
             {"root": 12, "leaf": 1},
@@ -435,7 +434,7 @@ def test_evaldata_handles_edge_cases():
         ]
     )
 
-    expansion = pa.Table.from_pylist(
+    expansion = pl.DataFrame(
         [
             {"root": 12, "leaves": [1, 2]},
             {"root": 34, "leaves": [3, 4]},
@@ -443,7 +442,7 @@ def test_evaldata_handles_edge_cases():
         ]
     )
 
-    judgements = pa.Table.from_pylist(
+    judgements = pl.DataFrame(
         [
             # Positive endorsement
             {"shown": 12, "endorsed": 12, "user_id": 1},

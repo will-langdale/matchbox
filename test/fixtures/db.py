@@ -1,9 +1,10 @@
 import io
 import os
 import tempfile
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generator
+from typing import TYPE_CHECKING, Any
 
 import boto3
 import pytest
@@ -98,6 +99,14 @@ def sqlite_warehouse() -> Generator[Engine, None, None]:
         engine = create_engine(f"sqlite:///{tmp.name}")
         yield engine
         engine.dispose()
+
+
+@pytest.fixture(scope="function")
+def sqlite_in_memory_warehouse() -> Generator[Engine, None, None]:
+    """Creates an in-memory engine for a function-scoped SQLite warehouse database."""
+    engine = create_engine("sqlite:///:memory:")
+    yield engine
+    engine.dispose()
 
 
 # Matchbox database fixtures

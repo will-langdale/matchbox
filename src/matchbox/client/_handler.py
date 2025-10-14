@@ -3,10 +3,12 @@
 import time
 import zipfile
 from collections.abc import Iterable
+from enum import StrEnum
 from importlib.metadata import version
 from io import BytesIO
 
 import httpx
+import polars as pl
 from pyarrow import Table
 from pyarrow.parquet import read_table
 from tenacity import (
@@ -31,37 +33,39 @@ from matchbox.common.dtos import (
     BackendCountableType,
     BackendParameterType,
     BackendResourceType,
+    Collection,
+    CollectionName,
     LoginAttempt,
     LoginResult,
-    ModelAncestor,
-    ModelConfig,
+    Match,
+    ModelResolutionPath,
     NotFoundError,
-    ResolutionOperationStatus,
+    Resolution,
+    ResolutionPath,
+    ResolutionType,
+    ResourceOperationStatus,
+    Run,
+    RunID,
+    SourceResolutionPath,
     UploadStage,
     UploadStatus,
 )
 from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.exceptions import (
+    MatchboxCollectionNotFoundError,
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
     MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
+    MatchboxRunNotFoundError,
     MatchboxServerFileError,
-    MatchboxSourceNotFoundError,
     MatchboxTooManySamplesRequested,
     MatchboxUnhandledServerResponse,
     MatchboxUnparsedClientRequest,
     MatchboxUserNotFoundError,
 )
-from matchbox.common.graph import (
-    ModelResolutionName,
-    ResolutionGraph,
-    ResolutionName,
-    SourceResolutionName,
-)
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.logging import logger
-from matchbox.common.sources import Match, SourceConfig
 
 URLEncodeHandledType = str | int | float | bytes
 
@@ -83,7 +87,7 @@ def encode_param_value(
 ) -> str | list[str]:
     if isinstance(v, str):
         return v
-    elif isinstance(v, (int, float)):
+    if isinstance(v, StrEnum | int | float):
         return str(v)
     elif isinstance(v, bytes):
         return hash_to_base64(v)
@@ -118,8 +122,10 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
     if res.status_code == 404:
         error = NotFoundError.model_validate(res.json())
         match error.entity:
-            case BackendResourceType.SOURCE:
-                raise MatchboxSourceNotFoundError(error.details)
+            case BackendResourceType.COLLECTION:
+                raise MatchboxCollectionNotFoundError(error.details)
+            case BackendResourceType.RUN:
+                raise MatchboxRunNotFoundError(error.details)
             case BackendResourceType.RESOLUTION:
                 raise MatchboxResolutionNotFoundError(error.details)
             case BackendResourceType.CLUSTER:
@@ -130,7 +136,7 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
                 raise RuntimeError(f"Unexpected 404 error: {error.details}")
 
     if res.status_code == 409:
-        error = ResolutionOperationStatus.model_validate(res.json())
+        error = ResourceOperationStatus.model_validate(res.json())
         raise MatchboxDeletionNotConfirmed(message=error.details)
 
     if res.status_code == 422:
@@ -183,9 +189,9 @@ def login(user_name: str) -> int:
 
 @http_retry
 def query(
-    source: SourceResolutionName,
+    source: SourceResolutionPath,
     return_leaf_id: bool,
-    resolution: ResolutionName | None = None,
+    resolution: ResolutionPath | None = None,
     threshold: int | None = None,
     limit: int | None = None,
 ) -> Table:
@@ -197,8 +203,10 @@ def query(
         "/query",
         params=url_params(
             {
-                "source": source,
-                "resolution": resolution,
+                "collection": source.collection,
+                "run_id": source.run,
+                "source": source.name,
+                "resolution": resolution.name if resolution else None,
                 "return_leaf_id": return_leaf_id,
                 "threshold": threshold,
                 "limit": limit,
@@ -225,16 +233,16 @@ def query(
 
 @http_retry
 def match(
-    targets: list[SourceResolutionName],
-    source: SourceResolutionName,
+    targets: list[SourceResolutionPath],
+    source: SourceResolutionPath,
     key: str,
-    resolution: ResolutionName,
+    resolution: ResolutionPath,
     threshold: int | None = None,
-) -> Match:
+) -> list[Match]:
     """Match a source against a list of targets."""
     log_prefix = f"Query {source}"
     logger.debug(
-        f"{key} to {', '.join(targets)} using {resolution}",
+        f"{key} to {', '.join(str(targets))} using {resolution}",
         prefix=log_prefix,
     )
 
@@ -242,10 +250,12 @@ def match(
         "/match",
         params=url_params(
             {
-                "targets": targets,
-                "source": source,
+                "collection": resolution.collection,
+                "run_id": resolution.run,
+                "targets": [t.name for t in targets],
+                "source": source.name,
                 "key": key,
-                "resolution": resolution,
+                "resolution": resolution.name,
                 "threshold": threshold,
             }
         ),
@@ -261,115 +271,146 @@ def match(
     return matches
 
 
-# Data management
+# Collection management
 
 
 @http_retry
-def index(source_config: SourceConfig, data_hashes: Table) -> UploadStatus:
-    """Index from a SourceConfig in Matchbox."""
-    log_prefix = f"Index {source_config.name}"
+def get_collection(name: CollectionName) -> Collection:
+    """Get all runs and resolutions in a collection."""
+    log_prefix = f"Collection {name}"
+    logger.debug("Retrieving", prefix=log_prefix)
 
-    buffer = table_to_buffer(table=data_hashes)
+    res = CLIENT.get(f"/collections/{name}")
+    return Collection.model_validate(res.json())
 
-    # Upload metadata
-    logger.debug("Uploading metadata", prefix=log_prefix)
 
-    metadata_res = CLIENT.post("/sources", json=source_config.model_dump(mode="json"))
+@http_retry
+def create_collection(name: CollectionName) -> ResourceOperationStatus:
+    """Create a new collection."""
+    log_prefix = f"Collection {name}"
+    logger.debug("Creating", prefix=log_prefix)
 
-    upload = UploadStatus.model_validate(metadata_res.json())
-
-    # Upload data
-    logger.debug("Uploading data", prefix=log_prefix)
-
-    upload_res = CLIENT.post(
-        f"/upload/{upload.id}",
-        files={"file": (f"{upload.id}.parquet", buffer, "application/octet-stream")},
+    res = CLIENT.post(
+        f"/collections/{name}",
     )
 
-    # Poll until complete with retry/timeout configuration
-    status = UploadStatus.model_validate(upload_res.json())
-    while status.stage not in [UploadStage.COMPLETE, UploadStage.FAILED]:
-        status_res = CLIENT.get(f"/upload/{upload.id}/status")
-        status = UploadStatus.model_validate(status_res.json())
+    return ResourceOperationStatus.model_validate(res.json())
 
-        logger.debug(f"Uploading data: {status.stage}", prefix=log_prefix)
 
-        if status.stage == UploadStage.FAILED:
-            raise MatchboxServerFileError(status.details)
-
-        time.sleep(settings.retry_delay)
-
-    logger.debug("Finished")
-
-    return status
+# Run management
 
 
 @http_retry
-def get_source_config(name: SourceResolutionName) -> SourceConfig:
-    log_prefix = f"SourceConfig {name}"
+def get_run(collection: CollectionName, run_id: RunID) -> Run:
+    """Get all resolutions in a run."""
+    log_prefix = f"Collection {collection}, run {run_id}"
     logger.debug("Retrieving", prefix=log_prefix)
 
-    res = CLIENT.get(f"/sources/{name}")
-
-    return SourceConfig.model_validate(res.json())
-
-
-@http_retry
-def get_resolution_source_configs(name: ModelResolutionName) -> list[SourceConfig]:
-    log_prefix = f"Resolution {name}"
-    logger.debug("Retrieving", prefix=log_prefix)
-
-    res = CLIENT.get("/sources", params={"name": name})
-
-    return [SourceConfig.model_validate(s) for s in res.json()]
+    res = CLIENT.get(f"/collections/{collection}/runs/{run_id}")
+    return Run.model_validate(res.json())
 
 
 @http_retry
-def get_resolution_graph() -> ResolutionGraph:
-    """Get the resolution graph from Matchbox."""
-    log_prefix = "Visualisation"
-    logger.debug("Fetching resolution graph", prefix=log_prefix)
+def create_run(collection: CollectionName) -> ResourceOperationStatus:
+    """Create a new run."""
+    log_prefix = f"Collection {collection}, new run"
+    logger.debug("Creating", prefix=log_prefix)
 
-    res = CLIENT.get("/report/resolutions")
-    return ResolutionGraph.model_validate(res.json())
+    res = CLIENT.post(f"/collections/{collection}/runs")
 
-
-# Model management
+    return Run.model_validate(res.json())
 
 
 @http_retry
-def insert_model(model_config: ModelConfig) -> ResolutionOperationStatus:
-    """Insert a model in Matchbox."""
-    log_prefix = f"Model {model_config.name}"
-    logger.debug("Inserting metadata", prefix=log_prefix)
+def delete_run(
+    collection: CollectionName, run_id: RunID, certain: bool = False
+) -> ResourceOperationStatus:
+    """Delete a run in Matchbox."""
+    log_prefix = f"Collection {collection}, run {run_id}"
+    logger.debug("Deleting", prefix=log_prefix)
 
-    res = CLIENT.post("/models", json=model_config.model_dump())
-    return ResolutionOperationStatus.model_validate(res.json())
+    res = CLIENT.delete(
+        f"/collections/{collection}/runs/{run_id}",
+        params={"certain": certain},
+    )
+    return ResourceOperationStatus.model_validate(res.json())
 
 
 @http_retry
-def get_model(name: ModelResolutionName) -> ModelConfig | None:
-    """Get model metadata from Matchbox."""
-    log_prefix = f"Model {name}"
+def set_run_mutable(
+    collection: CollectionName, run_id: RunID, mutable: bool
+) -> ResourceOperationStatus:
+    """Set a run as mutable for a collection."""
+    log_prefix = f"Collection {collection}, run {run_id}"
+    logger.debug("Setting mutability", prefix=log_prefix)
+
+    res = CLIENT.patch(f"/collections/{collection}/runs/{run_id}/mutable", json=mutable)
+    return ResourceOperationStatus.model_validate(res.json())
+
+
+@http_retry
+def set_run_default(
+    collection: CollectionName, run_id: RunID, default: bool
+) -> ResourceOperationStatus:
+    """Set a run as the default run for a collection."""
+    log_prefix = f"Collection {collection}, run {run_id}"
+    logger.debug("Setting as default", prefix=log_prefix)
+
+    res = CLIENT.patch(f"/collections/{collection}/runs/{run_id}/default", json=default)
+    return ResourceOperationStatus.model_validate(res.json())
+
+
+# Resolution management
+
+
+@http_retry
+def create_resolution(
+    resolution: Resolution,
+    path: ResolutionPath,
+) -> ResourceOperationStatus:
+    """Create a resolution (model or source)."""
+    log_prefix = f"Resolution {path}"
+    logger.debug("Creating", prefix=log_prefix)
+
+    res = CLIENT.post(
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}",
+        json=resolution.model_dump(),
+    )
+
+    return ResourceOperationStatus.model_validate(res.json())
+
+
+@http_retry
+def get_resolution(
+    path: ResolutionPath, validate_type: ResolutionType | None = None
+) -> Resolution | None:
+    """Get a resolution from Matchbox."""
+    log_prefix = f"Resolution {path}"
     logger.debug("Retrieving metadata", prefix=log_prefix)
 
-    try:
-        res = CLIENT.get(f"/models/{name}")
-        return ModelConfig.model_validate(res.json())
-    except MatchboxResolutionNotFoundError:
-        return None
+    res = CLIENT.get(
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}",
+        params=url_params({"validate_type": validate_type}),
+    )
+    return Resolution.model_validate(res.json())
 
 
 @http_retry
-def add_model_results(name: ModelResolutionName, results: Table) -> UploadStatus:
-    """Upload model results in Matchbox."""
-    log_prefix = f"Model {name}"
+def set_data(
+    path: ResolutionPath, data: pl.DataFrame | Table, validate_type: ResolutionType
+) -> UploadStatus:
+    """Upload source hashes or model results to server."""
+    log_prefix = f"Resolution {path}"
     logger.debug("Uploading results", prefix=log_prefix)
 
-    buffer = table_to_buffer(table=results)
+    data_arrow = data.to_arrow() if isinstance(data, pl.DataFrame) else data
+    buffer = table_to_buffer(table=data_arrow)
 
     # Initialise upload
-    metadata_res = CLIENT.post(f"/models/{name}/results")
+    metadata_res = CLIENT.post(
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data",
+        params=url_params({"validate_type": validate_type}),
+    )
 
     upload = UploadStatus.model_validate(metadata_res.json())
 
@@ -400,105 +441,103 @@ def add_model_results(name: ModelResolutionName, results: Table) -> UploadStatus
 
 
 @http_retry
-def get_model_results(name: ModelResolutionName) -> Table:
+def get_results(path: ModelResolutionPath) -> Table:
     """Get model results from Matchbox."""
-    log_prefix = f"Model {name}"
+    log_prefix = f"Model {path}"
     logger.debug("Retrieving results", prefix=log_prefix)
 
-    res = CLIENT.get(f"/models/{name}/results")
+    res = CLIENT.get(
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data"
+    )
     buffer = BytesIO(res.content)
     return read_table(buffer)
 
 
 @http_retry
-def set_model_truth(name: ModelResolutionName, truth: int) -> ResolutionOperationStatus:
+def set_truth(path: ModelResolutionPath, truth: int) -> ResourceOperationStatus:
     """Set the truth threshold for a model in Matchbox."""
-    log_prefix = f"Model {name}"
+    log_prefix = f"Model {path}"
     logger.debug("Setting truth value", prefix=log_prefix)
 
-    res = CLIENT.patch(f"/models/{name}/truth", json=truth)
-    return ResolutionOperationStatus.model_validate(res.json())
+    res = CLIENT.patch(
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/truth",
+        json=truth,
+    )
+    return ResourceOperationStatus.model_validate(res.json())
 
 
 @http_retry
-def get_model_truth(name: ModelResolutionName) -> int:
+def get_truth(path: ModelResolutionPath) -> int:
     """Get the truth threshold for a model in Matchbox."""
-    log_prefix = f"Model {name}"
+    log_prefix = f"Model {path}"
     logger.debug("Retrieving truth value", prefix=log_prefix)
 
-    res = CLIENT.get(f"/models/{name}/truth")
+    res = CLIENT.get(
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/truth"
+    )
     return res.json()
 
 
 @http_retry
-def get_model_ancestors(name: ModelResolutionName) -> list[ModelAncestor]:
-    """Get the ancestors of a model in Matchbox."""
-    log_prefix = f"Model {name}"
-    logger.debug("Retrieving ancestors", prefix=log_prefix)
-
-    res = CLIENT.get(f"/models/{name}/ancestors")
-    return [ModelAncestor.model_validate(m) for m in res.json()]
-
-
-@http_retry
-def set_model_ancestors_cache(
-    name: ModelResolutionName, ancestors: list[ModelAncestor]
-) -> ResolutionOperationStatus:
-    """Set the ancestors cache for a model in Matchbox."""
-    log_prefix = f"Model {name}"
-    logger.debug("Setting ancestors cached truth values", prefix=log_prefix)
-
-    res = CLIENT.post(
-        f"/models/{name}/ancestors_cache",
-        json=[a.model_dump() for a in ancestors],
-    )
-    return ResolutionOperationStatus.model_validate(res.json())
-
-
-@http_retry
-def get_model_ancestors_cache(name: ModelResolutionName) -> list[ModelAncestor]:
-    """Get the ancestors cache for a model in Matchbox."""
-    log_prefix = f"Model {name}"
-    logger.debug("Getting ancestors cached truth values", prefix=log_prefix)
-
-    res = CLIENT.get(f"/models/{name}/ancestors_cache")
-    return [ModelAncestor.model_validate(m) for m in res.json()]
-
-
-@http_retry
 def delete_resolution(
-    name: ModelResolutionName, certain: bool = False
-) -> ResolutionOperationStatus:
+    path: ModelResolutionPath, certain: bool = False
+) -> ResourceOperationStatus:
     """Delete a resolution in Matchbox."""
-    log_prefix = f"Model {name}"
+    log_prefix = f"Model {path}"
     logger.debug("Deleting", prefix=log_prefix)
 
-    res = CLIENT.delete(f"/resolutions/{name}", params={"certain": certain})
-    return ResolutionOperationStatus.model_validate(res.json())
+    res = CLIENT.delete(
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}",
+        params={"certain": certain},
+    )
+    return ResourceOperationStatus.model_validate(res.json())
 
 
 # Evaluation
 
 
 @http_retry
-def sample_for_eval(n: int, resolution: ModelResolutionName, user_id: int) -> Table:
+def sample_for_eval(n: int, resolution: ModelResolutionPath, user_id: int) -> Table:
+    """Sample model results for evaluation."""
     res = CLIENT.get(
         "/eval/samples",
-        params=url_params({"n": n, "resolution": resolution, "user_id": user_id}),
+        params=url_params(
+            {
+                "n": n,
+                "collection": resolution.collection,
+                "run_id": resolution.run,
+                "resolution": resolution.name,
+                "user_id": user_id,
+            }
+        ),
     )
 
     return read_table(BytesIO(res.content))
 
 
 @http_retry
-def compare_models(resolutions: list[ModelResolutionName]) -> ModelComparison:
-    res = CLIENT.get("/eval/compare", params=url_params({"resolutions": resolutions}))
+def compare_models(
+    resolutions: list[ModelResolutionPath],
+) -> ModelComparison:
+    """Get a model comparison for a set of model resolutions."""
+    qualified_resolution = [
+        ModelResolutionPath(
+            collection=resolution.collection,
+            run=resolution.run,
+            name=resolution,
+        )
+        for resolution in resolutions
+    ]
+    res = CLIENT.post(
+        "/eval/compare", json=[r.model_dump() for r in qualified_resolution]
+    )
     scores = {resolution: tuple(pr) for resolution, pr in res.json().items()}
     return scores
 
 
 @http_retry
 def send_eval_judgement(judgement: Judgement) -> None:
+    """Send judgements to the server."""
     logger.debug(
         f"Submitting judgement {judgement.shown}:{judgement.endorsed} "
         f"for {judgement.user_id}"
@@ -508,6 +547,7 @@ def send_eval_judgement(judgement: Judgement) -> None:
 
 @http_retry
 def download_eval_data() -> tuple[Table, Table]:
+    """Download all judgements from the server."""
     logger.debug("Retrieving all judgements.")
     res = CLIENT.get("/eval/judgements")
 
@@ -524,7 +564,7 @@ def download_eval_data() -> tuple[Table, Table]:
     check_schema(SCHEMA_JUDGEMENTS, judgements.schema)
     check_schema(SCHEMA_CLUSTER_EXPANSION, expansion.schema)
 
-    return judgements, expansion
+    return pl.from_arrow(judgements), pl.from_arrow(expansion)
 
 
 # Admin

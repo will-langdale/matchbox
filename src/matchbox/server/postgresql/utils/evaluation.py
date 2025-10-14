@@ -1,6 +1,6 @@
 """Evaluation logic for PostgreSQL adapter."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import polars as pl
@@ -14,12 +14,11 @@ from matchbox.common.arrow import (
     SCHEMA_JUDGEMENTS,
 )
 from matchbox.common.db import sql_to_df
+from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.eval import Judgement, precision_recall
 from matchbox.common.exceptions import (
-    MatchboxResolutionNotFoundError,
     MatchboxUserNotFoundError,
 )
-from matchbox.common.graph import ModelResolutionName
 from matchbox.common.transform import hash_cluster_leaves
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
@@ -92,14 +91,14 @@ def insert_judgement(judgement: Judgement):
                     user_id=judgement.user_id,
                     shown_cluster_id=judgement.shown,
                     endorsed_cluster_id=endorsed_cluster_id,
-                    timestamp=datetime.now(timezone.utc),
+                    timestamp=datetime.now(UTC),
                 )
             )
 
             session.commit()
 
 
-def get_judgements() -> tuple[Table, Table]:
+def get_judgements() -> tuple[pl.DataFrame, pl.DataFrame]:
     """Get all judgements from server."""
     judgements_stmt = select(
         EvalJudgements.user_id,
@@ -116,8 +115,8 @@ def get_judgements() -> tuple[Table, Table]:
 
         if not len(judgements):
             return (
-                pa.Table.from_pylist([], schema=SCHEMA_JUDGEMENTS),
-                pa.Table.from_pylist([], schema=SCHEMA_CLUSTER_EXPANSION),
+                pl.DataFrame([], schema=pl.Schema(SCHEMA_JUDGEMENTS)),
+                pl.DataFrame([], schema=pl.Schema(SCHEMA_CLUSTER_EXPANSION)),
             )
 
         shown_clusters = set(judgements["shown"].to_pylist())
@@ -162,7 +161,7 @@ def get_judgements() -> tuple[Table, Table]:
     return judgements, cluster_expansion
 
 
-def sample(n: int, resolution: ModelResolutionName, user_id: int):
+def sample(n: int, resolution_path: ModelResolutionPath, user_id: int):
     """Sample some clusters from a resolution."""
     # Not currently checking validity of the user_id
     # If the user ID does not exist, the exclusion by previous judgements breaks
@@ -171,15 +170,10 @@ def sample(n: int, resolution: ModelResolutionName, user_id: int):
         raise ValueError("Can only sample 100 entries at a time.")
 
     with MBDB.get_session() as session:
-        # Retrieve metadata of target resolution
-        if resolution_info := session.execute(
-            select(Resolutions.resolution_id, Resolutions.truth).where(
-                Resolutions.name == resolution
-            )
-        ).first():
-            resolution_id, truth = resolution_info
-        else:
-            raise MatchboxResolutionNotFoundError(name=resolution)
+        # Use ORM to get resolution metadata
+        resolution_orm = Resolutions.from_path(path=resolution_path, session=session)
+        resolution_id = resolution_orm.resolution_id
+        truth = resolution_orm.truth
 
     # Get a list of cluster IDs and features for this resolution and user
     user_judgements = (
@@ -212,15 +206,15 @@ def sample(n: int, resolution: ModelResolutionName, user_id: int):
 
     # Exclude clusters recently judged by this user
     to_sample = cluster_features.filter(
-        (pl.col("latest_ts") < datetime.now(timezone.utc) - timedelta(days=365))
+        (pl.col("latest_ts") < datetime.now(UTC) - timedelta(days=365))
         | (pl.col("latest_ts").is_null())
     )
 
     # Return early if nothing to sample from
     if not len(to_sample):
-        return Table.from_pydict(
+        return pl.DataFrame(
             {"root": [], "leaf": [], "key": [], "source": []},
-            schema=SCHEMA_EVAL_SAMPLES,
+            schema=pl.Schema(SCHEMA_EVAL_SAMPLES),
         )
 
     # Sample proportionally to distance from the truth, and get 1D array
@@ -277,17 +271,17 @@ def sample(n: int, resolution: ModelResolutionName, user_id: int):
             [pl.col("root").cast(pl.UInt64), pl.col("leaf").cast(pl.UInt64)]
         ).to_arrow()
 
-    return final_samples
-
 
 def compare_models(
-    resolutions: list[ModelResolutionName], judgements: Table, expansion: Table
+    resolutions: list[ModelResolutionPath],
+    judgements: pl.DataFrame,
+    expansion: pl.DataFrame,
 ):
     """Compare models on the basis of precision and recall."""
 
-    def get_root_leaf(resolution_name: ModelResolutionName) -> Table:
+    def get_root_leaf(resolution_path: ModelResolutionPath) -> Table:
         with MBDB.get_session() as session:
-            resolution = Resolutions.from_name(resolution_name, session=session)
+            resolution = Resolutions.from_path(resolution_path, session=session)
             # The session which fetched the resolution needs to be alive while
             # the root-leaf query is built
             root_leaf_query = build_unified_query(
@@ -304,7 +298,7 @@ def compare_models(
                 {"root_id": "root", "leaf_id": "leaf"}
             ).select(["root", "leaf"])
 
-    models_root_leaf = [get_root_leaf(res) for res in resolutions]
+    models_root_leaf = [pl.from_arrow(get_root_leaf(res)) for res in resolutions]
 
     pr_values = precision_recall(
         models_root_leaf=models_root_leaf,

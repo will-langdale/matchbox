@@ -1,0 +1,5 @@
+set working-directory := "../../../.."
+
+# Run evaluation app with scenario data
+default scenario="" log="":
+    uv run python test/scripts/eval.py {{scenario}} --log "{{log}}"

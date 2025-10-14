@@ -13,6 +13,7 @@ from matchbox.common.factories.scenarios import (
 from matchbox.server.base import MatchboxDBAdapter
 
 
+@pytest.mark.docker
 def test_setup_scenario_bare(
     matchbox_postgres: MatchboxDBAdapter, sqlite_warehouse: Engine
 ):
@@ -33,6 +34,7 @@ def test_scenario_registry():
     assert "convergent" in SCENARIO_REGISTRY
 
 
+@pytest.mark.docker
 def test_register_custom_scenario(
     matchbox_postgres: MatchboxDBAdapter, sqlite_warehouse: Engine
 ):
@@ -52,17 +54,19 @@ def test_register_custom_scenario(
     del SCENARIO_REGISTRY["custom"]
 
 
+@pytest.mark.docker
 def test_setup_unknown_scenario(
     matchbox_postgres: MatchboxDBAdapter, sqlite_warehouse: Engine
 ):
     """Test that asking for an unknown scenario raises a ValueError."""
-    with pytest.raises(ValueError, match="Unknown scenario type: nonexistent"):
-        with setup_scenario(
-            matchbox_postgres, "nonexistent", warehouse=sqlite_warehouse
-        ):
-            pass
+    with (
+        pytest.raises(ValueError, match="Unknown scenario type: nonexistent"),
+        setup_scenario(matchbox_postgres, "nonexistent", warehouse=sqlite_warehouse),
+    ):
+        pass
 
 
+@pytest.mark.docker
 @patch("matchbox.common.factories.scenarios._DATABASE_SNAPSHOTS_CACHE", {})
 @patch("matchbox.common.factories.scenarios.SCENARIO_REGISTRY", {})
 def test_caching_scenario(

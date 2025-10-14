@@ -1,15 +1,20 @@
 from typing import Any, Literal
 
+import polars as pl
 import pytest
 
+from matchbox.client.queries import Query
 from matchbox.common.arrow import SCHEMA_RESULTS
+from matchbox.common.dtos import (
+    ModelResolutionName,
+    ResolutionName,
+)
 from matchbox.common.factories.models import (
     generate_dummy_probabilities,
     model_factory,
     query_to_model_factory,
 )
 from matchbox.common.factories.sources import linked_sources_factory, source_factory
-from matchbox.common.graph import ModelResolutionName, ResolutionName
 
 
 def test_model_factory_entity_preservation():
@@ -89,44 +94,44 @@ def test_model_type_creation(
     )
 
     # Basic type verification
-    assert model.model.model_config.type == expected_type
+    assert model.model.config.type == expected_type
     assert (model.right_query is not None) == should_have_right
     assert (model.right_clusters is not None) == should_have_right
 
     # Verify probabilities were generated
     assert len(model.probabilities) > 0
-    assert model.probabilities.schema.equals(SCHEMA_RESULTS)
+    assert model.probabilities.schema == pl.Schema(SCHEMA_RESULTS)
 
     # Test threshold setting and querying
     initial_threshold = 80
     model.threshold = initial_threshold
-    initial_query = model.query
-    initial_ids = set(initial_query["id"].to_pylist())
+    initial_data = model.data
+    initial_ids = set(initial_data["id"].to_pylist())
     assert len(initial_ids) > 0
 
     # Test threshold change affects results
     new_threshold = 90
     model.threshold = new_threshold
-    new_query = model.query
-    new_ids = set(new_query["id"].to_pylist())
+    new_data = model.data
+    new_ids = set(new_data["id"].to_pylist())
 
     # Higher threshold should result in more distinct entities, as fewer merge
     assert len(new_ids) >= len(initial_ids)
 
     # Verify schema consistency
-    assert initial_query.schema == new_query.schema
-    assert "id" in initial_query.column_names
+    assert initial_data.schema == new_data.schema
+    assert "id" in initial_data.column_names
 
     # For linkers, verify we maintain separation between left and right IDs
     if expected_type == "linker":
-        left_ids = set(model.left_query["id"].to_pylist())
-        right_ids = set(model.right_query["id"].to_pylist())
+        left_ids = set(model.left_data["id"].to_pylist())
+        right_ids = set(model.right_data["id"].to_pylist())
         assert not (
             left_ids & right_ids
         ), "Left and right IDs should be disjoint in linker"
 
-        prob_left_ids = set(model.probabilities["left_id"].to_pylist())
-        prob_right_ids = set(model.probabilities["right_id"].to_pylist())
+        prob_left_ids = set(model.probabilities["left_id"].to_list())
+        prob_right_ids = set(model.probabilities["right_id"].to_list())
         assert (
             prob_left_ids <= left_ids
         ), "Probability left IDs should be subset of left IDs"
@@ -225,8 +230,10 @@ def test_model_pipeline_with_dummy_methodology(
 
     # Test with imperfect methodology
     random_probabilities = generate_dummy_probabilities(
-        left_values=model_entities[0],
-        right_values=model_entities[1],
+        left_values=tuple(c.id for c in model_entities[0]),
+        right_values=tuple(c.id for c in model_entities[1])
+        if model_entities[1] is not None
+        else None,
         prob_range=(0.0, 1.0),
         num_components=len(all_true_sources) - 1,  # Intentionally wrong
     )
@@ -380,9 +387,9 @@ def test_model_factory_basic_creation(
     )
 
     # Basic metadata checks
-    assert model.model.model_config.name == name
-    assert model.model.model_config.description == description
-    assert str(model.model.model_config.type) == expected_checks["type"]
+    assert model.model.name == name
+    assert model.model.description == description
+    assert str(model.model.config.type) == expected_checks["type"]
 
     # Structure checks
     assert (model.right_query is not None) == expected_checks["has_right"]
@@ -483,7 +490,7 @@ def test_model_factory_with_sources(source_config: dict, expected_checks: dict) 
     )
 
     # Basic type checks
-    assert str(model.model.model_config.type) == expected_checks["type"]
+    assert str(model.model.config.type) == expected_checks["type"]
     assert (model.right_query is not None) == expected_checks["has_right"]
     assert (model.right_clusters is not None) == expected_checks["has_right"]
 
@@ -515,22 +522,16 @@ def test_model_factory_seed_behavior(seed1: int, seed2: int, should_be_equal: bo
     dummy2 = model_factory(seed=seed2)
 
     if should_be_equal:
-        assert dummy1.model.model_config.name == dummy2.model.model_config.name
-        assert (
-            dummy1.model.model_config.description
-            == dummy2.model.model_config.description
-        )
-        assert dummy1.left_query.equals(dummy2.left_query)
+        assert dummy1.model.name == dummy2.model.name
+        assert dummy1.model.description == dummy2.model.description
+        assert dummy1.left_data.equals(dummy2.left_data)
         assert set(dummy1.left_clusters) == set(dummy2.left_clusters)
         assert set(dummy1.entities) == set(dummy2.entities)
         assert dummy1.probabilities.equals(dummy2.probabilities)
     else:
-        assert dummy1.model.model_config.name != dummy2.model.model_config.name
-        assert (
-            dummy1.model.model_config.description
-            != dummy2.model.model_config.description
-        )
-        assert not dummy1.left_query.equals(dummy2.left_query)
+        assert dummy1.model.name != dummy2.model.name
+        assert dummy1.model.description != dummy2.model.description
+        assert not dummy1.left_data.equals(dummy2.left_data)
         assert set(dummy1.left_clusters) != set(dummy2.left_clusters)
         assert set(dummy1.entities) != set(dummy2.entities)
         assert not dummy1.probabilities.equals(dummy2.probabilities)
@@ -544,27 +545,27 @@ def test_query_to_model_factory_validation():
     true_entities = tuple(linked.true_entities)
 
     # Extract query and keys for our function
-    left_query = left_testkit.query
+    left_data = left_testkit.data
     left_keys = {"crn": "key"}
 
     # Test invalid probability range
     with pytest.raises(ValueError, match="Probabilities must be increasing values"):
         query_to_model_factory(
-            left_resolution="crn",
-            left_query=left_query,
+            left_query=Query(left_testkit.source, dag=linked.dag),
+            left_data=left_data,
             left_keys=left_keys,
             true_entities=true_entities,
             prob_range=(0.9, 0.8),
         )
 
     # Test inconsistent right-side arguments
-    with pytest.raises(ValueError, match="all of right_resolution, right_query"):
+    with pytest.raises(ValueError, match="all of right_"):
         query_to_model_factory(
-            left_resolution="crn",
-            left_query=left_query,
+            left_query=Query(left_testkit.source, dag=linked.dag),
+            left_data=left_data,
             left_keys=left_keys,
             true_entities=true_entities,
-            right_resolution="right",
+            right_query=Query(linked.sources["duns"].source, dag=linked.dag),
         )
 
 
@@ -609,40 +610,41 @@ def test_query_to_model_factory_creation(
 
     # Get left source
     left_testkit = linked.sources["crn"]
-    left_query = left_testkit.query
+    left_data = left_testkit.data
     left_keys = {"crn": "key"}
 
     # Setup right query if needed
-    right_query = None
+    right_testkit = None
+    right_data = None
     right_keys = None
-    right_resolution = None
+    right_query = None
 
     if test_config["right_args"]:
         right_testkit = linked.sources["cdms"]
-        right_query = right_testkit.query
+        right_data = right_testkit.data
         right_keys = {"cdms": "key"}
-        right_resolution = "cdms"
+        right_query = Query(right_testkit.source, dag=linked.dag)
 
     # Create the model using our function
     model = query_to_model_factory(
-        left_resolution="crn",
-        left_query=left_query,
+        left_query=Query(left_testkit.source, dag=linked.dag),
+        left_data=left_data,
         left_keys=left_keys,
         true_entities=true_entities,
-        right_resolution=right_resolution,
         right_query=right_query,
+        right_data=right_data,
         right_keys=right_keys,
         prob_range=test_config["prob_range"],
         seed=42,
     )
 
     # Basic type checks
-    assert str(model.model.model_config.type) == expected_checks["type"]
+    assert str(model.model.config.type) == expected_checks["type"]
     assert (model.right_query is not None) == expected_checks["has_right"]
     assert (model.right_clusters is not None) == expected_checks["has_right"]
 
     # Verify probabilities
-    assert model.probabilities.schema.equals(SCHEMA_RESULTS)
+    assert model.probabilities.schema == pl.Schema(SCHEMA_RESULTS)
     if len(model.probabilities) > 0:
         probs = model.probabilities["probability"].to_numpy() / 100
         assert all(p >= expected_checks["prob_min"] for p in probs)
@@ -666,39 +668,33 @@ def test_query_to_model_factory_seed_behavior(
 
     # Get source
     left_testkit = linked.sources["crn"]
-    left_query = left_testkit.query
+    left_data = left_testkit.data
     left_keys = {"crn": "key"}
 
     # Create two models with different seeds
     model1 = query_to_model_factory(
-        left_resolution="crn",
-        left_query=left_query,
+        left_query=Query(left_testkit.source, dag=linked.dag),
+        left_data=left_data,
         left_keys=left_keys,
         true_entities=true_entities,
         seed=seed1,
     )
 
     model2 = query_to_model_factory(
-        left_resolution="crn",
-        left_query=left_query,
+        left_query=Query(left_testkit.source, dag=linked.dag),
+        left_data=left_data,
         left_keys=left_keys,
         true_entities=true_entities,
         seed=seed2,
     )
 
     if should_be_equal:
-        assert model1.model.model_config.name == model2.model.model_config.name
-        assert (
-            model1.model.model_config.description
-            == model2.model.model_config.description
-        )
+        assert model1.model.name == model2.model.name
+        assert model1.model.description == model2.model.description
         assert model1.probabilities.equals(model2.probabilities)
     else:
-        assert model1.model.model_config.name != model2.model.model_config.name
-        assert (
-            model1.model.model_config.description
-            != model2.model.model_config.description
-        )
+        assert model1.model.name != model2.model.name
+        assert model1.model.description != model2.model.description
         if len(model1.probabilities) > 0 and len(model2.probabilities) > 0:
             assert not model1.probabilities.equals(model2.probabilities)
 
@@ -718,19 +714,19 @@ def test_query_to_model_factory_compare_with_model_factory():
     )
 
     # Extract queries for our new function
-    left_query = linked.sources["crn"].query
-    right_query = linked.sources["cdms"].query
+    left_data = linked.sources["crn"].data
+    right_data = linked.sources["cdms"].data
     left_keys = {"crn": "key"}
     right_keys = {"cdms": "key"}
 
     # Create model using query_to_model_factory
     query_model = query_to_model_factory(
-        left_resolution="crn",
-        left_query=left_query,
+        left_query=Query(linked.sources["crn"].source, dag=linked.dag),
+        left_data=left_data,
         left_keys=left_keys,
         true_entities=true_entities,
-        right_resolution="cdms",
-        right_query=right_query,
+        right_query=Query(linked.sources["cdms"].source, dag=linked.dag),
+        right_data=right_data,
         right_keys=right_keys,
         seed=42,
     )
@@ -748,6 +744,4 @@ def test_query_to_model_factory_compare_with_model_factory():
     assert len(standard_model.entities) == len(query_model.entities)
 
     # Compare model type
-    assert str(standard_model.model.model_config.type) == str(
-        query_model.model.model_config.type
-    )
+    assert str(standard_model.model.config.type) == str(query_model.model.config.type)

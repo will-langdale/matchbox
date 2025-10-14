@@ -1,14 +1,15 @@
 import pytest
 from httpx import Client
-from matplotlib.figure import Figure
 from sqlalchemy import Engine, text
 
 from matchbox.client import _handler
-from matchbox.client.cli.eval import EvalData
-from matchbox.client.cli.eval.ui import EntityResolutionApp
-from matchbox.client.dags import DAG, DedupeStep, IndexStep, StepInput
+from matchbox.client.cli.eval import EntityResolutionApp, EvalData
+from matchbox.client.dags import DAG
 from matchbox.client.models.dedupers import NaiveDeduper
+from matchbox.client.results import Results
+from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.arrow import SCHEMA_CLUSTER_EXPANSION, SCHEMA_JUDGEMENTS
+from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.factories.sources import (
     FeatureConfig,
     LinkedSourcesTestkit,
@@ -16,7 +17,6 @@ from matchbox.common.factories.sources import (
     SuffixRule,
     linked_sources_factory,
 )
-from matchbox.common.sources import RelationalDBLocation, SourceConfig
 
 
 @pytest.mark.docker
@@ -27,7 +27,12 @@ class TestE2EModelEvaluation:
     warehouse_engine: Engine | None = None
     linked_testkit: LinkedSourcesTestkit | None = None
     n_true_entities: int | None = None
-    final_resolution: str | None = None
+    final_resolution_1_name: str | None = None
+    final_resolution_2_name: str | None = None
+    final_resolution_1_path: ModelResolutionPath | None = None
+    final_resolution_2_path: ModelResolutionPath | None = None
+    final_resolution_1_results: Results | None = None
+    final_resolution_2_results: Results | None = None
 
     def _clean_company_name(self, column: str) -> str:
         """Generate cleaning SQL for a company name column."""
@@ -54,8 +59,10 @@ class TestE2EModelEvaluation:
         self.__class__.client = matchbox_client
         self.__class__.warehouse_engine = postgres_warehouse
         self.__class__.n_true_entities = n_true_entities
-        self.__class__.final_resolution_1 = "final_1"
-        self.__class__.final_resolution_2 = "final_2"
+        self.__class__.final_resolution_1_name = "final_1"
+        self.__class__.final_resolution_2_name = "final_2"
+        self.__class__.final_resolution_1_path = None
+        self.__class__.final_resolution_2_path = None
         self.__class__.final_resolution_1_results = None
         self.__class__.final_resolution_2_results = None
 
@@ -86,7 +93,7 @@ class TestE2EModelEvaluation:
             source_parameters=source_parameters, seed=42
         )
         for source_testkit in self.linked_testkit.sources.values():
-            source_testkit.write_to_location(client=postgres_warehouse, set_client=True)
+            source_testkit.write_to_location()
 
         # Clear matchbox database before test
         response = matchbox_client.delete("/database", params={"certain": "true"})
@@ -94,8 +101,11 @@ class TestE2EModelEvaluation:
 
         # === SHARED CONFIGURATION ===
         dw_loc = RelationalDBLocation(name="postgres", client=postgres_warehouse)
-        batch_size = 1000
-        source_a_config = SourceConfig.new(
+
+        # === DAG 1: Created by User 1 (Strict Deduplication) ===
+        dag1 = DAG("companies1").new_run()
+
+        source_a_dag1 = dag1.source(
             location=dw_loc,
             name="source_a",
             extract_transform="""
@@ -106,62 +116,76 @@ class TestE2EModelEvaluation:
                 from
                     source_a;
             """,
+            infer_types=True,
             key_field="id",
             index_fields=["company_name", "registration_id"],
         )
 
-        # The IndexStep is a common prerequisite for both DAGs
-        i_source_a = IndexStep(source_config=source_a_config, batch_size=batch_size)
-
-        # === DAG 1: Created by User 1 (Strict Deduplication) ===
-        dedupe_by_id = DedupeStep(
-            left=StepInput(
-                prev_node=i_source_a,
-                select={source_a_config: ["registration_id"]},
-                batch_size=batch_size,
-            ),
-            name=self.final_resolution_1,
+        dedupe_by_id = source_a_dag1.query().deduper(
+            name=self.final_resolution_1_name,
             description="Deduplicate by registration ID",
             model_class=NaiveDeduper,
-            settings={
+            model_settings={
                 "id": "id",
-                "unique_fields": [source_a_config.f("registration_id")],
+                "unique_fields": [source_a_dag1.f("registration_id")],
             },
-            truth=1.0,
         )
-        dag1 = DAG()
-        dag1.add_steps(i_source_a, dedupe_by_id)
-        dag1.run()
+
+        dag1.run_and_sync()
+
+        # Construct ModelResolutionPath after DAG is synced
+        self.__class__.final_resolution_1_path = ModelResolutionPath(
+            collection=dag1.name, run=dag1.run, name=self.final_resolution_1_name
+        )
 
         # Stash results
-        self.final_resolution_1_results = dedupe_by_id.run(for_eval=True)
+        self.__class__.final_resolution_1_results = dedupe_by_id.run(
+            for_validation=True
+        )
 
         # === DAG 2: Created by User 2 (Loose Deduplication) ===
-        # This DAG also indexes the same source and applies a different rule.
-        # Its final step name is what we will use for the evaluation.
-        dedupe_by_name = DedupeStep(
-            left=StepInput(
-                prev_node=i_source_a,
-                select={source_a_config: ["company_name"]},
-                cleaning_dict={
-                    "company_name": self._clean_company_name(
-                        source_a_config.f("company_name")
-                    )
-                },
-                batch_size=batch_size,
-            ),
-            name=self.final_resolution_2,
+        dag2 = DAG("companies2").new_run()
+
+        source_a_dag2 = dag2.source(
+            location=dw_loc,
+            name="source_a",
+            extract_transform="""
+                select
+                    key::text as id, 
+                    company_name, 
+                    registration_id 
+                from
+                    source_a;
+            """,
+            infer_types=True,
+            key_field="id",
+            index_fields=["company_name", "registration_id"],
+        )
+
+        dedupe_by_name = source_a_dag2.query(
+            cleaning={
+                "company_name": self._clean_company_name(
+                    source_a_dag2.f("company_name")
+                )
+            }
+        ).deduper(
+            name=self.final_resolution_2_name,
             description="Deduplicate by company name",
             model_class=NaiveDeduper,
-            settings={"id": "id", "unique_fields": ["company_name"]},
-            truth=0.8,
+            model_settings={"id": "id", "unique_fields": ["company_name"]},
         )
-        dag2 = DAG()
-        dag2.add_steps(i_source_a, dedupe_by_name)
-        dag2.run()
+
+        dag2.run_and_sync()
+
+        # Construct ModelResolutionPath after DAG is synced
+        self.__class__.final_resolution_2_path = ModelResolutionPath(
+            collection=dag2.name, run=dag2.run, name=self.final_resolution_2_name
+        )
 
         # Stash results
-        self.final_resolution_2_results = dedupe_by_name.run(for_eval=True)
+        self.__class__.final_resolution_2_results = dedupe_by_name.run(
+            for_validation=True
+        )
 
         yield
 
@@ -180,10 +204,10 @@ class TestE2EModelEvaluation:
         app startup → user painting → submission → model evaluation.
         """
         app = EntityResolutionApp(
-            resolution=self.final_resolution_1,
+            resolution=self.final_resolution_1_path,
             num_samples=5,
             user="alice",
-            warehouse=self.warehouse_engine.url,
+            warehouse=str(self.warehouse_engine.url),
         )
 
         # Test the complete user workflow with Textual UI
@@ -199,7 +223,7 @@ class TestE2EModelEvaluation:
 
             # Let the app fetch samples as a user would experience
             if not app.state.queue.items:
-                await app._fetch_additional_samples()
+                await app._fetch_additional_samples(10)
 
             # Should now have samples to work with
             assert len(app.state.queue.items) > 0, "App should have loaded samples"
@@ -257,7 +281,3 @@ class TestE2EModelEvaluation:
         pr = (p, r)
         assert isinstance(pr, tuple)
         assert len(pr) == 2
-
-        # Test PR curve generation with real judgements
-        pr_curve = eval_data.pr_curve_mpl()
-        assert isinstance(pr_curve, Figure)

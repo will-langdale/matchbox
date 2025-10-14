@@ -1,0 +1,208 @@
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.2.3)'
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      packages: write
+      attestations: write
+      id-token: write
+    
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate we're on main branch
+        run: |
+          current_branch=$(git branch --show-current)
+          if [ "$current_branch" != "main" ]; then
+            echo "Error: Must be on main branch"
+            exit 1
+          fi
+
+      - name: Process version and tag
+        id: version
+        run: |
+          input_version="${{ github.event.inputs.version }}"
+          clean_version=${input_version#v}
+          
+          # Validate version format
+          if ! echo "$clean_version" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Error: Version must be in format x.x.x (with or without v prefix)"
+            exit 1
+          fi
+          
+          git_tag="v$clean_version"
+          
+          # Check if tag already exists
+          if git rev-parse "$git_tag" >/dev/null 2>&1; then
+            echo "Error: Tag $git_tag already exists"
+            exit 1
+          fi
+          
+          echo "version=$clean_version" >> $GITHUB_OUTPUT
+          echo "tag=$git_tag" >> $GITHUB_OUTPUT
+          echo "Clean version: $clean_version"
+          echo "Git tag: $git_tag"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with: 
+          python-version: "3.11"
+
+      - name: Build package
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.version.outputs.version }}
+        run: uv build
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-dist
+          path: ./dist
+
+      - name: Install the project
+        run: uv sync --frozen --all-extras --dev
+
+      - name: Build documentation
+        run: uv run mkdocs build
+
+      - name: Upload documentation artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+      - name: Log in to GitHub packages Docker registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract tag metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=latest
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/matchbox/server/Dockerfile
+          push: false
+          load: true
+          build-args: |
+            MB_VERSION=${{ steps.version.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+
+      - name: Save Docker image
+        run: |
+          # Save all tags created by the build
+          docker save ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
+            > ${{ runner.temp }}/docker-image.tar
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: ${{ runner.temp }}/docker-image.tar
+
+  deploy-package:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    
+    environment: pypi
+    
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: package-dist
+          path: ./dist
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  deploy-docs:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
+    
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+      - name: Deploy documentation to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  deploy-docker:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    
+    steps:
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: ${{ runner.temp }}
+
+      - name: Load Docker image
+        run: docker load --input ${{ runner.temp }}/docker-image.tar
+
+      - name: Log in to GitHub packages Docker registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Docker image
+        run: docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} --all-tags
+
+  create-release:
+    needs: [build, deploy-package, deploy-docs, deploy-docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Create tag and GitHub release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ needs.build.outputs.tag }}
+          name: ${{ needs.build.outputs.tag }}
+          generateReleaseNotes: true

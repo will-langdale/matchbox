@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from matchbox.client.cli.eval.app import EntityResolutionApp
+from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.exceptions import MatchboxClientSettingsException
 
 
@@ -12,21 +13,28 @@ class TestEntityResolutionAppIntegration:
     """Integration tests for the main app."""
 
     @pytest.fixture
-    def app(self):
-        """Create app instance for testing."""
-        return EntityResolutionApp(resolution="test_resolution", num_samples=5)
+    def test_resolution(self):
+        """Create test resolution path."""
+        return ModelResolutionPath(
+            collection="test_collection", run=1, name="test_resolution"
+        )
 
-    def test_app_initialisation(self, app):
+    @pytest.fixture
+    def app(self, test_resolution):
+        """Create app instance for testing."""
+        return EntityResolutionApp(resolution=test_resolution, num_samples=5)
+
+    def test_app_initialisation(self, app, test_resolution):
         """Test that app initialises with correct state."""
-        assert app.state.resolution == "test_resolution"
+        assert app.state.resolution == test_resolution
         assert app.state.sample_limit == 5
         assert app.handlers.app is app
         assert app.handlers.state is app.state
 
     @pytest.mark.asyncio
-    async def test_app_runs_in_test_mode(self):
+    async def test_app_runs_in_test_mode(self, test_resolution):
         """Test that the app can run in test mode without errors."""
-        app = EntityResolutionApp(resolution="test_resolution", num_samples=5)
+        app = EntityResolutionApp(resolution=test_resolution, num_samples=5)
 
         with (
             patch("matchbox.client.cli.eval.app.settings") as mock_settings,
@@ -48,9 +56,9 @@ class TestEntityResolutionAppIntegration:
             assert app.state.user_id == 123
 
     @pytest.mark.asyncio
-    async def test_authentication_required(self):
+    async def test_authentication_required(self, test_resolution):
         """Test that authentication is required."""
-        app = EntityResolutionApp()
+        app = EntityResolutionApp(resolution=test_resolution)
 
         with patch("matchbox.client.cli.eval.app.settings") as mock_settings:
             mock_settings.user = None
@@ -59,9 +67,9 @@ class TestEntityResolutionAppIntegration:
                 await app.authenticate()
 
     @pytest.mark.asyncio
-    async def test_authentication_with_injected_user(self):
+    async def test_authentication_with_injected_user(self, test_resolution):
         """Test authentication with user injected via constructor."""
-        app = EntityResolutionApp(user="injected_user")
+        app = EntityResolutionApp(resolution=test_resolution, user="injected_user")
 
         with patch("matchbox.client.cli.eval.app._handler.login") as mock_login:
             mock_login.return_value = 456
@@ -72,9 +80,9 @@ class TestEntityResolutionAppIntegration:
             assert app.state.user_id == 456
 
     @pytest.mark.asyncio
-    async def test_eval_data_loading_success(self):
+    async def test_eval_data_loading_success(self, test_resolution):
         """Test successful eval data loading."""
-        app = EntityResolutionApp(resolution="test_resolution")
+        app = EntityResolutionApp(resolution=test_resolution)
 
         mock_eval_data = Mock()
         with patch(
@@ -91,7 +99,10 @@ class TestEntityResolutionAppIntegration:
     @pytest.mark.asyncio
     async def test_eval_data_loading_error(self):
         """Test eval data loading error handling."""
-        app = EntityResolutionApp(resolution="nonexistent_resolution")
+        error_resolution = ModelResolutionPath(
+            collection="test_collection", run=1, name="nonexistent_resolution"
+        )
+        app = EntityResolutionApp(resolution=error_resolution)
 
         with patch(
             "matchbox.client.cli.eval.app.EvalData.from_resolution"
@@ -105,9 +116,9 @@ class TestEntityResolutionAppIntegration:
             assert "not found" in app.state.eval_data_error.lower()
 
     @pytest.mark.asyncio
-    async def test_sample_loading(self):
+    async def test_sample_loading(self, test_resolution):
         """Test loading evaluation samples."""
-        app = EntityResolutionApp()
+        app = EntityResolutionApp(resolution=test_resolution)
         app.state.user_id = 123
 
         mock_samples = {1: Mock(), 2: Mock()}
@@ -121,9 +132,9 @@ class TestEntityResolutionAppIntegration:
         assert app.state.queue.total_count == 2
 
     @pytest.mark.asyncio
-    async def test_refresh_display_with_current_item(self):
+    async def test_refresh_display_with_current_item(self, test_resolution):
         """Test refresh display with current queue item."""
-        app = EntityResolutionApp()
+        app = EntityResolutionApp(resolution=test_resolution)
 
         mock_item = Mock()
         mock_item.display_columns = [1, 2, 3]
@@ -135,9 +146,9 @@ class TestEntityResolutionAppIntegration:
         assert app.state.display_leaf_ids == [1, 2, 3]
 
     @pytest.mark.asyncio
-    async def test_refresh_display_no_current_item(self):
+    async def test_refresh_display_no_current_item(self, test_resolution):
         """Test refresh display with no current queue item."""
-        app = EntityResolutionApp()
+        app = EntityResolutionApp(resolution=test_resolution)
 
         await app.refresh_display()
 
@@ -145,9 +156,9 @@ class TestEntityResolutionAppIntegration:
         assert app.state.display_leaf_ids == []
 
     @pytest.mark.asyncio
-    async def test_key_delegation_to_handlers(self):
+    async def test_key_delegation_to_handlers(self, test_resolution):
         """Test that key events are delegated to handlers."""
-        app = EntityResolutionApp()
+        app = EntityResolutionApp(resolution=test_resolution)
         app.handlers.handle_key_input = AsyncMock()
 
         mock_event = Mock()
@@ -156,9 +167,9 @@ class TestEntityResolutionAppIntegration:
         app.handlers.handle_key_input.assert_called_once_with(mock_event)
 
     @pytest.mark.asyncio
-    async def test_action_delegation_to_handlers(self):
+    async def test_action_delegation_to_handlers(self, test_resolution):
         """Test that actions are delegated to handlers."""
-        app = EntityResolutionApp()
+        app = EntityResolutionApp(resolution=test_resolution)
 
         # Mock all handler methods
         app.handlers.action_next_entity = AsyncMock()
@@ -187,9 +198,9 @@ class TestEntityResolutionAppIntegration:
         await app.action_submit_and_fetch()
         app.handlers.action_submit_and_fetch.assert_called_once()
 
-    def test_compose_creates_expected_structure(self):
+    def test_compose_creates_expected_structure(self, test_resolution):
         """Test that compose creates the expected UI structure."""
-        app = EntityResolutionApp()
+        app = EntityResolutionApp(resolution=test_resolution)
 
         composed = list(app.compose())
 
@@ -223,9 +234,9 @@ class TestEntityResolutionAppIntegration:
             )
             mock_engine.dispose.assert_called_once()
 
-    def test_error_message_creation(self):
+    def test_error_message_creation(self, test_resolution):
         """Test creation of user-friendly error messages."""
-        app = EntityResolutionApp()
+        app = EntityResolutionApp(resolution=test_resolution)
 
         # Test various error types
         not_found_error = ValueError("Model 'test' not found in database")

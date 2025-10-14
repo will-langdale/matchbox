@@ -3,7 +3,7 @@ name = "matchbox-db"
 dynamic = ["version"]
 description = "A framework for orchestrating and comparing data linking and deduplication methodologies."
 authors = [{ name="Department for Business and Trade" }]
-license = {file = "LICENSE"}
+license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
@@ -13,7 +13,6 @@ dependencies = [
     "faker>=36.1.1",
     "frozendict>=2.4.6",
     "httpx>=0.28.0",
-    "matplotlib>=3.9.2",
     "pandas>=2.2.3",
     "plotext>=5.3.2",
     "polars-hash>=0.5.3",
@@ -92,7 +91,8 @@ default-groups = ["dev", "typing"]
 package = true
 upgrade-package = ["ruff"]
 constraint-dependencies = [
-    "urllib3>=2.5.0"
+    "urllib3>=2.5.0",
+    "setuptools-scm>=9.2.0"
 ]
 
 [tool.ruff]
@@ -110,7 +110,12 @@ select = [
     "F",
     "I",
     "B",
-    "D"
+    "D",
+    "UP",
+    "TID",
+    "BLE",
+    "PLC",
+    "SIM"
 ]
 # Stricter rules for the CLI
 extend-select = [

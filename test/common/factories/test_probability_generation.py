@@ -1,7 +1,7 @@
 from typing import Any
 
 import numpy as np
-import pyarrow.compute as pc
+import polars as pl
 import pytest
 
 from matchbox.common.arrow import SCHEMA_RESULTS
@@ -17,8 +17,10 @@ from matchbox.common.factories.models import (
     generate_entity_probabilities,
 )
 from matchbox.common.transform import DisjointSet
-
-from ..factories.test_entity_factory import make_cluster_entity, make_source_entity
+from test.common.factories.test_entity_factory import (
+    make_cluster_entity,
+    make_source_entity,
+)
 
 
 @pytest.mark.parametrize(
@@ -156,8 +158,8 @@ def test_generate_dummy_probabilities(parameters: dict[str, Any]):
         total_rows=total_rows,
     )
     report = component_report(table=probabilities, all_nodes=rand_vals)
-    p_left = probabilities["left_id"].to_pylist()
-    p_right = probabilities["right_id"].to_pylist()
+    p_left = probabilities["left_id"].to_list()
+    p_right = probabilities["right_id"].to_list()
 
     assert report["num_components"] == n_components
 
@@ -169,14 +171,8 @@ def test_generate_dummy_probabilities(parameters: dict[str, Any]):
     else:
         assert set(p_left) | set(p_right) <= set(left_values)
 
-    assert (
-        pc.max(probabilities["probability"]).as_py() / 100
-        <= parameters["prob_range"][1]
-    )
-    assert (
-        pc.min(probabilities["probability"]).as_py() / 100
-        >= parameters["prob_range"][0]
-    )
+    assert probabilities["probability"].max() / 100 <= parameters["prob_range"][1]
+    assert probabilities["probability"].min() / 100 >= parameters["prob_range"][0]
 
     assert len(probabilities) == total_rows
 
@@ -204,8 +200,8 @@ def test_generate_dummy_probabilities_no_self_references():
         return
 
     # If no ValueError was raised, continue with the rest of the checks
-    p_left = probabilities["left_id"].to_pylist()
-    p_right = probabilities["right_id"].to_pylist()
+    p_left = probabilities["left_id"].to_list()
+    p_right = probabilities["right_id"].to_list()
 
     # Check for self-references
     self_references = [
@@ -413,13 +409,13 @@ def test_generate_entity_probabilities_scenarios(
     )
 
     # Check schema
-    assert result.schema.equals(SCHEMA_RESULTS)
+    assert result.schema == pl.Schema(SCHEMA_RESULTS)
 
     # Get edges from result
     edges = list(
         zip(
-            result.column("left_id").to_pylist(),
-            result.column("right_id").to_pylist(),
+            result["left_id"].to_list(),
+            result["right_id"].to_list(),
             strict=True,
         )
     )
@@ -429,7 +425,7 @@ def test_generate_entity_probabilities_scenarios(
 
     # For non-empty results, validate probability ranges
     if edges:
-        probs = result.column("probability").to_numpy()
+        probs = result["probability"].to_numpy()
         prob_min, prob_max = expected["prob_range"]
         assert all(prob_min <= p <= prob_max for p in probs)
 
@@ -526,7 +522,7 @@ def test_disjoint_set_recovery():
 
     # Use DisjointSet to cluster based on high probabilities
     ds = DisjointSet[int]()
-    for row in table.to_pylist():
+    for row in table.to_dicts():
         if row["probability"] >= 90:  # High confidence matches
             ds.union(row["left_id"], row["right_id"])
 
@@ -602,11 +598,11 @@ def test_complex_entity_recovery():
     )
 
     # There should be edges connecting all entities (n*(n-1))/2 = 10 edges
-    assert table.num_rows == 10
+    assert len(table) == 10
 
     # Use DisjointSet to cluster
     ds = DisjointSet[int]()
-    for row in table.to_pylist():
+    for row in table.to_dicts():
         if row["probability"] >= 90:
             ds.union(row["left_id"], row["right_id"])
 

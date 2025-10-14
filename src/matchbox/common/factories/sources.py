@@ -1,22 +1,30 @@
 """Factories for generating sources and linked source testkits for testing."""
 
 import warnings
+from collections.abc import Callable
 from functools import cache, wraps
 from itertools import product
-from typing import Any, Callable, ParamSpec, TypeVar
-from unittest.mock import Mock, create_autospec
+from typing import Any, ParamSpec, Self, TypeVar
 
 import pandas as pd
 import polars as pl
 import pyarrow as pa
 from faker import Faker
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import Engine, create_engine
 from sqlglot import cast, select
 from sqlglot.expressions import column
 
-from matchbox.common.arrow import SCHEMA_INDEX
-from matchbox.common.dtos import DataTypes
+from matchbox.client.dags import DAG
+from matchbox.client.sources import RelationalDBLocation, Source
+from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_QUERY
+from matchbox.common.dtos import (
+    DataTypes,
+    SourceConfig,
+    SourceField,
+    SourceResolutionName,
+    SourceResolutionPath,
+)
 from matchbox.common.factories.entities import (
     ClusterEntity,
     EntityReference,
@@ -27,13 +35,7 @@ from matchbox.common.factories.entities import (
     generate_entities,
     probabilities_to_results_entities,
 )
-from matchbox.common.graph import SourceResolutionName
 from matchbox.common.hash import hash_values
-from matchbox.common.sources import (
-    RelationalDBLocation,
-    SourceConfig,
-    SourceField,
-)
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -86,8 +88,8 @@ class SourceTestkit(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    source_config: SourceConfig = Field(
-        description="The real generated SourceConfig object."
+    source: Source = Field(
+        description="The Source object containing config and convenience methods."
     )
     features: tuple[FeatureConfig, ...] | None = Field(
         description=(
@@ -96,59 +98,65 @@ class SourceTestkit(BaseModel):
         ),
         default=None,
     )
-    data: pa.Table = Field(description="The PyArrow table of generated data.")
+    data: pa.Table = Field(
+        description="The generated data, corresponding to the output of queries."
+    )
     data_hashes: pa.Table = Field(description="A PyArrow table of hashes for the data.")
     entities: tuple[ClusterEntity, ...] = Field(
         description="ClusterEntities that were generated from the source."
     )
 
+    @field_validator("data")
+    def cast_table(cls, value: pa.Table) -> pa.Table:
+        """Ensure that the data matches the query schema."""
+        for col in SCHEMA_QUERY.names:
+            cast_col = value[col].cast(SCHEMA_QUERY.field(col).type)
+            value = value.set_column(value.schema.get_field_index(col), col, cast_col)
+
+        return value
+
     @property
     def name(self) -> str:
-        """Return the resolution name of the SourceConfig."""
-        return self.source_config.name
+        """Return the source name."""
+        return self.source.name
 
     @property
-    def mock(self) -> Mock:
-        """Create a mock SourceConfig object with this testkit's configuration."""
-        mock_source_config = create_autospec(self.source_config)
-
-        mock_source_config.hash_data.return_value = self.data_hashes
-        mock_source_config.model_dump.side_effect = self.source_config.model_dump
-        mock_source_config.model_dump_json.side_effect = (
-            self.source_config.model_dump_json
-        )
-
-        return mock_source_config
+    def resolution_path(self) -> SourceResolutionPath:
+        """Returns the source resolution path."""
+        return self.source.resolution_path
 
     @property
-    def query(self) -> pa.Table:
-        """Return a PyArrow table in the same format as matchbox.query()."""
-        return self.data
+    def source_config(self) -> SourceConfig:
+        """Return the SourceConfig from the source."""
+        return self.source.config
 
-    @property
-    def query_backend(self) -> pa.Table:
-        """Return a PyArrow table in the same format as the SCHEMA_QUERY DTO."""
-        return pa.Table.from_arrays(
-            [self.data["id"], self.data["key"]], names=["id", "key"]
-        )
+    def into_dag(self) -> dict:
+        """Turn source into kwargs for `dag.source()`, detaching from original DAG."""
+        return {
+            "location": self.source.location,
+            "name": self.source.name,
+            "extract_transform": self.source.config.extract_transform,
+            "key_field": self.source.config.key_field,
+            "index_fields": self.source.config.index_fields,
+            "description": self.source.description,
+        }
 
-    def write_to_location(self, client: Any, set_client: bool = False) -> None:
+    def write_to_location(self, set_client: Any | None = None) -> Self:
         """Write the data to the SourceConfig's location.
 
-        The client isn't set in testkits, so it must be provided here.
-
         Args:
-            client: Client to use for the location.
-            set_client: Whether to set the client on the SourceConfig.
-                Offered here for convenience as it's often the next step.
+            set_client: client to replace existing source client
         """
+        if set_client:
+            self.source.location.client = set_client
+
         pl.from_arrow(self.data).write_database(
-            table_name=self.source_config.name,
-            connection=client,
+            table_name=self.source.name,
+            connection=self.source.location.client,
             if_table_exists="replace",
         )
-        if set_client:
-            self.source_config.location.add_client(client)
+
+        return self
 
 
 class LinkedSourcesTestkit(BaseModel):
@@ -156,8 +164,9 @@ class LinkedSourcesTestkit(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    dag: DAG
     true_entities: set[SourceEntity] = Field(default_factory=set)
-    sources: dict[str, SourceTestkit]
+    sources: dict[SourceResolutionName, SourceTestkit]
 
     def find_entities(
         self,
@@ -200,7 +209,7 @@ class LinkedSourcesTestkit(BaseModel):
 
     def diff_results(
         self,
-        probabilities: pa.Table,
+        probabilities: pl.DataFrame,
         sources: list[SourceResolutionName],
         left_clusters: tuple[ClusterEntity, ...],
         right_clusters: tuple[ClusterEntity, ...] | None = None,
@@ -235,18 +244,12 @@ class LinkedSourcesTestkit(BaseModel):
             ),
         )
 
-    def write_to_location(self, client: Any, set_client: bool = False) -> None:
-        """Write the data to the SourceConfig's location.
-
-        The client isn't set in testkits, so it must be provided here.
-
-        Args:
-            client: Client to use for the location.
-            set_client: Whether to set the client on the SourceConfig.
-                Offered here for convenience as it's often the next step.
-        """
+    def write_to_location(self) -> Self:
+        """Write the data to the SourceConfig's location."""
         for source_testkit in self.sources.values():
-            source_testkit.write_to_location(client, set_client)
+            source_testkit.write_to_location()
+
+        return self
 
 
 def generate_rows(
@@ -465,6 +468,7 @@ def source_factory(
     features: list[FeatureConfig] | list[dict] | None = None,
     name: SourceResolutionName | None = None,
     location_name: str = "dbname",
+    dag: DAG | None = None,
     engine: Engine | None = None,
     n_true_entities: int = 10,
     repetition: int = 0,
@@ -479,9 +483,10 @@ def source_factory(
         features: List of FeatureConfig objects or dictionaries to use for generating
             the source data. If None, defaults to a set of common features.
         name: Name of the source. If None, a unique name is generated. This will be
-            used as the name of the table in the RelationalDBLocation, but also as
+            used as the name of the table in the RelationalDBLocation, but also in
             the SourceResolutionName for the source.
         location_name: Name of the location for the source.
+        dag: DAG containing the source.
         engine: SQLAlchemy engine to use for the source's RelationalDBLocation. If
             None, an in-memory SQLite engine is created.
         n_true_entities: Number of true entities to generate. Defaults to 10.
@@ -509,6 +514,10 @@ def source_factory(
 
     if engine is None:
         engine = create_engine("sqlite:///:memory:")
+
+    if dag is None:
+        dag = DAG("collection")
+        dag.run = 1
 
     # Generate base entities
     base_entities = generate_entities(
@@ -550,9 +559,11 @@ def source_factory(
     )
 
     # Create source config
-    source_config = SourceConfig(
-        location=RelationalDBLocation(name=location_name),
+    source = Source(
+        dag=dag,
+        location=RelationalDBLocation(name=location_name, client=engine),
         name=name,
+        description=f"Generated source for {name}",
         extract_transform=select(
             cast(column(key_field.name), "string").as_(key_field.name),
             *[column(field.name) for field in index_fields],
@@ -564,7 +575,7 @@ def source_factory(
     )
 
     return SourceTestkit(
-        source_config=source_config,
+        source=source,
         features=features,
         data=data,
         data_hashes=data_hashes,
@@ -577,6 +588,7 @@ def source_from_tuple(
     data_keys: tuple[Any],
     name: str | None = None,
     location_name: str = "dbname",
+    dag: DAG | None = None,
     engine: Engine | None = None,
     seed: int = 42,
 ) -> SourceTestkit:
@@ -589,6 +601,10 @@ def source_from_tuple(
 
     if engine is None:
         engine = create_engine("sqlite:///:memory:")
+
+    if dag is None:
+        dag = DAG("collection")
+        dag.run = 1
 
     base_entities = tuple(SourceEntity(base_values=row) for row in data_tuple)
 
@@ -616,9 +632,11 @@ def source_from_tuple(
     )
 
     # Create source config
-    source_config = SourceConfig(
-        location=RelationalDBLocation(name=location_name),
+    source = Source(
+        dag=dag,
+        location=RelationalDBLocation(name=location_name, client=engine),
         name=name,
+        description=f"Generated source for {name}",
         extract_transform=select(
             cast(column(key_field.name), "string").as_(key_field.name),
             *[column(field.name) for field in index_fields],
@@ -646,7 +664,7 @@ def source_from_tuple(
     data = raw_data.append_column("id", [entity_ids]).append_column("key", raw_keys)
 
     return SourceTestkit(
-        source_config=source_config,
+        source=source,
         data=data,
         data_hashes=data_hashes,
         entities=tuple(sorted(results_entities)),
@@ -658,6 +676,7 @@ def linked_sources_factory(
     source_parameters: tuple[SourceTestkitParameters, ...] | None = None,
     n_true_entities: int | None = None,
     engine: Engine | None = None,
+    dag: DAG | None = None,
     seed: int = 42,
 ) -> LinkedSourcesTestkit:
     """Generate a set of linked sources with tracked entities.
@@ -669,10 +688,15 @@ def linked_sources_factory(
             SourceTestkitParameters must specify its own n_true_entities.
         engine: Optional SQLAlchemy engine to use for all sources. If provided,
             overrides any engine in source configs.
+        dag: DAG containing sources
         seed: Random seed for reproducibility
     """
     generator = Faker()
     generator.seed_instance(seed)
+
+    if dag is None:
+        dag = DAG("collection")
+        dag.run = 1
 
     default_engine = create_engine("sqlite:///:memory:")
 
@@ -796,6 +820,7 @@ def linked_sources_factory(
     # Initialize LinkedSourcesTestkit
     true_entity_lookup = {entity.id: entity for entity in all_entities}
     linked = LinkedSourcesTestkit(
+        dag=dag,
         true_entities=all_entities,
         sources={},
     )
@@ -828,9 +853,13 @@ def linked_sources_factory(
         )
 
         # Create source config
-        source_config = SourceConfig(
-            location=RelationalDBLocation(name=str(parameters.name)),
+        source = Source(
+            dag=dag,
+            location=RelationalDBLocation(
+                name=str(parameters.name), client=parameters.engine
+            ),
             name=parameters.name,
+            description=f"Generated source for {parameters.name}",
             extract_transform=select(
                 cast(column(key_field.name), "string").as_(key_field.name),
                 *[column(field.name) for field in index_fields],
@@ -843,7 +872,7 @@ def linked_sources_factory(
 
         # Add source to linked.sources
         linked.sources[parameters.name] = SourceTestkit(
-            source_config=source_config,
+            source=source,
             features=tuple(parameters.features),
             data=data,
             data_hashes=data_hashes,

@@ -17,8 +17,7 @@ from faker import Faker
 from frozendict import frozendict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from matchbox.common.dtos import DataTypes
-from matchbox.common.graph import SourceResolutionName
+from matchbox.common.dtos import DataTypes, SourceResolutionName
 from matchbox.common.transform import DisjointSet
 
 if TYPE_CHECKING:
@@ -174,7 +173,8 @@ class EntityReference(frozendict):
     """
 
     def __init__(
-        self, mapping: dict[SourceResolutionName, frozenset[str]] | None = None
+        self,
+        mapping: dict[SourceResolutionName, frozenset[str]] | None = None,
     ) -> None:
         """Initialise the EntityReference."""
         super().__init__({} if mapping is None else mapping)
@@ -459,7 +459,8 @@ class SourceEntity(BaseModel, EntityIDMixin, SourceKeyMixin):
 
 
 def query_to_cluster_entities(
-    query: pa.Table | pd.DataFrame | pl.DataFrame, keys: dict[SourceResolutionName, str]
+    data: pa.Table | pd.DataFrame | pl.DataFrame,
+    keys: dict[SourceResolutionName, str],
 ) -> set[ClusterEntity]:
     """Convert a query result to a set of ClusterEntities.
 
@@ -467,23 +468,21 @@ def query_to_cluster_entities(
     a set of ClusterEntities that can be used in `LinkedSourcesTestkit.diff_results()`.
 
     Args:
-        query: A PyArrow table or DataFrame representing a query result
+        data: A PyArrow table or DataFrame representing a query result
         keys: Mapping of source resolution names to key field names
 
     Returns:
         A set of ClusterEntity objects
     """
     # Convert polars to pandas for compatibility with existing logic
-    if isinstance(query, pl.DataFrame):
-        query = query.to_pandas()
-    elif isinstance(query, pa.Table):
-        query = query.to_pandas()
+    if isinstance(data, pl.DataFrame | pa.Table):
+        data = data.to_pandas()
 
     must_have_fields = set(["id"] + list(keys.values()))
-    if not must_have_fields.issubset(query.columns):
+    if not must_have_fields.issubset(data.columns):
         raise ValueError(
-            f"Fields {must_have_fields.difference(query.columns)} must be included "
-            "in the query and are missing."
+            f"Fields {must_have_fields.difference(data.columns)} must be included "
+            "in the data and are missing."
         )
 
     def _create_cluster_entity(group: pd.DataFrame) -> ClusterEntity:
@@ -498,7 +497,7 @@ def query_to_cluster_entities(
             keys=EntityReference(entity_refs),
         )
 
-    result = query.groupby("id").apply(_create_cluster_entity, include_groups=False)
+    result = data.groupby("id").apply(_create_cluster_entity, include_groups=False)
     return set(result.tolist())
 
 
@@ -523,7 +522,7 @@ def generate_entities(
 
 
 def probabilities_to_results_entities(
-    probabilities: pa.Table,
+    probabilities: pl.DataFrame,
     left_clusters: tuple[ClusterEntity, ...],
     right_clusters: tuple[ClusterEntity, ...] | None = None,
     threshold: float | int = 0,
@@ -549,7 +548,7 @@ def probabilities_to_results_entities(
             djs.add(entity)
 
     # Add edges to the disjoint set
-    for record in probabilities.to_pylist():
+    for record in probabilities.to_dicts():
         if record["probability"] >= threshold:
             djs.union(
                 left_lookup[record["left_id"]],

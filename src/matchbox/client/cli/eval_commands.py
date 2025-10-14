@@ -5,17 +5,26 @@ from typing import Annotated
 
 import typer
 
-from matchbox.client.cli.eval.ui import EntityResolutionApp
-from matchbox.common.graph import DEFAULT_RESOLUTION, ModelResolutionName
+from matchbox.client import _handler
+from matchbox.client.cli.eval.app import EntityResolutionApp
+from matchbox.common.dtos import CollectionName, ModelResolutionPath
 
 eval_app = typer.Typer(help="Entity evaluation commands")
 
 
 @eval_app.command()
 def start(
+    collection: Annotated[
+        str, typer.Option("--collection", "-c", help="Collection name (required)")
+    ],
     resolution: Annotated[
-        str, typer.Option("--resolution", "-r", help="Model resolution to sample from")
-    ] = DEFAULT_RESOLUTION,
+        str | None,
+        typer.Option(
+            "--resolution",
+            "-r",
+            help="Resolution name (defaults to collection's final_step)",
+        ),
+    ] = None,
     samples: Annotated[
         int,
         typer.Option("--samples", "-n", help="Number of entity clusters to evaluate"),
@@ -46,8 +55,32 @@ def start(
         if log_file:
             _setup_logging_redirect(log_file)
 
+        # Fetch collection and construct ModelResolutionPath
+        collection_name = CollectionName(collection)
+        collection_obj = _handler.get_collection(collection_name)
+        run_id = collection_obj.default_run
+
+        # Get resolution name from --resolution or use DAG's final_step
+        if resolution is None:
+            # Load DAG to get final_step
+            from matchbox.client.dags import DAG
+            from matchbox.client.sources import Location
+
+            dag = DAG(name=collection)
+            dag.load_default(location=Location())
+            resolution_name = dag.final_step.name
+        else:
+            resolution_name = resolution
+
+        # Construct the ModelResolutionPath
+        resolution_path = ModelResolutionPath(
+            collection=collection_name,
+            run=run_id,
+            name=resolution_name,
+        )
+
         app = EntityResolutionApp(
-            resolution=ModelResolutionName(resolution),
+            resolution=resolution_path,
             num_samples=samples,
             user=user,
             warehouse=warehouse,

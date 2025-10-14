@@ -7,62 +7,82 @@ from polars.testing import assert_frame_equal
 from pyarrow import Table
 from respx import MockRouter
 from sqlalchemy import Engine
-from sqlalchemy.exc import OperationalError
 
 from matchbox.client.cli.eval import get_samples
-from matchbox.client.cli.eval.utils import EvaluationItem
+from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, table_to_buffer
+from matchbox.common.exceptions import MatchboxSourceTableError
+from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.sources import source_from_tuple
 
 
 def test_get_samples(
     matchbox_api: MockRouter,
     sqlite_warehouse: Engine,
+    sqlite_in_memory_warehouse: Engine,
     env_setter: Callable[[str, str], None],
 ):
+    # Make dummmy data
     user_id = 12
 
-    # Mock sources
     # Foo has two identical rows
-    testkit_foo = source_from_tuple(
+    foo_testkit = source_from_tuple(
         data_tuple=({"col": 1}, {"col": 1}, {"col": 2}, {"col": 3}, {"col": 4}),
         data_keys=["1", "1bis", "2", "3", "4"],
         name="foo",
         location_name="db",
         engine=sqlite_warehouse,
-    )
-    testkit_foo.write_to_location(sqlite_warehouse)
-    source_foo = testkit_foo.source_config
+    ).write_to_location()
 
-    testkit_bar = source_from_tuple(
+    bar_testkit = source_from_tuple(
         data_tuple=({"col": 1}, {"col": 2}, {"col": 3}, {"col": 4}),
         data_keys=["a", "b", "c", "d"],
         name="bar",
         location_name="db",
         engine=sqlite_warehouse,
-    )
-    testkit_bar.write_to_location(sqlite_warehouse)
-    source_bar = testkit_bar.source_config
+    ).write_to_location()
 
     # This will be excluded as the location name differs
-    testkit_baz = source_from_tuple(
+    baz_testkit = source_from_tuple(
         data_tuple=({"col": 1},),
         data_keys=["x"],
         name="baz",
         location_name="db_other",
         engine=sqlite_warehouse,
-    )
-    testkit_baz.write_to_location(sqlite_warehouse)
-    source_baz = testkit_baz.source_config
+    ).write_to_location()
 
-    matchbox_api.get("/sources/foo").mock(
-        return_value=Response(200, content=source_foo.model_dump_json())
+    dag = TestkitDAG().dag
+
+    foo = dag.source(**foo_testkit.into_dag())
+    bar = dag.source(**bar_testkit.into_dag())
+    baz = dag.source(**baz_testkit.into_dag())
+    foo.query().linker(
+        bar.query(),
+        name="linker1",
+        model_class=DeterministicLinker,
+        model_settings={"comparisons": "l.key=r.key"},
+    ).query(foo, bar).linker(
+        baz.query(),
+        name="linker2",
+        model_class=DeterministicLinker,
+        model_settings={"comparisons": "l.key=r.key"},
     )
-    matchbox_api.get("/sources/bar").mock(
-        return_value=Response(200, content=source_bar.model_dump_json())
+
+    # Mock API endpoints
+    matchbox_api.get(f"/collections/{dag.name}/runs/{dag.run}/resolutions/foo").mock(
+        return_value=Response(
+            200, content=foo_testkit.source.to_resolution().model_dump_json()
+        )
     )
-    matchbox_api.get("/sources/baz").mock(
-        return_value=Response(200, content=source_baz.model_dump_json())
+    matchbox_api.get(f"/collections/{dag.name}/runs/{dag.run}/resolutions/bar").mock(
+        return_value=Response(
+            200, content=bar_testkit.source.to_resolution().model_dump_json()
+        )
+    )
+    matchbox_api.get(f"/collections/{dag.name}/runs/{dag.run}/resolutions/baz").mock(
+        return_value=Response(
+            200, content=baz_testkit.source.to_resolution().model_dump_json()
+        )
     )
 
     # Mock samples
@@ -95,7 +115,7 @@ def test_get_samples(
     with pytest.warns(UserWarning, match="Skipping"):
         samples = get_samples(
             n=10,
-            resolution="resolution",
+            resolution=dag.final_step.resolution_path,
             user_id=user_id,
             clients={"db": sqlite_warehouse},
         )
@@ -120,7 +140,7 @@ def test_get_samples(
         }
     )
 
-    # samples now contains EvaluationItem objects, not DataFrames
+    # samples now contains EvaluationItems, access .dataframe
     assert_frame_equal(
         samples[10].dataframe,
         expected_sample_10,
@@ -136,13 +156,6 @@ def test_get_samples(
         check_dtypes=False,
     )
 
-    # Verify that EvaluationItem has processed field data
-    assert isinstance(samples[10], EvaluationItem)
-    assert samples[10].cluster_id == 10
-    assert isinstance(samples[10].display_dataframe, pl.DataFrame)
-    assert isinstance(samples[10].display_columns, list)
-    assert isinstance(samples[10].duplicate_groups, list)
-
     # What happens if no samples are available?
     matchbox_api.get("/eval/samples").mock(
         return_value=Response(
@@ -155,7 +168,7 @@ def test_get_samples(
 
     no_samples = get_samples(
         n=10,
-        resolution="resolution",
+        resolution=dag.final_step.resolution_path,
         user_id=user_id,
         clients={"db": sqlite_warehouse},
     )
@@ -176,21 +189,24 @@ def test_get_samples(
         UserWarning, match="Skipping baz, incompatible with given client"
     ):
         no_accessible_samples = get_samples(
-            n=10, resolution="resolution", user_id=user_id
+            n=10, resolution=dag.final_step.resolution_path, user_id=user_id
         )
     assert no_accessible_samples == {}
 
     # Using default client as fallback
-    env_setter("MB__CLIENT__DEFAULT_WAREHOUSE", str(sqlite_warehouse.url))
-
     samples_default_creds = get_samples(
-        n=10, resolution="resolution", user_id=user_id, use_default_client=True
+        n=10,
+        resolution=dag.final_step.resolution_path,
+        user_id=user_id,
+        default_client=sqlite_warehouse,
     )
     assert len(samples_default_creds) == 1
 
     # What happens if source cannot be queried using client?
-    env_setter("MB__CLIENT__DEFAULT_WAREHOUSE", "sqlite:///:memory:")
-    with pytest.raises(OperationalError):
+    with pytest.raises(MatchboxSourceTableError):
         get_samples(
-            n=10, resolution="resolution", user_id=user_id, use_default_client=True
+            n=10,
+            resolution=dag.final_step.resolution_path,
+            user_id=user_id,
+            default_client=sqlite_in_memory_warehouse,
         )

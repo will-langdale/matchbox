@@ -16,13 +16,11 @@ The story:
 Example usage:
     data = [(threshold, precision, recall, p_ci, r_ci), ...]
     recall_grid, upper_bounds, lower_bounds = compute_pr_envelope(data)
-    plot_pr_envelope(data)  # matplotlib version
-    plotext_pr_envelope(data)  # terminal version
+    plotext_pr_envelope(data)  # plot in terminal
 """
 
 from collections.abc import Callable
 
-import matplotlib.pyplot as plt
 import numpy as np
 import plotext as pltxt
 from scipy.interpolate import PchipInterpolator
@@ -320,126 +318,6 @@ def compute_pr_envelope(
     return project_to_envelope(
         pr_data, precision_func, recall_func, precision_width_func, recall_width_func
     )
-
-
-def plot_pr_envelope(
-    pr_data: list[tuple[float, float, float, float, float]],
-    title: str = "3D PCHIP PR Envelope",
-) -> None:
-    """Plot PCHIP-derived confidence envelope with original data and curve."""
-    if not pr_data:
-        return
-
-    # Extract data
-    thresholds, precisions, recalls, p_cis, r_cis = zip(*pr_data, strict=False)
-
-    # Compute envelope
-    r_grid, p_upper, p_lower = compute_pr_envelope(pr_data)
-
-    # Compute interpolated PR curve with extrapolation tracking
-    r_curve, p_curve, is_extrapolated = interpolate_pr_curve(pr_data)
-
-    # Create visualisation
-    _, ax = plt.subplots(figsize=(12, 8))
-
-    # Confidence envelope
-    ax.fill_between(
-        r_grid,
-        p_lower,
-        p_upper,
-        alpha=0.3,
-        color="lightblue",
-        label="3D PCHIP Envelope",
-    )
-    ax.plot(r_grid, p_upper, "r-", linewidth=2, label="Upper Bound")
-    ax.plot(r_grid, p_lower, "r-", linewidth=2, label="Lower Bound")
-
-    # Interpolated PR curve - split into interpolated and extrapolated regions
-    # Find transition points between interpolated and extrapolated regions
-    transitions = np.where(np.diff(is_extrapolated.astype(int)))[0]
-
-    # Always start with index 0 and end with last index
-    indices = np.concatenate([[0], transitions + 1, [len(r_curve)]])
-
-    # Plot each segment with appropriate style
-    for i in range(len(indices) - 1):
-        start_idx = indices[i]
-        end_idx = indices[i + 1]
-        segment_r = r_curve[start_idx:end_idx]
-        segment_p = p_curve[start_idx:end_idx]
-
-        if is_extrapolated[start_idx]:
-            # Extrapolated region: dashed line, slightly transparent
-            label = (
-                "Extrapolated"
-                if i == 0 or not is_extrapolated[indices[i - 1]]
-                else None
-            )
-            ax.plot(segment_r, segment_p, "g--", linewidth=2, alpha=0.7, label=label)
-        else:
-            # Interpolated region: solid line
-            label = (
-                "Interpolated PR Curve"
-                if i == 0 or is_extrapolated[indices[i - 1]]
-                else None
-            )
-            ax.plot(segment_r, segment_p, "g-", linewidth=2.5, label=label)
-
-    # Original data with error bars
-    ax.errorbar(
-        recalls,
-        precisions,
-        xerr=r_cis,
-        yerr=p_cis,
-        fmt="o",
-        color="darkblue",
-        markersize=6,
-        capsize=4,
-        markeredgecolor="white",
-        markeredgewidth=1.5,
-        label="Data ± CI",
-    )
-
-    # Threshold annotations
-    for i, t in enumerate(thresholds):
-        ax.annotate(
-            f"{t:.2f}",
-            (recalls[i], precisions[i]),
-            xytext=(5, 5),
-            textcoords="offset points",
-            fontsize=8,
-            alpha=0.7,
-        )
-
-    # Mark the data extent with subtle vertical lines
-    min_recall = min(recalls)
-    max_recall = max(recalls)
-    ax.axvline(x=min_recall, color="gray", linestyle=":", alpha=0.3, linewidth=1)
-    ax.axvline(x=max_recall, color="gray", linestyle=":", alpha=0.3, linewidth=1)
-
-    # Styling
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.set_xlabel("Recall")
-    ax.set_ylabel("Precision")
-    ax.set_title(title)
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-
-    # Statistics
-    area = np.trapezoid(p_upper - p_lower, r_grid)
-    ax.text(
-        0.02,
-        0.98,
-        f"Area: {area:.3f}\nPoints: {len(pr_data)}\nMethod: PCHIP + Probabilistic",
-        transform=ax.transAxes,
-        va="top",
-        fontsize=9,
-        bbox=dict(boxstyle="round", facecolor="white", alpha=0.9),
-    )
-
-    plt.tight_layout()
-    plt.show()
 
 
 def plotext_pr_envelope(

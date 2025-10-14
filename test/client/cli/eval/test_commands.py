@@ -5,11 +5,8 @@ import polars as pl
 from matchbox.client.cli.eval.state import EvaluationState
 from matchbox.client.cli.eval.utils import create_evaluation_item
 from matchbox.client.cli.eval.widgets.styling import GroupStyler
-from matchbox.common.dtos import DataTypes
-from matchbox.common.sources import (
-    RelationalDBLocation,
-    SourceConfig,
-    SourceField,
+from matchbox.common.factories.sources import (
+    source_from_tuple,
 )
 
 
@@ -185,48 +182,56 @@ class TestFieldProcessing:
     def test_create_processed_comparison_data(self):
         """Test that field processing works with SourceConfig data."""
 
-        # Create mock SourceConfig objects
-        location = RelationalDBLocation(name="test_db")
-
-        source_a = SourceConfig(
-            location=location,
-            name="source_a",
-            extract_transform="SELECT * FROM table_a",
-            key_field=SourceField(name="id", type=DataTypes.STRING),
-            index_fields=(
-                SourceField(name="company_name", type=DataTypes.STRING),
-                SourceField(name="registration_id", type=DataTypes.STRING),
-            ),
+        # Define the data
+        source_a_data = (
+            {"company_name": "Company A", "registration_id": "REG001"},
+            {"company_name": "Company B", "registration_id": "REG002"},
+            {"company_name": "Company C", "registration_id": "REG003"},
         )
 
-        source_b = SourceConfig(
-            location=location,
+        source_b_data = (
+            {"company_name": "Company A Ltd", "address": "123 Main St"},
+            {"company_name": "Company B Inc", "address": "456 Oak Ave"},
+            {"company_name": "Company C Corp", "address": "789 Pine Rd"},
+        )
+
+        data_keys = ["1", "2", "3"]
+
+        # Create sources
+        testkit1 = source_from_tuple(
+            data_tuple=source_a_data,
+            data_keys=data_keys,
+            name="source_a",
+        )
+
+        testkit2 = source_from_tuple(
+            data_tuple=source_b_data,
+            data_keys=data_keys,
             name="source_b",
-            extract_transform="SELECT * FROM table_b",
-            key_field=SourceField(name="id", type=DataTypes.STRING),
-            index_fields=(
-                SourceField(name="company_name", type=DataTypes.STRING),
-                SourceField(name="address", type=DataTypes.STRING),
-            ),
+            dag=testkit1.source.dag,
         )
 
         # Create test DataFrame with qualified field names
         df = pl.DataFrame(
             {
-                "leaf": [1, 2, 3],
-                "source_a_company_name": ["Company A", "Company B", "Company C"],
-                "source_a_registration_id": ["REG001", "REG002", "REG003"],
-                "source_b_company_name": [
-                    "Company A Ltd",
-                    "Company B Inc",
-                    "Company C Corp",
+                "leaf": list(range(1, len(source_a_data) + 1)),
+                "source_a_company_name": [d["company_name"] for d in source_a_data],
+                "source_a_registration_id": [
+                    d["registration_id"] for d in source_a_data
                 ],
-                "source_b_address": ["123 Main St", "456 Oak Ave", "789 Pine Rd"],
+                "source_b_company_name": [d["company_name"] for d in source_b_data],
+                "source_b_address": [d["address"] for d in source_b_data],
             }
         )
-
         # Create evaluation item with new paradigm
-        evaluation_item = create_evaluation_item(df, [source_a, source_b], 123)
+        evaluation_item = create_evaluation_item(
+            df,
+            [
+                ("source_a", testkit1.source.config),
+                ("source_b", testkit2.source.config),
+            ],
+            123,
+        )
 
         # Verify structure
         assert isinstance(evaluation_item.display_dataframe, pl.DataFrame)

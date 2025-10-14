@@ -8,14 +8,20 @@ from typing import Any
 
 import polars as pl
 import pyarrow as pa
-from matplotlib import pyplot as plt
-from matplotlib.pyplot import Figure
 from pydantic import BaseModel, computed_field
-from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
+from matchbox.client.dags import DAG
 from matchbox.client.results import Results
+from matchbox.client.sources import Location, Source
+from matchbox.common.dtos import (
+    ModelResolutionPath,
+    ResolutionPath,
+    ResolutionType,
+    SourceConfig,
+)
 from matchbox.common.eval import (
     Judgement,
     ModelComparison,
@@ -24,9 +30,7 @@ from matchbox.common.eval import (
     process_judgements,
     wilson_confidence_interval,
 )
-from matchbox.common.graph import DEFAULT_RESOLUTION, ModelResolutionName
-from matchbox.common.logging import logger
-from matchbox.common.sources import SourceConfig
+from matchbox.common.exceptions import MatchboxSourceTableError
 from matchbox.common.transform import DisjointSet
 
 
@@ -116,13 +120,13 @@ class EvaluationItem(BaseModel):
 
 
 def create_display_dataframe(
-    df: pl.DataFrame, source_configs: list[SourceConfig]
+    df: pl.DataFrame, source_configs: list[tuple[str, SourceConfig]]
 ) -> pl.DataFrame:
     """Create enhanced display DataFrame for flexible view rendering.
 
     Args:
         df: DataFrame with records as rows and qualified fields as columns
-        source_configs: List of SourceConfig objects that generated the qualified fields
+        source_configs: List of (source_name, SourceConfig) tuples
 
     Returns:
         DataFrame with columns: field_name, source_name, record_index, value, leaf_id
@@ -141,11 +145,9 @@ def create_display_dataframe(
         leaf_id = leaf_ids[record_idx]
 
         # For each source config, extract its fields
-        for source_config in source_configs:
-            source_name = source_config.name
-
+        for source_name, source_config in source_configs:
             for field in source_config.index_fields:
-                qualified_field = source_config.f(field.name)
+                qualified_field = source_config.f(source_name, field.name)
                 unqualified_field = field.name
 
                 # Only include fields that exist in the DataFrame
@@ -277,7 +279,7 @@ def deduplicate_columns(display_df: pl.DataFrame) -> DeduplicationResult:
 
 
 def create_evaluation_item(
-    df: pl.DataFrame, source_configs: list[SourceConfig], cluster_id: int
+    df: pl.DataFrame, source_configs: list[tuple[str, SourceConfig]], cluster_id: int
 ) -> EvaluationItem:
     """Create a complete EvaluationItem with deduplication.
 
@@ -308,45 +310,35 @@ def create_evaluation_item(
 
 def get_samples(
     n: int,
+    resolution: ModelResolutionPath,
     user_id: int,
-    resolution: ModelResolutionName | None = None,
     clients: dict[str, Any] | None = None,
-    use_default_client: bool = False,
     default_client: Any | None = None,
 ) -> dict[int, EvaluationItem]:
-    """Retrieve samples enriched with source data, grouped by resolution cluster.
+    """Retrieve samples enriched with source data, as EvaluationItems.
 
     Args:
         n: Number of clusters to sample
+        resolution: Model resolution to retrieve samples for
         user_id: ID of the user requesting the samples
-        resolution: Model resolution proposing the clusters. If not set, will
-            use a default resolution.
         clients: Dictionary from location names to valid client for each.
-            Locations whose name is missing from the dictionary will be skipped.
-        use_default_client: Whether to use for all unset location clients
-            a SQLAlchemy engine for the default warehouse set in the environment
-            variable `MB__CLIENT__DEFAULT_WAREHOUSE`.
-        default_client: An existing client to use for the default warehouse.
+            Locations whose name is missing from the dictionary will be skipped,
+            unless a default client is provided.
+        default_client: Fallback client to use for all sources.
 
     Returns:
-        Dictionary of cluster ID to EvaluationItem with processed field data
+        Dictionary of cluster ID to EvaluationItem
 
     Raises:
         MatchboxSourceTableError: If a source cannot be queried from a location using
             provided or default clients.
     """
-    if not resolution:
-        resolution = DEFAULT_RESOLUTION
-
     if not clients:
         clients = {}
 
-    if use_default_client and not default_client:
-        if default_clients_uri := settings.default_warehouse:
-            default_client = create_engine(default_clients_uri)
-            logger.warning("Using default engine")
-        else:
-            raise ValueError("`MB__CLIENT__DEFAULT_WAREHOUSE` is unset")
+    # Create temporary DAG for Source reconstruction
+    temp_dag = DAG(name=str(resolution.collection))
+    temp_dag._run = resolution.run
 
     samples: pl.DataFrame = pl.from_arrow(
         _handler.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
@@ -356,15 +348,21 @@ def get_samples(
         return {}
 
     results_by_source = []
-    source_configs = []
+    source_configs: list[tuple[str, SourceConfig]] = []
+
     for source_resolution in samples["source"].unique():
-        source_config = _handler.get_source_config(source_resolution)
-        source_configs.append(source_config)
-        location_name = source_config.location.name
+        source_resolution_obj = _handler.get_resolution(
+            path=ResolutionPath(
+                name=source_resolution, collection=temp_dag.name, run=temp_dag.run
+            ),
+            validate_type=ResolutionType.SOURCE,
+        )
+        location_name = source_resolution_obj.config.location_config.name
+
         if location_name in clients:
-            source_config.location.add_client(client=clients[location_name])
+            client = clients[location_name]
         elif default_client:
-            source_config.location.add_client(client=default_client)
+            client = default_client
         else:
             warnings.warn(
                 f"Skipping {source_resolution}, incompatible with given client.",
@@ -373,19 +371,35 @@ def get_samples(
             )
             continue
 
+        location = Location.from_config(
+            source_resolution_obj.config.location_config, client=client
+        )
+        source = Source.from_resolution(
+            resolution=source_resolution_obj,
+            resolution_name=source_resolution,
+            dag=temp_dag,
+            location=location,
+        )
+
+        # Store source config for later EvaluationItem creation
+        source_configs.append((source_resolution, source_resolution_obj.config))
+
         samples_by_source = samples.filter(pl.col("source") == source_resolution)
         keys_by_source = samples_by_source["key"].to_list()
 
-        source_data = pl.concat(
-            source_config.query(
-                batch_size=10_000, qualify_names=True, keys=keys_by_source
+        try:
+            source_data = pl.concat(
+                source.fetch(batch_size=10_000, qualify_names=True, keys=keys_by_source)
             )
-        )
+        except OperationalError as e:
+            raise MatchboxSourceTableError(
+                "Could not find source using given client."
+            ) from e
 
         samples_and_source = samples_by_source.join(
-            source_data, left_on="key", right_on=source_config.qualified_key
+            source_data, left_on="key", right_on=source.qualified_key
         )
-        desired_columns = ["root", "leaf", "key"] + source_config.qualified_fields
+        desired_columns = ["root", "leaf", "key"] + source.qualified_index_fields
         results_by_source.append(samples_and_source[desired_columns])
 
     if not results_by_source:
@@ -393,14 +407,12 @@ def get_samples(
 
     all_results: pl.DataFrame = pl.concat(results_by_source, how="diagonal")
 
-    results_by_root = {}
+    # Convert to EvaluationItems
+    results_by_root: dict[int, EvaluationItem] = {}
     for root in all_results["root"].unique():
         cluster_df = all_results.filter(pl.col("root") == root).drop("root")
-
-        # Create EvaluationItem with deduplication
-        evaluation_item = create_evaluation_item(cluster_df, source_configs, int(root))
-
-        results_by_root[int(root)] = evaluation_item
+        evaluation_item = create_evaluation_item(cluster_df, source_configs, root)
+        results_by_root[root] = evaluation_item
 
     return results_by_root
 
@@ -586,7 +598,7 @@ class EvalData:
         return cls(root_leaf, thresholds, results.probabilities)
 
     @classmethod
-    def from_resolution(cls, resolution: ModelResolutionName) -> "EvalData":
+    def from_resolution(cls, resolution: ModelResolutionPath) -> "EvalData":
         """Create EvalData from a model resolution (new functionality).
 
         Args:
@@ -600,18 +612,29 @@ class EvalData:
 
         # Get model configuration
         logger.info(f"Fetching model config for resolution: {resolution}")
-        model_config = _handler.get_model(resolution)
+        model_resolution = _handler.get_resolution(
+            path=resolution, validate_type=ResolutionType.MODEL
+        )
+        model_config = model_resolution.config
         if not model_config:
             logger.error(f"Model {resolution} not found")
             raise ValueError(f"Model {resolution} not found")
+
+        # Extract source resolutions from query configs
+        left_sources = model_config.left_query.source_resolutions
+        right_sources = (
+            model_config.right_query.source_resolutions
+            if model_config.right_query
+            else None
+        )
         logger.info(
-            f"Model config retrieved: left_resolution={model_config.left_resolution}, "
-            f"right_resolution={model_config.right_resolution}"
+            f"Model config retrieved: left_sources={left_sources}, "
+            f"right_sources={right_sources}"
         )
 
         # Get model probabilities/results
         logger.info(f"Fetching model results for resolution: {resolution}")
-        probabilities = _handler.get_model_results(resolution)
+        probabilities = _handler.get_results(resolution)
         probs_df = pl.from_arrow(probabilities)
         logger.info(f"Model results retrieved: {len(probs_df)} probability records")
 
@@ -625,13 +648,14 @@ class EvalData:
         logger.info(f"Normalized thresholds: {thresholds}")
 
         # Handle both deduper and linker models
-        if model_config.right_resolution is None:
+        if model_config.right_query is None:
             logger.info("Processing deduper model (single source)")
-            # Deduper model - left_resolution is the only source
-            logger.info(f"Querying source data for: {model_config.left_resolution}")
+            # Deduper model - left_query contains the only source
+            left_source = model_config.left_query.source_resolutions[0]
+            logger.info(f"Querying source data for: {left_source}")
             source_data = _handler.query(
-                source=model_config.left_resolution,
-                resolution=model_config.left_resolution,
+                source=left_source,
+                resolution=left_source,
                 return_leaf_id=True,
             )
             source_df = pl.from_arrow(source_data)
@@ -663,21 +687,19 @@ class EvalData:
             )
         else:
             logger.info("Processing linker model (two sources)")
-            # Linker model - has both left and right sources
-            logger.info(
-                f"Querying left source data for: {model_config.left_resolution}"
-            )
+            # Linker model - has both left and right queries with sources
+            left_source = model_config.left_query.source_resolutions[0]
+            right_source = model_config.right_query.source_resolutions[0]
+            logger.info(f"Querying left source data for: {left_source}")
             left_data = _handler.query(
-                source=model_config.left_resolution,
-                resolution=model_config.left_resolution,
+                source=left_source,
+                resolution=left_source,
                 return_leaf_id=True,
             )
-            logger.info(
-                f"Querying right source data for: {model_config.right_resolution}"
-            )
+            logger.info(f"Querying right source data for: {right_source}")
             right_data = _handler.query(
-                source=model_config.right_resolution,
-                resolution=model_config.right_resolution,
+                source=right_source,
+                resolution=right_source,
                 return_leaf_id=True,
             )
 
@@ -789,48 +811,8 @@ class EvalData:
         # Sort results by threshold ascending for consistent output
         return sorted(results, key=lambda x: x[0])
 
-    def pr_curve_mpl(self) -> Figure:
-        """Generate matplotlib precision-recall curve.
 
-        Returns:
-            Matplotlib Figure object
-        """
-        data = self.precision_recall()
-        all_p = [p for _, p, r, p_ci, r_ci in data]
-        all_r = [r for _, p, r, p_ci, r_ci in data]
-        all_p_ci = [p_ci for _, p, r, p_ci, r_ci in data]
-        all_r_ci = [r_ci for _, p, r, p_ci, r_ci in data]
-        thresholds = [t for t, _, _, _, _ in data]
-
-        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-        ax.errorbar(
-            all_r,
-            all_p,
-            xerr=all_r_ci,
-            yerr=all_p_ci,
-            marker="o",
-            capsize=3,
-            capthick=1,
-            elinewidth=1,
-            ecolor="lightgray",
-            alpha=0.7,
-        )
-
-        # Add threshold annotations
-        for i, thresh in enumerate(thresholds):
-            ax.annotate(f"{thresh:.2f}", (all_r[i], all_p[i]))
-
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
-        ax.set_ylabel("Precision")
-        ax.set_xlabel("Recall")
-        ax.set_title("Precision-Recall Curve (95% CI)")
-        ax.grid()
-
-        return fig
-
-
-def compare_models(resolutions: list[ModelResolutionName]) -> ModelComparison:
+def compare_models(resolutions: list[ModelResolutionPath]) -> ModelComparison:
     """Compare metrics of models based on evaluation data.
 
     Args:
