@@ -9,9 +9,7 @@ from pyarrow import Table
 from sqlalchemy import BIGINT, func, select
 
 from matchbox.common.arrow import (
-    SCHEMA_CLUSTER_EXPANSION,
     SCHEMA_EVAL_SAMPLES,
-    SCHEMA_JUDGEMENTS,
 )
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import ModelResolutionPath
@@ -98,7 +96,7 @@ def insert_judgement(judgement: Judgement):
             session.commit()
 
 
-def get_judgements() -> tuple[pl.DataFrame, pl.DataFrame]:
+def get_judgements() -> tuple[pa.Table, pa.Table]:
     """Get all judgements from server."""
     judgements_stmt = select(
         EvalJudgements.user_id,
@@ -115,8 +113,19 @@ def get_judgements() -> tuple[pl.DataFrame, pl.DataFrame]:
 
         if not len(judgements):
             return (
-                pl.DataFrame([], schema=pl.Schema(SCHEMA_JUDGEMENTS)),
-                pl.DataFrame([], schema=pl.Schema(SCHEMA_CLUSTER_EXPANSION)),
+                pa.table(
+                    {
+                        "user_id": pa.array([], type=pa.uint64()),
+                        "endorsed": pa.array([], type=pa.uint64()),
+                        "shown": pa.array([], type=pa.uint64()),
+                    }
+                ),
+                pa.table(
+                    {
+                        "root": pa.array([], type=pa.uint64()),
+                        "leaves": pa.array([], type=pa.list_(pa.uint64())),
+                    }
+                ),
             )
 
         shown_clusters = set(judgements["shown"].to_pylist())

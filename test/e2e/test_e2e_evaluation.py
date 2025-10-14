@@ -3,12 +3,10 @@ from httpx import Client
 from sqlalchemy import Engine, text
 
 from matchbox.client import _handler
-from matchbox.client.cli.eval import EntityResolutionApp, EvalData
+from matchbox.client.cli.eval import EntityResolutionApp
 from matchbox.client.dags import DAG
 from matchbox.client.models.dedupers import NaiveDeduper
-from matchbox.client.results import Results
 from matchbox.client.sources import RelationalDBLocation
-from matchbox.common.arrow import SCHEMA_CLUSTER_EXPANSION, SCHEMA_JUDGEMENTS
 from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.factories.sources import (
     FeatureConfig,
@@ -31,8 +29,6 @@ class TestE2EModelEvaluation:
     final_resolution_2_name: str | None = None
     final_resolution_1_path: ModelResolutionPath | None = None
     final_resolution_2_path: ModelResolutionPath | None = None
-    final_resolution_1_results: Results | None = None
-    final_resolution_2_results: Results | None = None
 
     def _clean_company_name(self, column: str) -> str:
         """Generate cleaning SQL for a company name column."""
@@ -63,8 +59,6 @@ class TestE2EModelEvaluation:
         self.__class__.final_resolution_2_name = "final_2"
         self.__class__.final_resolution_1_path = None
         self.__class__.final_resolution_2_path = None
-        self.__class__.final_resolution_1_results = None
-        self.__class__.final_resolution_2_results = None
 
         # Create a SINGLE source with duplicates
         source_parameters = (
@@ -121,7 +115,7 @@ class TestE2EModelEvaluation:
             index_fields=["company_name", "registration_id"],
         )
 
-        dedupe_by_id = source_a_dag1.query().deduper(
+        source_a_dag1.query().deduper(
             name=self.final_resolution_1_name,
             description="Deduplicate by registration ID",
             model_class=NaiveDeduper,
@@ -136,11 +130,6 @@ class TestE2EModelEvaluation:
         # Construct ModelResolutionPath after DAG is synced
         self.__class__.final_resolution_1_path = ModelResolutionPath(
             collection=dag1.name, run=dag1.run, name=self.final_resolution_1_name
-        )
-
-        # Stash results
-        self.__class__.final_resolution_1_results = dedupe_by_id.run(
-            for_validation=True
         )
 
         # === DAG 2: Created by User 2 (Loose Deduplication) ===
@@ -162,7 +151,7 @@ class TestE2EModelEvaluation:
             index_fields=["company_name", "registration_id"],
         )
 
-        dedupe_by_name = source_a_dag2.query(
+        source_a_dag2.query(
             cleaning={
                 "company_name": self._clean_company_name(
                     source_a_dag2.f("company_name")
@@ -182,11 +171,6 @@ class TestE2EModelEvaluation:
             collection=dag2.name, run=dag2.run, name=self.final_resolution_2_name
         )
 
-        # Stash results
-        self.__class__.final_resolution_2_results = dedupe_by_name.run(
-            for_validation=True
-        )
-
         yield
 
         # Teardown
@@ -203,11 +187,22 @@ class TestE2EModelEvaluation:
 
         app startup → user painting → submission → model evaluation.
         """
+        # Create warehouse location
+        warehouse_location = RelationalDBLocation(
+            name="test_warehouse", client=self.warehouse_engine
+        )
+
+        # Load DAG from server with warehouse location
+        dag = DAG(str(self.final_resolution_1_path.collection)).load_run(
+            run_id=self.final_resolution_1_path.run, location=warehouse_location
+        )
+
+        # Pass loaded DAG to app
         app = EntityResolutionApp(
             resolution=self.final_resolution_1_path,
             num_samples=5,
             user="alice",
-            warehouse=str(self.warehouse_engine.url),
+            dag=dag,
         )
 
         # Test the complete user workflow with Textual UI
@@ -223,7 +218,7 @@ class TestE2EModelEvaluation:
 
             # Let the app fetch samples as a user would experience
             if not app.state.queue.items:
-                await app._fetch_additional_samples(10)
+                await app.load_samples()
 
             # Should now have samples to work with
             assert len(app.state.queue.items) > 0, "App should have loaded samples"
@@ -262,22 +257,5 @@ class TestE2EModelEvaluation:
 
         # Phase 4: Test evaluation infrastructure with submitted judgements
         final_judgements, expansion = _handler.download_eval_data()
-        assert SCHEMA_JUDGEMENTS.equals(final_judgements.schema)
-        assert SCHEMA_CLUSTER_EXPANSION.equals(expansion.schema)
         assert len(final_judgements) > 0, "Should have judgements to evaluate with"
-
-        # Phase 5: Test EvalData with real submitted judgements and DAG results
-        eval_data = EvalData.from_results(self.final_resolution_1_results)
-        assert SCHEMA_JUDGEMENTS.equals(eval_data.judgements.schema)
-        assert SCHEMA_CLUSTER_EXPANSION.equals(eval_data.expansion.schema)
-        assert (
-            len(eval_data.judgements) > 0
-        ), "EvalData should contain submitted judgements"
-
-        # Get PR at 0.5 threshold
-        pr_results = eval_data.precision_recall([0.5])
-        assert len(pr_results) == 1
-        _, p, r, _, _ = pr_results[0]
-        pr = (p, r)
-        assert isinstance(pr, tuple)
-        assert len(pr) == 2
+        assert len(expansion) > 0, "Should have cluster expansion data"

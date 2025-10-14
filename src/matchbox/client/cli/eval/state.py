@@ -3,9 +3,12 @@
 import uuid
 from collections import deque
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from matchbox.client.cli.eval.utils import EvaluationItem
+
+if TYPE_CHECKING:
+    from matchbox.client.dags import DAG
 
 
 class EvaluationQueue:
@@ -95,7 +98,7 @@ class EvaluationState:
         self.user_name: str = ""
         self.user_id: int | None = None
         self.resolution: str = ""
-        self.warehouse: str | None = None
+        self.dag: DAG | None = None
 
         # Status/Feedback State
         self.status_message: str = ""

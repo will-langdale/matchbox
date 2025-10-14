@@ -9,6 +9,8 @@ from sqlalchemy import Engine
 from matchbox.client.cli.eval.app import EntityResolutionApp
 from matchbox.client.cli.eval.state import EvaluationState
 from matchbox.client.cli.eval.widgets.status import StatusBarRight
+from matchbox.client.dags import DAG
+from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.exceptions import MatchboxClientSettingsException
 from matchbox.common.factories.scenarios import setup_scenario
@@ -56,6 +58,9 @@ class TestTextualUI:
     async def test_app_runs_headless(self, test_resolution):
         """Test that the app can run in test mode."""
         app = EntityResolutionApp(resolution=test_resolution, num_samples=5)
+
+        # Mock DAG for the test
+        app.state.dag = Mock()
 
         with (
             patch("matchbox.client.cli.eval.app.settings") as mock_settings,
@@ -105,6 +110,9 @@ class TestTextualUI:
 
         app = EntityResolutionApp(resolution=test_resolution, num_samples=1)
 
+        # Mock DAG for the test
+        app.state.dag = Mock()
+
         async with app.run_test() as pilot:
             await pilot.pause()
 
@@ -119,6 +127,9 @@ class TestTextualUI:
     async def test_help_modal(self, test_resolution):
         """Test that help modal can be triggered."""
         app = EntityResolutionApp(resolution=test_resolution, num_samples=1)
+
+        # Mock DAG for the test
+        app.state.dag = Mock()
 
         with (
             patch("matchbox.client.cli.eval.app.settings") as mock_settings,
@@ -145,6 +156,9 @@ class TestTextualUI:
 
         app = EntityResolutionApp(resolution=test_resolution, num_samples=1)
         app.push_screen = Mock()  # Mock screen pushing
+
+        # Mock DAG for the test
+        app.state.dag = Mock()
 
         with (
             patch("matchbox.client.cli.eval.app.settings") as mock_settings,
@@ -179,12 +193,20 @@ class TestTextualUI:
                 collection=dag.dag.name, run=dag.dag.run, name=model_name
             )
 
+            # Create warehouse location and load DAG
+            warehouse_location = RelationalDBLocation(
+                name="test_warehouse", client=self.warehouse_engine
+            )
+            loaded_dag = DAG(str(dag.dag.name)).load_run(
+                run_id=dag.dag.run, location=warehouse_location
+            )
+
             # Create app with injected parameters - no mocking needed!
             app = EntityResolutionApp(
                 resolution=resolution,
                 num_samples=1,
                 user="test_user",
-                warehouse=str(self.warehouse_engine.url),
+                dag=loaded_dag,
             )
 
             # Test the app works with real scenario data
@@ -209,11 +231,19 @@ class TestTextualUI:
         with self.scenario(self.backend, "dedupe") as dag:
             model_name: str = "naive_test_crn"
 
+            # Create warehouse location and load DAG
+            warehouse_location = RelationalDBLocation(
+                name="test_warehouse", client=self.warehouse_engine
+            )
+            loaded_dag = DAG(str(dag.dag.name)).load_run(
+                run_id=dag.dag.run, location=warehouse_location
+            )
+
             app = EntityResolutionApp(
                 resolution=dag.models[model_name].model.resolution_path,
                 num_samples=5,
                 user="test_user",
-                warehouse=str(self.warehouse_engine.url),
+                dag=loaded_dag,
             )
 
             # Login

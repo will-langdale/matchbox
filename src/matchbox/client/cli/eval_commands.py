@@ -4,9 +4,12 @@ import logging
 from typing import Annotated
 
 import typer
+from sqlalchemy import create_engine
 
 from matchbox.client import _handler
 from matchbox.client.cli.eval.app import EntityResolutionApp
+from matchbox.client.dags import DAG
+from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.dtos import CollectionName, ModelResolutionPath
 
 eval_app = typer.Typer(help="Entity evaluation commands")
@@ -38,7 +41,9 @@ def start(
     warehouse: Annotated[
         str | None,
         typer.Option(
-            "--warehouse", "-w", help="Warehouse database URL (overrides settings)"
+            "--warehouse",
+            "-w",
+            help="Warehouse database connection string (e.g. postgresql://user:pass@host/db)",
         ),
     ] = None,
     log_file: Annotated[
@@ -49,41 +54,57 @@ def start(
         ),
     ] = None,
 ) -> None:
-    """Start the interactive entity resolution evaluation tool."""
+    """Start the interactive entity resolution evaluation tool.
+
+    Requires a warehouse connection to fetch source data for evaluation clusters.
+
+    Example:
+        matchbox eval start --collection companies --warehouse postgresql://user:pass@localhost/warehouse
+    """
     try:
         # Set up logging redirect if --log specified
         if log_file:
             _setup_logging_redirect(log_file)
 
-        # Fetch collection and construct ModelResolutionPath
+        # Fetch collection and get default run
         collection_name = CollectionName(collection)
         collection_obj = _handler.get_collection(collection_name)
         run_id = collection_obj.default_run
 
-        # Get resolution name from --resolution or use DAG's final_step
-        if resolution is None:
-            # Load DAG to get final_step
-            from matchbox.client.dags import DAG
-            from matchbox.client.sources import Location
+        # Create warehouse engine and location (required for loading DAG)
+        if not warehouse:
+            raise typer.BadParameter(
+                "Warehouse connection string is required. "
+                "Provide via --warehouse or -w flag."
+            )
 
-            dag = DAG(name=collection)
-            dag.load_default(location=Location())
-            resolution_name = dag.final_step.name
-        else:
-            resolution_name = resolution
+        # Create engine from connection string (with password)
+        warehouse_engine = create_engine(warehouse)
 
-        # Construct the ModelResolutionPath
+        # Create RelationalDBLocation for this warehouse
+        warehouse_location = RelationalDBLocation(
+            name="evaluation_warehouse", client=warehouse_engine
+        )
+
+        # Load DAG from server with warehouse location attached to all sources
+        dag = DAG(name=collection).load_run(run_id=run_id, location=warehouse_location)
+
+        # Get resolution name from --resolution or DAG's final_step
+        resolution_name = dag.final_step.name if resolution is None else resolution
+
+        # Construct ModelResolutionPath
         resolution_path = ModelResolutionPath(
             collection=collection_name,
             run=run_id,
             name=resolution_name,
         )
 
+        # Create app with loaded DAG (not warehouse string)
         app = EntityResolutionApp(
             resolution=resolution_path,
             num_samples=samples,
             user=user,
-            warehouse=warehouse,
+            dag=dag,
         )
         app.run()
     except KeyboardInterrupt:

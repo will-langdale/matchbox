@@ -1,10 +1,7 @@
 """Collection of client-side functions in aid of model evaluation."""
 
 import logging
-import warnings
-from contextlib import contextmanager
 from itertools import combinations
-from typing import Any
 
 import polars as pl
 import pyarrow as pa
@@ -12,13 +9,10 @@ from pydantic import BaseModel, computed_field
 from sqlalchemy.exc import OperationalError
 
 from matchbox.client import _handler
-from matchbox.client._settings import settings
 from matchbox.client.dags import DAG
 from matchbox.client.results import Results
-from matchbox.client.sources import Location, Source
 from matchbox.common.dtos import (
     ModelResolutionPath,
-    ResolutionPath,
     ResolutionType,
     SourceConfig,
 )
@@ -32,22 +26,6 @@ from matchbox.common.eval import (
 )
 from matchbox.common.exceptions import MatchboxSourceTableError
 from matchbox.common.transform import DisjointSet
-
-
-@contextmanager
-def temp_warehouse(warehouse: str | None):
-    """Temporarily set the default warehouse in settings."""
-    original_warehouse = getattr(settings, "default_warehouse", None)
-    if warehouse:
-        settings.default_warehouse = warehouse
-    try:
-        yield
-    finally:
-        if warehouse:
-            if original_warehouse:
-                settings.default_warehouse = original_warehouse
-            elif hasattr(settings, "default_warehouse"):
-                delattr(settings, "default_warehouse")
 
 
 class EvaluationItem(BaseModel):
@@ -312,8 +290,7 @@ def get_samples(
     n: int,
     resolution: ModelResolutionPath,
     user_id: int,
-    clients: dict[str, Any] | None = None,
-    default_client: Any | None = None,
+    dag: DAG,
 ) -> dict[int, EvaluationItem]:
     """Retrieve samples enriched with source data, as EvaluationItems.
 
@@ -321,25 +298,15 @@ def get_samples(
         n: Number of clusters to sample
         resolution: Model resolution to retrieve samples for
         user_id: ID of the user requesting the samples
-        clients: Dictionary from location names to valid client for each.
-            Locations whose name is missing from the dictionary will be skipped,
-            unless a default client is provided.
-        default_client: Fallback client to use for all sources.
+        dag: Loaded DAG with all sources properly configured with warehouse location
 
     Returns:
-        Dictionary of cluster ID to EvaluationItem
+        Dictionary mapping cluster ID to EvaluationItem
 
     Raises:
-        MatchboxSourceTableError: If a source cannot be queried from a location using
-            provided or default clients.
+        MatchboxSourceTableError: If a source cannot be queried from warehouse
     """
-    if not clients:
-        clients = {}
-
-    # Create temporary DAG for Source reconstruction
-    temp_dag = DAG(name=str(resolution.collection))
-    temp_dag._run = resolution.run
-
+    # Fetch sample cluster IDs from server
     samples: pl.DataFrame = pl.from_arrow(
         _handler.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
     )
@@ -350,52 +317,36 @@ def get_samples(
     results_by_source = []
     source_configs: list[tuple[str, SourceConfig]] = []
 
+    # Process each source referenced in samples
     for source_resolution in samples["source"].unique():
-        source_resolution_obj = _handler.get_resolution(
-            path=ResolutionPath(
-                name=source_resolution, collection=temp_dag.name, run=temp_dag.run
-            ),
-            validate_type=ResolutionType.SOURCE,
-        )
-        location_name = source_resolution_obj.config.location_config.name
-
-        if location_name in clients:
-            client = clients[location_name]
-        elif default_client:
-            client = default_client
-        else:
-            warnings.warn(
-                f"Skipping {source_resolution}, incompatible with given client.",
-                UserWarning,
-                stacklevel=2,
-            )
-            continue
-
-        location = Location.from_config(
-            source_resolution_obj.config.location_config, client=client
-        )
-        source = Source.from_resolution(
-            resolution=source_resolution_obj,
-            resolution_name=source_resolution,
-            dag=temp_dag,
-            location=location,
-        )
+        # Get source directly from loaded DAG (already has warehouse location)
+        try:
+            source = dag.get_source(source_resolution)
+        except ValueError as e:
+            raise MatchboxSourceTableError(
+                f"Source '{source_resolution}' not found in DAG. "
+                f"Ensure DAG was loaded with all resolutions."
+            ) from e
 
         # Store source config for later EvaluationItem creation
-        source_configs.append((source_resolution, source_resolution_obj.config))
+        source_configs.append((source_resolution, source.config))
 
+        # Filter samples for this source
         samples_by_source = samples.filter(pl.col("source") == source_resolution)
         keys_by_source = samples_by_source["key"].to_list()
 
+        # Query warehouse using source (already has correct client)
         try:
             source_data = pl.concat(
                 source.fetch(batch_size=10_000, qualify_names=True, keys=keys_by_source)
             )
         except OperationalError as e:
             raise MatchboxSourceTableError(
-                "Could not find source using given client."
+                f"Could not query source '{source_resolution}' from warehouse. "
+                f"Check warehouse connection and ensure source table exists."
             ) from e
 
+        # Join samples with source data
         samples_and_source = samples_by_source.join(
             source_data, left_on="key", right_on=source.qualified_key
         )
@@ -405,9 +356,10 @@ def get_samples(
     if not results_by_source:
         return {}
 
+    # Combine all source data
     all_results: pl.DataFrame = pl.concat(results_by_source, how="diagonal")
 
-    # Convert to EvaluationItems
+    # Convert to EvaluationItems (one per cluster)
     results_by_root: dict[int, EvaluationItem] = {}
     for root in all_results["root"].unique():
         cluster_df = all_results.filter(pl.col("root") == root).drop("root")
@@ -655,7 +607,7 @@ class EvalData:
             logger.info(f"Querying source data for: {left_source}")
             source_data = _handler.query(
                 source=left_source,
-                resolution=left_source,
+                resolution=None,
                 return_leaf_id=True,
             )
             source_df = pl.from_arrow(source_data)
@@ -693,13 +645,13 @@ class EvalData:
             logger.info(f"Querying left source data for: {left_source}")
             left_data = _handler.query(
                 source=left_source,
-                resolution=left_source,
+                resolution=None,
                 return_leaf_id=True,
             )
             logger.info(f"Querying right source data for: {right_source}")
             right_data = _handler.query(
                 source=right_source,
-                resolution=right_source,
+                resolution=None,
                 return_leaf_id=True,
             )
 

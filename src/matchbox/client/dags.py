@@ -326,6 +326,44 @@ class DAG:
 
         return self
 
+    def load_run(self, run_id: RunID, location: Location) -> Self:
+        """Attach to a specific run in this collection, loading all DAG nodes.
+
+        Similar to load_default() but loads a specific run ID rather than
+        the collection's default run.
+
+        Args:
+            run_id: The specific run ID to load
+            location: The Location object that will be attached to nodes coming
+                from this Run. Can be updated per-source after instantiation if
+                necessary.
+
+        Returns:
+            Self for method chaining
+
+        Example:
+            >>> from sqlalchemy import create_engine
+            >>> from matchbox.client.sources import RelationalDBLocation
+            >>>
+            >>> engine = create_engine("postgresql://user:pass@host/db")
+            >>> location = RelationalDBLocation(name="warehouse", client=engine)
+            >>> dag = DAG("companies").load_run(run_id=123, location=location)
+        """
+        run = _handler.get_run(collection=self.name, run_id=run_id)
+        self.run = run_id
+
+        def _len_dependencies(res_item: tuple[ResolutionName, Resolution]) -> int:
+            return len(res_item[1].config.dependencies)
+
+        sorted_resolutions: tuple[ResolutionName, Resolution] = sorted(
+            run.resolutions.items(), key=_len_dependencies
+        )
+
+        for name, resolution in sorted_resolutions:
+            self.add_resolution(name=name, resolution=resolution, location=location)
+
+        return self
+
     def run_and_sync(
         self,
         full_rerun: bool = False,

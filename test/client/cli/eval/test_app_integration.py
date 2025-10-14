@@ -36,6 +36,9 @@ class TestEntityResolutionAppIntegration:
         """Test that the app can run in test mode without errors."""
         app = EntityResolutionApp(resolution=test_resolution, num_samples=5)
 
+        # Mock DAG for the test
+        app.state.dag = Mock()
+
         with (
             patch("matchbox.client.cli.eval.app.settings") as mock_settings,
             patch("matchbox.client.cli.eval.app._handler.login") as mock_login,
@@ -208,31 +211,26 @@ class TestEntityResolutionAppIntegration:
         assert len(composed) == 3
 
     @pytest.mark.asyncio
-    async def test_fetch_additional_samples_with_warehouse(self, app):
-        """Test that _fetch_additional_samples creates and disposes of an engine."""
-        app.state.warehouse = "sqlite:///:memory:"
+    async def test_fetch_additional_samples_with_dag(self, app):
+        """Test that _fetch_additional_samples uses the loaded DAG."""
         app.state.user_id = 123
 
-        with (
-            patch("matchbox.client.cli.eval.app.get_samples") as mock_get_samples,
-            patch("matchbox.client.cli.eval.app.create_engine") as mock_create_engine,
-        ):
-            mock_engine = Mock()
-            mock_create_engine.return_value = mock_engine
+        # Create mock DAG
+        mock_dag = Mock()
+        app.state.dag = mock_dag
+
+        with patch("matchbox.client.cli.eval.app.get_samples") as mock_get_samples:
             mock_get_samples.return_value = {}
 
             await app._fetch_additional_samples(10)
 
-            mock_create_engine.assert_called_once_with("sqlite:///:memory:")
+            # Verify get_samples called with DAG
             mock_get_samples.assert_called_once_with(
                 n=10,
                 resolution=app.state.resolution,
                 user_id=app.state.user_id,
-                clients={},
-                use_default_client=True,
-                default_client=mock_engine,
+                dag=mock_dag,
             )
-            mock_engine.dispose.assert_called_once()
 
     def test_error_message_creation(self, test_resolution):
         """Test creation of user-friendly error messages."""

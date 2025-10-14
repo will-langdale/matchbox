@@ -10,6 +10,7 @@ from sqlalchemy import Engine
 
 from matchbox.client.cli.eval import get_samples
 from matchbox.client.models.linkers import DeterministicLinker
+from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, table_to_buffer
 from matchbox.common.exceptions import MatchboxSourceTableError
 from matchbox.common.factories.dags import TestkitDAG
@@ -68,21 +69,21 @@ def test_get_samples(
         model_settings={"comparisons": "l.key=r.key"},
     )
 
-    # Mock API endpoints
-    matchbox_api.get(f"/collections/{dag.name}/runs/{dag.run}/resolutions/foo").mock(
-        return_value=Response(
-            200, content=foo_testkit.source.to_resolution().model_dump_json()
-        )
+    # Mock API endpoints for load_run
+    from matchbox.common.dtos import Run
+
+    # Mock the run endpoint that load_run() calls
+    run_data = Run(
+        run_id=dag.run,
+        mutable=True,
+        resolutions={
+            "foo": foo_testkit.source.to_resolution(),
+            "bar": bar_testkit.source.to_resolution(),
+            "baz": baz_testkit.source.to_resolution(),
+        },
     )
-    matchbox_api.get(f"/collections/{dag.name}/runs/{dag.run}/resolutions/bar").mock(
-        return_value=Response(
-            200, content=bar_testkit.source.to_resolution().model_dump_json()
-        )
-    )
-    matchbox_api.get(f"/collections/{dag.name}/runs/{dag.run}/resolutions/baz").mock(
-        return_value=Response(
-            200, content=baz_testkit.source.to_resolution().model_dump_json()
-        )
+    matchbox_api.get(f"/collections/{dag.name}/runs/{dag.run}").mock(
+        return_value=Response(200, content=run_data.model_dump_json())
     )
 
     # Mock samples
@@ -111,14 +112,52 @@ def test_get_samples(
         return_value=Response(200, content=table_to_buffer(samples).read())
     )
 
-    # Check results
-    with pytest.warns(UserWarning, match="Skipping"):
-        samples = get_samples(
-            n=10,
-            resolution=dag.final_step.resolution_path,
-            user_id=user_id,
-            clients={"db": sqlite_warehouse},
-        )
+    # Create a fresh DAG and load it with warehouse location
+    # (can't reuse the existing dag as it already has sources added)
+    from matchbox.client.dags import DAG
+
+    loaded_dag = DAG(name=str(dag.name))
+    warehouse_location = RelationalDBLocation(name="db", client=sqlite_warehouse)
+    loaded_dag.load_run(run_id=dag.run, location=warehouse_location)
+
+    # Check results - test with samples that include all three sources
+    # All three sources (foo, bar, baz) are in loaded_dag with the warehouse location
+    samples_all = get_samples(
+        n=10,
+        resolution=dag.final_step.resolution_path,
+        user_id=user_id,
+        dag=loaded_dag,
+    )
+
+    assert sorted(samples_all.keys()) == [10, 11]
+
+    # Now test with samples that only include foo and bar (not baz)
+    samples_no_baz = Table.from_pylist(
+        [
+            # Source foo - with two keys for one leaf
+            {"root": 10, "leaf": 1, "key": "1", "source": "foo"},
+            {"root": 10, "leaf": 1, "key": "1bis", "source": "foo"},
+            {"root": 10, "leaf": 2, "key": "2", "source": "foo"},
+            {"root": 11, "leaf": 3, "key": "3", "source": "foo"},
+            {"root": 11, "leaf": 4, "key": "4", "source": "foo"},
+            # Source bar
+            {"root": 10, "leaf": 5, "key": "a", "source": "bar"},
+            {"root": 10, "leaf": 6, "key": "b", "source": "bar"},
+            {"root": 11, "leaf": 7, "key": "c", "source": "bar"},
+            {"root": 11, "leaf": 8, "key": "d", "source": "bar"},
+        ],
+        schema=SCHEMA_EVAL_SAMPLES,
+    )
+    matchbox_api.get("/eval/samples").mock(
+        return_value=Response(200, content=table_to_buffer(samples_no_baz).read())
+    )
+
+    samples = get_samples(
+        n=10,
+        resolution=dag.final_step.resolution_path,
+        user_id=user_id,
+        dag=loaded_dag,
+    )
 
     assert sorted(samples.keys()) == [10, 11]
 
@@ -170,43 +209,24 @@ def test_get_samples(
         n=10,
         resolution=dag.final_step.resolution_path,
         user_id=user_id,
-        clients={"db": sqlite_warehouse},
+        dag=loaded_dag,
     )
     assert no_samples == {}
 
-    # And if no client available?
-    just_baz_samples = Table.from_pylist(
-        [{"root": 10, "leaf": 1, "key": "x", "source": "baz"}],
-        schema=SCHEMA_EVAL_SAMPLES,
-    )
-    matchbox_api.get("/eval/samples").mock(
-        return_value=Response(
-            200,
-            content=table_to_buffer(just_baz_samples).read(),
-        )
-    )
-    with pytest.warns(
-        UserWarning, match="Skipping baz, incompatible with given client"
-    ):
-        no_accessible_samples = get_samples(
-            n=10, resolution=dag.final_step.resolution_path, user_id=user_id
-        )
-    assert no_accessible_samples == {}
-
-    # Using default client as fallback
-    samples_default_creds = get_samples(
-        n=10,
-        resolution=dag.final_step.resolution_path,
-        user_id=user_id,
-        default_client=sqlite_warehouse,
-    )
-    assert len(samples_default_creds) == 1
-
     # What happens if source cannot be queried using client?
-    with pytest.raises(MatchboxSourceTableError):
+    # Create new DAG with wrong warehouse (in-memory, no tables)
+    bad_dag = DAG(name=str(dag.name))
+    bad_location = RelationalDBLocation(name="db", client=sqlite_in_memory_warehouse)
+    bad_dag.load_run(run_id=dag.run, location=bad_location)
+
+    matchbox_api.get("/eval/samples").mock(
+        return_value=Response(200, content=table_to_buffer(samples_no_baz).read())
+    )
+
+    with pytest.raises(MatchboxSourceTableError, match="Could not query source"):
         get_samples(
             n=10,
             resolution=dag.final_step.resolution_path,
             user_id=user_id,
-            default_client=sqlite_in_memory_warehouse,
+            dag=bad_dag,
         )
