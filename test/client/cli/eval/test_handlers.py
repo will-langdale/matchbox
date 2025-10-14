@@ -20,7 +20,6 @@ class TestEvaluationHandlers:
         app.action_quit = AsyncMock()
         app._fetch_additional_samples = AsyncMock(return_value={})
 
-        # Mock queue.current to return None by default (no current item)
         mock_current = Mock()
         mock_current.display_columns = []
         app.state.queue.current = None
@@ -43,18 +42,12 @@ class TestEvaluationHandlers:
         """Test keyboard event handling."""
 
         @pytest.mark.asyncio
-        async def test_navigation_keys_not_handled(self, handlers, mock_event):
+        @pytest.mark.parametrize("key", ["left", "right", "enter", "space"])
+        async def test_navigation_keys_not_handled(self, handlers, mock_event, key):
             """Test that navigation keys are passed through to bindings."""
-            navigation_keys = ["left", "right", "enter", "space"]
-
-            for key in navigation_keys:
-                mock_event.key = key
-
-                await handlers.handle_key_input(mock_event)
-
-                # Navigation keys should not prevent default
-                mock_event.prevent_default.assert_not_called()
-                mock_event.reset_mock()
+            mock_event.key = key
+            await handlers.handle_key_input(mock_event)
+            mock_event.prevent_default.assert_not_called()
 
         @pytest.mark.asyncio
         async def test_escape_clears_group_selection(self, handlers, mock_event):
@@ -67,37 +60,23 @@ class TestEvaluationHandlers:
             mock_event.prevent_default.assert_called_once()
 
         @pytest.mark.asyncio
-        async def test_letter_keys_set_group_selection(self, handlers, mock_event):
+        @pytest.mark.parametrize("letter", ["a", "b", "z", "A", "B", "Z"])
+        async def test_letter_keys_set_group_selection(
+            self, handlers, mock_event, letter
+        ):
             """Test that letter keys set group selection."""
-            letters = ["a", "b", "z", "A", "B", "Z"]
-
-            for letter in letters:
-                mock_event.key = letter
-                handlers.state.set_group_selection.reset_mock()
-                mock_event.reset_mock()
-
-                await handlers.handle_key_input(mock_event)
-
-                handlers.state.set_group_selection.assert_called_once_with(letter)
-                mock_event.prevent_default.assert_called_once()
+            mock_event.key = letter
+            await handlers.handle_key_input(mock_event)
+            handlers.state.set_group_selection.assert_called_once_with(letter)
+            mock_event.prevent_default.assert_called_once()
 
         @pytest.mark.asyncio
-        async def test_non_alpha_keys_ignored(self, handlers, mock_event):
+        @pytest.mark.parametrize("key", ["1", "!", "@"])
+        async def test_non_alpha_keys_ignored(self, handlers, mock_event, key):
             """Test that non-alphabetic keys don't set group selection."""
-            non_alpha = ["1", "!", "@", "space"]
-
-            for key in non_alpha:
-                if key in ["left", "right", "enter", "space"]:
-                    continue  # Skip navigation keys
-
-                mock_event.key = key
-                handlers.state.set_group_selection.reset_mock()
-                mock_event.reset_mock()
-
-                await handlers.handle_key_input(mock_event)
-
-                # Non-alpha keys should not set group selection
-                handlers.state.set_group_selection.assert_not_called()
+            mock_event.key = key
+            await handlers.handle_key_input(mock_event)
+            handlers.state.set_group_selection.assert_not_called()
 
         @pytest.mark.asyncio
         async def test_slash_key_triggers_plot_toggle(self, handlers, mock_event):
@@ -113,7 +92,6 @@ class TestEvaluationHandlers:
         @pytest.mark.asyncio
         async def test_number_keys_assign_columns(self, handlers, mock_event):
             """Test that number keys assign columns to current group."""
-            # Set up state
             handlers.state.current_group_selection = "a"
             handlers.state.parse_number_key.return_value = 3
 
@@ -132,16 +110,15 @@ class TestEvaluationHandlers:
         @pytest.mark.asyncio
         async def test_number_keys_no_group_selected(self, handlers, mock_event):
             """Test that number keys do nothing when no group is selected."""
-            handlers.state.current_group_selection = ""  # No group selected
+            handlers.state.current_group_selection = ""
             handlers.state.parse_number_key.return_value = 3
 
             mock_event.key = "3"
 
             await handlers.handle_key_input(mock_event)
 
-            # Should not assign column
             handlers.state.assign_column_to_group.assert_not_called()
-            mock_event.prevent_default.assert_called_once()  # Still prevent default
+            mock_event.prevent_default.assert_called_once()
 
     class TestPlotToggleHandling:
         """Test plot toggle functionality."""

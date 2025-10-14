@@ -109,15 +109,12 @@ class TestEvaluationQueue:
         """Test submitting painted items removes them from queue."""
         queue.add_items(sample_items)
 
-        # Paint first and third items
         sample_items[0].is_painted = True
         sample_items[2].is_painted = True
 
-        # Submit painted items
         painted_items = queue.painted_items
         queue.submit_painted(painted_items)
 
-        # Check remaining queue
         assert queue.total_count == 1
         assert queue.current is sample_items[1]
         assert queue.painted_count == 0
@@ -140,17 +137,6 @@ class TestEvaluationState:
     def state(self):
         """Create a fresh state for each test."""
         return EvaluationState()
-
-    @pytest.fixture
-    def mock_current_item(self):
-        """Create a mock current queue item."""
-        item = Mock()
-        item.cluster_id = "test_cluster"
-        item.dataframe = Mock()
-        item.assignments = {0: "a", 2: "b"}
-        item.display_columns = [1, 2, 3, 4]
-        item.duplicate_groups = [[1], [2], [3], [4]]
-        return item
 
     def test_initial_state(self, state):
         """Test initial state values."""

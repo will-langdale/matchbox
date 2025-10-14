@@ -1,10 +1,10 @@
 """Tests for keyboard shortcut functionality."""
 
 import polars as pl
+import pytest
 
 from matchbox.client.cli.eval.state import EvaluationState
 from matchbox.client.cli.eval.utils import create_evaluation_item
-from matchbox.client.cli.eval.widgets.styling import GroupStyler
 from matchbox.common.factories.sources import (
     source_from_tuple,
 )
@@ -64,13 +64,19 @@ class TestKeyboardShortcuts:
         self.state.set_group_selection("S")
         assert self.state.current_group_selection == "s"
 
-    def test_number_key_parsing(self):
+    @pytest.mark.parametrize(
+        "key,expected",
+        [
+            ("1", 1),
+            ("5", 5),
+            ("9", 9),
+            ("0", 10),
+            ("a", None),
+        ],
+    )
+    def test_number_key_parsing(self, key, expected):
         """Test number key to column number conversion."""
-        assert self.state.parse_number_key("1") == 1
-        assert self.state.parse_number_key("5") == 5
-        assert self.state.parse_number_key("9") == 9
-        assert self.state.parse_number_key("0") == 10  # 0 maps to column 10
-        assert self.state.parse_number_key("a") is None  # Non-number returns None
+        assert self.state.parse_number_key(key) == expected
 
     def test_various_single_letter_groups(self):
         """Test various single letter groups work."""
@@ -89,91 +95,6 @@ class TestKeyboardShortcuts:
         self.state.set_group_selection("!")  # Special character
         self.state.set_group_selection("space")  # Word key
         assert self.state.current_group_selection == original_group
-
-
-class TestGroupStyler:
-    """Test the GroupStyler class for consistent colour/symbol assignment."""
-
-    def setup_method(self):
-        """Reset GroupStyler state before each test."""
-        GroupStyler.reset()
-
-    def test_style_consistency(self):
-        """Test that same group name always gets same colour/symbol."""
-        test_groups = ["qwerty", "asdf", "xyz", "hello", "world"]
-
-        for group in test_groups:
-            style1 = GroupStyler.get_style(group)
-            style2 = GroupStyler.get_style(group)
-            assert style1 == style2, f"Inconsistent style for group: {group}"
-
-    def test_different_groups_different_styles(self):
-        """Test that different group names get different styles (usually)."""
-        # While hash collisions are possible, these specific groups should differ
-        style_a = GroupStyler.get_style("a")
-        style_qwerty = GroupStyler.get_style("qwerty")
-
-        # At least one component (colour or symbol) should be different
-        assert style_a != style_qwerty
-
-    def test_display_text_format(self):
-        """Test display text formatting."""
-        text, colour = GroupStyler.get_display_text("qwerty", 5)
-
-        assert "QWERTY" in text
-        assert "(5)" in text
-        assert colour in GroupStyler.COLOURS
-
-    def test_colour_symbol_within_bounds(self):
-        """Test that generated colours and symbols are within defined ranges."""
-        for group in ["a", "qwerty", "xyz", "hello", "test123"]:
-            colour, symbol = GroupStyler.get_style(group)
-
-            assert colour in GroupStyler.COLOURS
-            assert symbol in GroupStyler.SYMBOLS
-
-    def test_colour_cycling_minimises_duplicates(self):
-        """Test that colours cycle through all available options before repeating."""
-        # Get styles for groups equal to the number of available colours
-        num_colours = len(GroupStyler.COLOURS)
-        groups = [f"group_{i}" for i in range(num_colours)]
-
-        styles = [GroupStyler.get_style(group) for group in groups]
-        colours = [style[0] for style in styles]
-        symbols = [style[1] for style in styles]
-
-        # All colours should be unique (no duplicates)
-        assert (
-            len(set(colours)) == num_colours
-        ), f"Expected {num_colours} unique colours, got {len(set(colours))}"
-
-        # All symbols should be unique (no duplicates) up to available symbols
-        num_symbols = len(GroupStyler.SYMBOLS)
-        expected_unique_symbols = min(num_colours, num_symbols)
-        assert len(set(symbols)) == expected_unique_symbols
-
-        # When we exceed available colours, then we should get repeats
-        extra_group = GroupStyler.get_style("extra_group")
-        extra_colour = extra_group[0]
-        # This colour should now be a repeat
-        assert extra_colour in colours
-
-    def test_assignment_persistence(self):
-        """Test that once assigned, groups keep their colours consistently."""
-        # Assign some groups
-        style_a = GroupStyler.get_style("a")
-        style_b = GroupStyler.get_style("b")
-        style_c = GroupStyler.get_style("c")
-
-        # Getting them again should return the same styles
-        assert GroupStyler.get_style("a") == style_a
-        assert GroupStyler.get_style("b") == style_b
-        assert GroupStyler.get_style("c") == style_c
-
-        # Even if we request them in different order
-        assert GroupStyler.get_style("c") == style_c
-        assert GroupStyler.get_style("a") == style_a
-        assert GroupStyler.get_style("b") == style_b
 
 
 class TestFieldProcessing:

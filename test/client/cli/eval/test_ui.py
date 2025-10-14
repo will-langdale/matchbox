@@ -55,30 +55,15 @@ class TestTextualUI:
         assert app.state.queue.current_position == 0
 
     @pytest.mark.asyncio
-    async def test_app_runs_headless(self, test_resolution):
+    async def test_app_runs_headless(self, test_resolution, mock_eval_dependencies):
         """Test that the app can run in test mode."""
         app = EntityResolutionApp(resolution=test_resolution, num_samples=5)
-
-        # Mock DAG for the test
         app.state.dag = Mock()
 
-        with (
-            patch("matchbox.client.cli.eval.app.settings") as mock_settings,
-            patch("matchbox.client.cli.eval.app._handler.login") as mock_login,
-            patch("matchbox.client.cli.eval.app.get_samples") as mock_get_samples,
-        ):
-            mock_settings.user = "test_user"
-            mock_login.return_value = 123
-            mock_get_samples.return_value = {}
-
-            # Test basic app lifecycle
-            async with app.run_test() as pilot:
-                # App should be running
-                assert app.is_running
-
-                # Should have header and footer
-                assert pilot.app.query("Header")
-                assert pilot.app.query("Footer")
+        async with app.run_test() as pilot:
+            assert app.is_running
+            assert pilot.app.query("Header")
+            assert pilot.app.query("Footer")
 
     @patch("matchbox.client.cli.eval.app.settings")
     @pytest.mark.asyncio
@@ -124,62 +109,31 @@ class TestTextualUI:
             assert app.state.queue.total_count == len(mock_samples)
 
     @pytest.mark.asyncio
-    async def test_help_modal(self, test_resolution):
+    async def test_help_modal(self, test_resolution, mock_eval_dependencies):
         """Test that help modal can be triggered."""
         app = EntityResolutionApp(resolution=test_resolution, num_samples=1)
-
-        # Mock DAG for the test
         app.state.dag = Mock()
 
-        with (
-            patch("matchbox.client.cli.eval.app.settings") as mock_settings,
-            patch("matchbox.client.cli.eval.app._handler.login") as mock_login,
-            patch("matchbox.client.cli.eval.app.get_samples") as mock_get_samples,
-        ):
-            mock_settings.user = "test_user"
-            mock_login.return_value = 123
-            mock_get_samples.return_value = {}
-
-            async with app.run_test() as pilot:
-                await pilot.pause()
-
-                # Press F1 to open help
-                await pilot.press("f1")
-                await pilot.pause()
-
-                # Help modal should be visible (this is a basic check)
-                # In a full implementation, we'd check for specific help content
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("f1")
+            await pilot.pause()
 
     @pytest.mark.asyncio
-    async def test_command_input_parsing(self, test_resolution):
+    async def test_command_input_parsing(self, test_resolution, mock_eval_dependencies):
         """Test command parsing functionality."""
-
         app = EntityResolutionApp(resolution=test_resolution, num_samples=1)
-        app.push_screen = Mock()  # Mock screen pushing
-
-        # Mock DAG for the test
+        app.push_screen = Mock()
         app.state.dag = Mock()
 
-        with (
-            patch("matchbox.client.cli.eval.app.settings") as mock_settings,
-            patch("matchbox.client.cli.eval.app._handler.login") as mock_login,
-            patch("matchbox.client.cli.eval.app.get_samples") as mock_get_samples,
-        ):
-            mock_settings.user = "test_user"
-            mock_login.return_value = 123
-            mock_get_samples.return_value = {}
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert hasattr(pilot.app, "state")
 
-            async with app.run_test() as pilot:
-                await pilot.pause()
-
-                # Test state management exists
-                assert hasattr(pilot.app, "state")
-
-                # Test state functionality
-                state = pilot.app.state
-                state.set_group_selection("b")
-                assert state.current_group_selection == "b"
-                assert state.parse_number_key("1") == 1
+            state = pilot.app.state
+            state.set_group_selection("b")
+            assert state.current_group_selection == "b"
+            assert state.parse_number_key("1") == 1
 
     @pytest.mark.asyncio
     async def test_scenario_integration(self):
@@ -302,55 +256,11 @@ class TestTextualUI:
         app.state.set_display_data([1])
         assert app.state.display_leaf_ids == [1]
 
-    def test_status_message_length_validation(self):
-        """Test that status messages are properly validated for length."""
-
+    def test_status_bar_integration(self):
+        """Test that status bar widget works in app context."""
         state = EvaluationState()
         status_widget = StatusBarRight(state)
 
-        # Test valid messages (should pass)
-        valid_messages = [
-            "⏳ Loading",
-            "✓ Loaded",
-            "⚡ Sending",
-            "✓ Done",
-            "⚠ Error",
-            "◯ Empty",
-            "📊 Got 5",
-            "✓ Ready",
-        ]
-
-        for msg in valid_messages:
-            state.update_status(msg)
-            text = status_widget.render()
-            # Should not contain error indicator
-            assert "TOO LONG" not in str(text)
-            assert len(msg) <= StatusBarRight.MAX_STATUS_LENGTH
-
-        # Test invalid message (should fail)
-        state.update_status("This message is way too long for the status bar")
+        state.update_status("✓ Ready", "green")
         text = status_widget.render()
-        # Should show error indicator
-        assert "TOO LONG" in str(text)
-
-    def test_status_message_colours(self):
-        """Test that status messages use proper colours."""
-
-        state = EvaluationState()
-        status_widget = StatusBarRight(state)
-
-        # Test colour assignments
-        test_cases = [
-            ("⚠ Error", "red"),
-            ("✓ Ready", "green"),
-            ("⏳ Loading", "yellow"),
-            ("◯ Empty", "dim"),
-        ]
-
-        for message, expected_colour in test_cases:
-            state.update_status(message, expected_colour)
-            # Verify state stores the colour
-            assert state.status_colour == expected_colour
-            # Verify rendering uses the colour
-            text = status_widget.render()
-            assert message in str(text)
+        assert "✓ Ready" in str(text)

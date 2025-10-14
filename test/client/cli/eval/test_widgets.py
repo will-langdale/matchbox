@@ -20,22 +20,12 @@ class TestComparisonDisplayTable:
     """Test the comparison display table widget."""
 
     @pytest.fixture
-    def mock_state(self):
-        """Create a mock state for testing."""
-        state = Mock()
-        state.add_listener = Mock()
-        state.compact_view_mode = True
-        state.current_assignments = {}
-        return state
-
-    @pytest.fixture
     def mock_current_item(self):
         """Create a mock current queue item."""
         item = Mock()
         item.display_columns = [1, 2, 3]
         item.duplicate_groups = [[1], [2], [3]]
 
-        # Create a simple test dataframe
         item.display_dataframe = pl.DataFrame(
             {
                 "field_name": ["name", "name", "address", "address"],
@@ -114,10 +104,7 @@ class TestComparisonDisplayTable:
         table = ComparisonDisplayTable(mock_state)
         table.refresh = Mock()
 
-        # Get the registered listener
         listener = mock_state.add_listener.call_args[0][0]
-
-        # Call the listener
         listener()
 
         table.refresh.assert_called_once()
@@ -179,10 +166,7 @@ class TestStatusBarLeft:
         status_left = StatusBarLeft(mock_state)
         status_left.refresh = Mock()
 
-        # Get the registered listener
         listener = mock_state.add_listener.call_args[0][0]
-
-        # Call the listener
         listener()
 
         status_left.refresh.assert_called_once()
@@ -207,34 +191,28 @@ class TestStatusBarRight:
         assert status_right.state is mock_state
         mock_state.add_listener.assert_called_once()
 
-    def test_render_no_message(self, mock_state):
-        """Test rendering when no status message exists."""
+    @pytest.mark.parametrize(
+        "message,color,should_render",
+        [
+            ("", "bright_white", True),
+            ("✓ Done", "green", True),
+            ("✓ Sent", "green", True),
+            ("⏳ Loading", "yellow", True),
+            ("⚠ Error", "red", True),
+            ("◯ Empty", "dim", True),
+            ("📊 Got 5", "green", True),
+            ("This message is way too long for the status bar", "red", True),
+        ],
+    )
+    def test_status_message_rendering(self, mock_state, message, color, should_render):
+        """Test rendering of various status messages."""
+        mock_state.status_message = message
+        mock_state.status_color = color
         status_right = StatusBarRight(mock_state)
 
         result = status_right.render()
 
-        assert isinstance(result, Text)
-        # Should show default "○ Ready"
-
-    def test_render_with_message(self, mock_state):
-        """Test rendering with status message."""
-        mock_state.status_message = "✓ Done"
-        mock_state.status_color = "green"
-        status_right = StatusBarRight(mock_state)
-
-        result = status_right.render()
-
-        assert isinstance(result, Text)
-
-    def test_render_message_too_long(self, mock_state):
-        """Test rendering with message that's too long."""
-        mock_state.status_message = "This message is way too long for the status bar"
-        status_right = StatusBarRight(mock_state)
-
-        result = status_right.render()
-
-        assert isinstance(result, Text)
-        # Should show error indicator
+        assert isinstance(result, Text) == should_render
 
     def test_max_status_length_constant(self):
         """Test that MAX_STATUS_LENGTH is set correctly."""
@@ -245,10 +223,7 @@ class TestStatusBarRight:
         status_right = StatusBarRight(mock_state)
         status_right.refresh = Mock()
 
-        # Get the registered listener
         listener = mock_state.add_listener.call_args[0][0]
-
-        # Call the listener
         listener()
 
         status_right.refresh.assert_called_once()
@@ -256,12 +231,6 @@ class TestStatusBarRight:
 
 class TestStatusBar:
     """Test the status bar container widget."""
-
-    @pytest.fixture
-    def mock_state(self):
-        """Create a mock state for testing."""
-        state = Mock()
-        return state
 
     def test_status_bar_initialisation(self, mock_state):
         """Test status bar container initialisation."""
@@ -271,10 +240,8 @@ class TestStatusBar:
 
     def test_status_bar_compose(self, mock_state):
         """Test status bar composition."""
-
         status_bar = StatusBar(mock_state)
 
-        # Mock the Horizontal container to avoid app context issues
         with patch(
             "matchbox.client.cli.eval.widgets.status.Horizontal"
         ) as mock_horizontal:
@@ -282,11 +249,9 @@ class TestStatusBar:
             mock_horizontal.return_value.__enter__.return_value = mock_container
             mock_horizontal.return_value.__exit__.return_value = None
 
-            # Get the composed widgets
             composed = list(status_bar.compose())
 
-            # Should yield left and right status bars
-            assert len(composed) == 2  # StatusBarLeft and StatusBarRight
+            assert len(composed) == 2
 
 
 class TestGroupStyler:
@@ -325,7 +290,6 @@ class TestGroupStyler:
 
     def test_color_cycling(self):
         """Test that colors cycle when exhausted."""
-        # Get more styles than available colors
         num_colors = len(GroupStyler.COLOURS)
         styles = []
 
@@ -333,14 +297,12 @@ class TestGroupStyler:
             style = GroupStyler.get_style(f"group_{i}")
             styles.append(style)
 
-        # Should have used all colors and started cycling
         colors_used = [style[0] for style in styles]
         unique_colors = set(colors_used)
         assert len(unique_colors) <= num_colors
 
     def test_symbol_cycling(self):
         """Test that symbols cycle when exhausted."""
-        # Get more styles than available symbols
         num_symbols = len(GroupStyler.SYMBOLS)
         styles = []
 
@@ -348,21 +310,17 @@ class TestGroupStyler:
             style = GroupStyler.get_style(f"group_{i}")
             styles.append(style)
 
-        # Should have used all symbols and started cycling
         symbols_used = [style[1] for style in styles]
         unique_symbols = set(symbols_used)
         assert len(unique_symbols) <= num_symbols
 
     def test_reset(self):
         """Test that reset clears all state."""
-        # Assign some styles
         GroupStyler.get_style("test1")
         GroupStyler.get_style("test2")
 
-        # Reset
         GroupStyler.reset()
 
-        # State should be cleared
         assert len(GroupStyler._group_styles) == 0
         assert len(GroupStyler._used_colours) == 0
         assert len(GroupStyler._used_symbols) == 0
@@ -371,15 +329,13 @@ class TestGroupStyler:
 
     def test_avoid_duplicates_when_possible(self):
         """Test that duplicates are avoided when colors/symbols are available."""
-        # Get several styles
         styles = []
         for i in range(5):
             style = GroupStyler.get_style(f"group_{i}")
             styles.append(style)
 
-        # All colors should be different (when enough are available)
         colors = [style[0] for style in styles]
         symbols = [style[1] for style in styles]
 
-        assert len(set(colors)) == len(colors)  # All unique
-        assert len(set(symbols)) == len(symbols)  # All unique
+        assert len(set(colors)) == len(colors)
+        assert len(set(symbols)) == len(symbols)

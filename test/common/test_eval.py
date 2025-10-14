@@ -208,11 +208,8 @@ def test_process_judgements():
     assert leaves == set(range(1, 15))
 
 
-def test_evaldata_unified_pr_calculation():
+def test_evaldata_unified_pr_calculation(evaldata_factory):
     """Test EvalData unified PR calculation with single and multi-threshold modes."""
-    import unittest.mock
-
-    # Create mock handler that returns our test data
     judgements = pl.DataFrame(
         {
             "user_id": [1, 1],
@@ -238,44 +235,32 @@ def test_evaldata_unified_pr_calculation():
         }
     )
 
-    # Mock the handler to return our test data
-    with unittest.mock.patch(
-        "matchbox.client.cli.eval.utils._handler.download_eval_data"
-    ) as mock_download:
-        mock_download.return_value = (judgements, expansion)
+    eval_data = evaldata_factory(
+        judgements,
+        expansion,
+        model_root_leaf,
+        thresholds=[0.9, 0.7],
+        probabilities=probabilities,
+    )
 
-        from matchbox.client.cli.eval.utils import EvalData
+    # Test single threshold mode
+    single_results = eval_data.precision_recall([0.8])
+    assert len(single_results) == 1
+    assert single_results[0][0] == 0.8
 
-        # Create EvalData instance
-        eval_data = EvalData(
-            root_leaf=model_root_leaf,
-            thresholds=[0.9, 0.7],
-            probabilities=probabilities,
-        )
+    # Test multi-threshold mode (uses optimisation)
+    multi_results = eval_data.precision_recall([0.9, 0.7])
+    assert len(multi_results) == 2
+    assert multi_results[0][0] == 0.7
+    assert multi_results[1][0] == 0.9
 
-        # Test single threshold mode
-        single_results = eval_data.precision_recall([0.8])
-        assert len(single_results) == 1
-        assert single_results[0][0] == 0.8  # threshold
-
-        # Test multi-threshold mode (uses optimization)
-        multi_results = eval_data.precision_recall([0.9, 0.7])
-        assert len(multi_results) == 2
-        assert multi_results[0][0] == 0.7  # sorted ascending
-        assert multi_results[1][0] == 0.9
-
-        # Test using instance thresholds
-        default_results = eval_data.precision_recall()
-        assert len(default_results) == 2  # Uses instance thresholds
+    # Test using instance thresholds
+    default_results = eval_data.precision_recall()
+    assert len(default_results) == 2
 
 
-def test_evaldata_matches_precision_recall():
+def test_evaldata_matches_precision_recall(evaldata_factory):
     """Test that EvalData sweep method produces identical results."""
-    import unittest.mock
-
-    from matchbox.client.cli.eval.utils import EvalData
-    from matchbox.common.eval import precision_recall
-
     # Use the exact same test data as test_precision_recall
     model1 = pl.DataFrame(
         [
@@ -334,46 +319,38 @@ def test_evaldata_matches_precision_recall():
         expansion=judgement_cluster_expansion,
     )
 
-    # Mock the handler to return our test data
-    with unittest.mock.patch(
-        "matchbox.client.cli.eval.utils._handler.download_eval_data"
-    ) as mock_download:
-        mock_download.return_value = (judgements, judgement_cluster_expansion)
+    # Create EvalData instance and get results using sweep method
+    eval_data = evaldata_factory(
+        judgements,
+        judgement_cluster_expansion,
+        model1,
+        thresholds=[1.0],
+        probabilities=None,
+    )
 
-        # Create EvalData instance and get results using sweep method
-        eval_data = EvalData(
-            root_leaf=model1,
-            thresholds=[1.0],  # Single threshold for direct comparison
-            probabilities=None,  # No probabilities means include all pairs
-        )
+    sweep_results = eval_data.precision_recall([1.0])
 
-        sweep_results = eval_data.precision_recall([1.0])
+    # Extract values from sweep results (threshold, p, r, p_ci, r_ci)
+    _, sweep_p, sweep_r, sweep_p_ci, sweep_r_ci = sweep_results[0]
 
-        # Extract values from sweep results (threshold, p, r, p_ci, r_ci)
-        _, sweep_p, sweep_r, sweep_p_ci, sweep_r_ci = sweep_results[0]
+    # Extract values from original results (p, r, p_ci, r_ci)
+    orig_p, orig_r, orig_p_ci, orig_r_ci = original_results[0]
 
-        # Extract values from original results (p, r, p_ci, r_ci)
-        orig_p, orig_r, orig_p_ci, orig_r_ci = original_results[0]
+    # Verify they match exactly
+    assert sweep_p == orig_p, f"Precision mismatch: {sweep_p} != {orig_p}"
+    assert sweep_r == orig_r, f"Recall mismatch: {sweep_r} != {orig_r}"
+    assert (
+        sweep_p_ci == orig_p_ci
+    ), f"Precision CI mismatch: {sweep_p_ci} != {orig_p_ci}"
+    assert sweep_r_ci == orig_r_ci, f"Recall CI mismatch: {sweep_r_ci} != {orig_r_ci}"
 
-        # Verify they match exactly
-        assert sweep_p == orig_p, f"Precision mismatch: {sweep_p} != {orig_p}"
-        assert sweep_r == orig_r, f"Recall mismatch: {sweep_r} != {orig_r}"
-        assert (
-            sweep_p_ci == orig_p_ci
-        ), f"Precision CI mismatch: {sweep_p_ci} != {orig_p_ci}"
-        assert (
-            sweep_r_ci == orig_r_ci
-        ), f"Recall CI mismatch: {sweep_r_ci} != {orig_r_ci}"
-
-        # Also verify the expected values from test_precision_recall
-        assert sweep_p == 1 / 4, f"Expected precision 1/4, got {sweep_p}"
-        assert sweep_r == 1, f"Expected recall 1, got {sweep_r}"
+    # Also verify the expected values from test_precision_recall
+    assert sweep_p == 1 / 4, f"Expected precision 1/4, got {sweep_p}"
+    assert sweep_r == 1, f"Expected recall 1, got {sweep_r}"
 
 
-def test_evaldata_optimization_consistency():
+def test_evaldata_optimization_consistency(evaldata_factory):
     """Test that optimized multi-threshold matches single-threshold results."""
-    import unittest.mock
-
     # Simple test case with known results
     judgements = pl.DataFrame(
         {
@@ -392,33 +369,20 @@ def test_evaldata_optimization_consistency():
 
     model_root_leaf = pl.DataFrame({"root": [1, 1], "leaf": [1, 2]})
 
-    # Mock the handler
-    with unittest.mock.patch(
-        "matchbox.client.cli.eval.utils._handler.download_eval_data"
-    ) as mock_download:
-        mock_download.return_value = (judgements, expansion)
+    eval_data = evaldata_factory(
+        judgements, expansion, model_root_leaf, thresholds=[0.8], probabilities=None
+    )
 
-        from matchbox.client.cli.eval.utils import EvalData
+    # Get results from both single and multi-threshold paths
+    single_result = eval_data.precision_recall([0.8])[0]
+    multi_result = eval_data.precision_recall([0.8, 0.6])[1]  # 0.8 result
 
-        eval_data = EvalData(
-            root_leaf=model_root_leaf, thresholds=[0.8], probabilities=None
-        )
-
-        # Get results from both single and multi-threshold paths
-        single_result = eval_data.precision_recall([0.8])[0]
-        multi_result = eval_data.precision_recall([0.8, 0.6])[1]  # 0.8 result
-
-        # Results should be identical (excluding threshold value)
-        assert single_result[1:] == multi_result[1:]  # precision, recall, CIs
+    # Results should be identical (excluding threshold value)
+    assert single_result[1:] == multi_result[1:]  # precision, recall, CIs
 
 
-def test_evaldata_handles_edge_cases():
+def test_evaldata_handles_edge_cases(evaldata_factory):
     """Test EvalData correctly handles neutral and negative pairs."""
-    import unittest.mock
-
-    from matchbox.client.cli.eval.utils import EvalData
-    from matchbox.common.eval import precision_recall
-
     # Model with various clusters
     model = pl.DataFrame(
         [
@@ -466,30 +430,23 @@ def test_evaldata_handles_edge_cases():
         expansion=expansion,
     )
 
-    # Mock and test with EvalData
-    with unittest.mock.patch(
-        "matchbox.client.cli.eval.utils._handler.download_eval_data"
-    ) as mock_download:
-        mock_download.return_value = (judgements, expansion)
+    # Test with EvalData
+    eval_data = evaldata_factory(
+        judgements, expansion, model, thresholds=[1.0], probabilities=None
+    )
 
-        eval_data = EvalData(
-            root_leaf=model,
-            thresholds=[1.0],
-            probabilities=None,
-        )
+    sweep_results = eval_data.precision_recall([1.0])
+    _, sweep_p, sweep_r, sweep_p_ci, sweep_r_ci = sweep_results[0]
+    orig_p, orig_r, orig_p_ci, orig_r_ci = original_results[0]
 
-        sweep_results = eval_data.precision_recall([1.0])
-        _, sweep_p, sweep_r, sweep_p_ci, sweep_r_ci = sweep_results[0]
-        orig_p, orig_r, orig_p_ci, orig_r_ci = original_results[0]
+    # Verify exact match
+    assert sweep_p == orig_p
+    assert sweep_r == orig_r
+    assert sweep_p_ci == orig_p_ci
+    assert sweep_r_ci == orig_r_ci
 
-        # Verify exact match
-        assert sweep_p == orig_p
-        assert sweep_r == orig_r
-        assert sweep_p_ci == orig_p_ci
-        assert sweep_r_ci == orig_r_ci
-
-        # Model pairs include (1,2) and (5,6) - neutral excluded, negative kept
-        # Validation pairs only include (1,2) since it's the only positive
-        # So precision = 1/2 = 0.5 and recall = 1/1 = 1.0
-        assert sweep_p == 0.5, f"Expected precision 0.5, got {sweep_p}"
-        assert sweep_r == 1.0, f"Expected recall 1.0, got {sweep_r}"
+    # Model pairs include (1,2) and (5,6) - neutral excluded, negative kept
+    # Validation pairs only include (1,2) since it's the only positive
+    # So precision = 1/2 = 0.5 and recall = 1/1 = 1.0
+    assert sweep_p == 0.5, f"Expected precision 0.5, got {sweep_p}"
+    assert sweep_r == 1.0, f"Expected recall 1.0, got {sweep_r}"

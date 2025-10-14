@@ -560,16 +560,14 @@ class EvalData:
             EvalData instance ready for precision/recall calculations
         """
         logger = logging.getLogger(__name__)
-        logger.info(f"Starting EvalData.from_resolution() for resolution: {resolution}")
+        logger.info(f"Building EvalData for resolution: {resolution}")
 
         # Get model configuration
-        logger.info(f"Fetching model config for resolution: {resolution}")
         model_resolution = _handler.get_resolution(
             path=resolution, validate_type=ResolutionType.MODEL
         )
         model_config = model_resolution.config
         if not model_config:
-            logger.error(f"Model {resolution} not found")
             raise ValueError(f"Model {resolution} not found")
 
         # Extract source resolutions from query configs
@@ -579,42 +577,36 @@ class EvalData:
             if model_config.right_query
             else None
         )
-        logger.info(
-            f"Model config retrieved: left_sources={left_sources}, "
-            f"right_sources={right_sources}"
+        logger.debug(
+            f"Model config: left_sources={left_sources}, right_sources={right_sources}"
         )
 
         # Get model probabilities/results
-        logger.info(f"Fetching model results for resolution: {resolution}")
         probabilities = _handler.get_results(resolution)
         probs_df = pl.from_arrow(probabilities)
-        logger.info(f"Model results retrieved: {len(probs_df)} probability records")
+        logger.debug(f"Retrieved {len(probs_df)} probability records")
 
-        # Extract thresholds from probabilities
-        logger.info("Extracting thresholds from probabilities")
+        # Extract and normalise thresholds
         thresholds = sorted(
             probs_df.select("probability").unique().to_series().to_list()
         )
-        logger.info(f"Raw thresholds extracted: {thresholds}")
-        thresholds = [t / 100 for t in thresholds]  # Convert to 0.0-1.0 range
-        logger.info(f"Normalized thresholds: {thresholds}")
+        thresholds = [t / 100 for t in thresholds]
+        logger.debug(f"Extracted {len(thresholds)} thresholds")
 
         # Handle both deduper and linker models
         if model_config.right_query is None:
-            logger.info("Processing deduper model (single source)")
+            logger.debug("Processing deduper model")
             # Deduper model - left_query contains the only source
             left_source = model_config.left_query.source_resolutions[0]
-            logger.info(f"Querying source data for: {left_source}")
             source_data = _handler.query(
                 source=left_source,
                 resolution=None,
                 return_leaf_id=True,
             )
             source_df = pl.from_arrow(source_data)
-            logger.info(f"Source data retrieved: {len(source_df)} records")
+            logger.debug(f"Retrieved {len(source_df)} source records")
 
             # Create root_leaf mapping from probabilities and leaf_id
-            logger.info("Creating id_to_leaf mapping")
             id_to_leaf = dict(
                 zip(
                     source_df["id"].to_list(),
@@ -622,10 +614,8 @@ class EvalData:
                     strict=False,
                 )
             )
-            logger.info(f"Created {len(id_to_leaf)} id->leaf mappings")
 
             # Map left_id and right_id to their leaf_ids
-            logger.info("Building root_leaf data from probabilities")
             root_leaf_data = []
             for row in probs_df.iter_rows(named=True):
                 left_leaf = id_to_leaf.get(row["left_id"])
@@ -634,37 +624,30 @@ class EvalData:
                     root_leaf_data.append({"root": left_leaf, "leaf": right_leaf})
 
             root_leaf_df = pl.DataFrame(root_leaf_data).unique()
-            logger.info(
-                f"Created root_leaf dataframe with {len(root_leaf_df)} unique mappings"
-            )
         else:
-            logger.info("Processing linker model (two sources)")
+            logger.debug("Processing linker model")
             # Linker model - has both left and right queries with sources
             left_source = model_config.left_query.source_resolutions[0]
             right_source = model_config.right_query.source_resolutions[0]
-            logger.info(f"Querying left source data for: {left_source}")
             left_data = _handler.query(
                 source=left_source,
                 resolution=None,
                 return_leaf_id=True,
             )
-            logger.info(f"Querying right source data for: {right_source}")
             right_data = _handler.query(
                 source=right_source,
                 resolution=None,
                 return_leaf_id=True,
             )
 
-            # Build root_leaf mapping manually
+            # Build root_leaf mapping
             left_df = pl.from_arrow(left_data)
             right_df = pl.from_arrow(right_data)
-            logger.info(
-                f"Left data: {len(left_df)} records, "
-                f"Right data: {len(right_df)} records"
+            logger.debug(
+                f"Retrieved {len(left_df)} left records, {len(right_df)} right records"
             )
 
             # Create leaf_id lookup tables
-            logger.info("Creating lookup tables")
             left_lookup = left_df.select(["id", "leaf_id"]).rename(
                 {"leaf_id": "left_leaf"}
             )
@@ -672,8 +655,7 @@ class EvalData:
                 {"leaf_id": "right_leaf"}
             )
 
-            # Join probabilities with leaf lookups to build root_leaf mapping
-            logger.info("Building root_leaf mapping via joins")
+            # Join probabilities with leaf lookups
             root_leaf_df = (
                 probs_df.join(left_lookup, left_on="left_id", right_on="id", how="left")
                 .join(right_lookup, left_on="right_id", right_on="id", how="left")
@@ -685,16 +667,10 @@ class EvalData:
                 )
                 .unique()
             )
-            logger.info(
-                f"Created root_leaf dataframe with {len(root_leaf_df)} unique mappings"
-            )
 
-        logger.info("Converting to Arrow format and creating EvalData instance")
         root_leaf = root_leaf_df.to_arrow()
-        logger.info(f"Final root_leaf Arrow table: {len(root_leaf)} records")
-        result = cls(root_leaf, thresholds, probabilities)
-        logger.info("EvalData.from_resolution() completed successfully")
-        return result
+        logger.info(f"EvalData created successfully with {len(root_leaf)} records")
+        return cls(root_leaf, thresholds, probabilities)
 
     def refresh_judgements(self) -> None:
         """Refresh judgement data with latest submissions from the server."""
