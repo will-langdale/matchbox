@@ -78,7 +78,7 @@ class EntityResolutionApp(App):
         if self.state.dag is None:
             raise RuntimeError(
                 "DAG not loaded. EntityResolutionApp requires a pre-loaded DAG. "
-                "Ensure DAG is passed during initialization."
+                "Ensure DAG is passed during initialisation."
             )
         await self.load_samples()
         await self.load_eval_data()
@@ -217,8 +217,3 @@ class EntityResolutionApp(App):
     async def action_quit(self) -> None:
         """Quit the application."""
         self.exit()
-
-
-if __name__ == "__main__":
-    app = EntityResolutionApp()
-    app.run()

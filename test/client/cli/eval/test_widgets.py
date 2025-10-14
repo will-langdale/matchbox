@@ -47,8 +47,8 @@ class TestComparisonDisplayTable:
 
         return item
 
-    def test_table_initialization(self, mock_state):
-        """Test table widget initialization."""
+    def test_table_initialisation(self, mock_state):
+        """Test table widget initialisation."""
         table = ComparisonDisplayTable(mock_state)
 
         assert table.state is mock_state
@@ -139,8 +139,8 @@ class TestStatusBarLeft:
         state.current_group_selection = "a"
         return state
 
-    def test_status_bar_left_initialization(self, mock_state):
-        """Test left status bar initialization."""
+    def test_status_bar_left_initialisation(self, mock_state):
+        """Test left status bar initialisation."""
         status_left = StatusBarLeft(mock_state)
 
         assert status_left.state is mock_state
@@ -200,8 +200,8 @@ class TestStatusBarRight:
         state.status_color = "bright_white"
         return state
 
-    def test_status_bar_right_initialization(self, mock_state):
-        """Test right status bar initialization."""
+    def test_status_bar_right_initialisation(self, mock_state):
+        """Test right status bar initialisation."""
         status_right = StatusBarRight(mock_state)
 
         assert status_right.state is mock_state
@@ -264,7 +264,7 @@ class TestStatusBar:
         return state
 
     def test_status_bar_initialisation(self, mock_state):
-        """Test status bar container initialization."""
+        """Test status bar container initialisation."""
         status_bar = StatusBar(mock_state)
 
         assert status_bar.state is mock_state

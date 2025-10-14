@@ -19,11 +19,14 @@ Example usage:
     plotext_pr_envelope(data)  # plot in terminal
 """
 
+import logging
 from collections.abc import Callable
 
 import numpy as np
 import plotext as pltxt
 from scipy.interpolate import PchipInterpolator
+
+logger = logging.getLogger(__name__)
 
 # Configuration constants
 COVERAGE_SIGMA = 0.25  # Exponential decay rate for coverage probability
@@ -337,7 +340,7 @@ def plotext_pr_envelope(
         title: Plot title for the terminal display
     """
     if not pr_data:
-        print("No data to plot")
+        logger.warning("No data to plot")
         return
 
     # Extract original data

@@ -1,11 +1,15 @@
 """Plot data validation and preparation logic."""
 
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from matchbox.client.cli.eval.state import EvaluationState
 
 logger = logging.getLogger(__name__)
 
 
-def can_show_plot(state) -> tuple[bool, str]:
+def can_show_plot(state: "EvaluationState") -> tuple[bool, str]:
     """Single source of truth for plot display readiness.
 
     Args:
@@ -34,7 +38,7 @@ def can_show_plot(state) -> tuple[bool, str]:
     return True, ""
 
 
-def refresh_judgements_for_plot(state) -> tuple[bool, str]:
+def refresh_judgements_for_plot(state: "EvaluationState") -> tuple[bool, str]:
     """Refresh judgements data for plotting.
 
     Args:
