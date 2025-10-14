@@ -26,6 +26,9 @@ site/
 /CLAUDE.md
 /GEMINI.md
 
+# .agents dir
+.agents
+
 # Logs
 *.log
 
