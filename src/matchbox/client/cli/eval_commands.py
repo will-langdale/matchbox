@@ -6,11 +6,9 @@ from typing import Annotated
 import typer
 from sqlalchemy import create_engine
 
-from matchbox.client import _handler
 from matchbox.client.cli.eval.app import EntityResolutionApp
 from matchbox.client.dags import DAG
 from matchbox.client.sources import RelationalDBLocation
-from matchbox.common.dtos import CollectionName, ModelResolutionPath
 
 eval_app = typer.Typer(help="Entity evaluation commands")
 
@@ -66,11 +64,6 @@ def start(
         if log_file:
             _setup_logging_redirect(log_file)
 
-        # Fetch collection and get default run
-        collection_name = CollectionName(collection)
-        collection_obj = _handler.get_collection(collection_name)
-        run_id = collection_obj.default_run
-
         # Create warehouse engine and location (required for loading DAG)
         if not warehouse:
             raise typer.BadParameter(
@@ -87,21 +80,15 @@ def start(
         )
 
         # Load DAG from server with warehouse location attached to all sources
-        dag = DAG(name=collection).load_run(run_id=run_id, location=warehouse_location)
+        dag = DAG(name=collection)
+        dag = dag.load_pending(location=warehouse_location)
 
         # Get resolution name from --resolution or DAG's final_step
-        resolution_name = dag.final_step.name if resolution is None else resolution
-
-        # Construct ModelResolutionPath
-        resolution_path = ModelResolutionPath(
-            collection=collection_name,
-            run=run_id,
-            name=resolution_name,
-        )
+        model = dag.get_model(resolution) or dag.final_step
 
         # Create app with loaded DAG (not warehouse string)
         app = EntityResolutionApp(
-            resolution=resolution_path,
+            resolution=model.resolution_path,
             num_samples=samples,
             user=user,
             dag=dag,

@@ -178,7 +178,6 @@ class TestEntityResolutionAppIntegration:
         app.handlers.action_next_entity = AsyncMock()
         app.handlers.action_previous_entity = AsyncMock()
         app.handlers.action_clear_assignments = AsyncMock()
-        app.handlers.action_toggle_view_mode = AsyncMock()
         app.handlers.action_show_help = AsyncMock()
         app.handlers.action_submit_and_fetch = AsyncMock()
 
@@ -191,9 +190,6 @@ class TestEntityResolutionAppIntegration:
 
         await app.action_clear_assignments()
         app.handlers.action_clear_assignments.assert_called_once()
-
-        await app.action_toggle_view_mode()
-        app.handlers.action_toggle_view_mode.assert_called_once()
 
         await app.action_show_help()
         app.handlers.action_show_help.assert_called_once()

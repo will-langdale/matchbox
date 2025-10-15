@@ -15,7 +15,6 @@ from sqlalchemy import create_engine
 
 from matchbox.client._settings import settings
 from matchbox.common.factories.scenarios import SCENARIO_REGISTRY, setup_scenario
-from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.server.base import MatchboxDatastoreSettings
 from matchbox.server.postgresql import MatchboxPostgres
 
@@ -102,21 +101,20 @@ def scenario_setup(scenario_name: str):
         ) as dag:
             logger.info("Scenario ready! Starting Textual eval app via CLI...")
 
-            # Determine resolution for scenario
             if scenario_name in ["bare", "index"]:
-                # These scenarios don't have models, use source resolution
-                resolution = (
-                    list(dag.sources.keys())[0] if dag.sources else DEFAULT_RESOLUTION
-                )
+                raise RuntimeError("Scenario has nothing to evaluate.")
             else:
-                # Use first model resolution
-                resolution = (
-                    list(dag.models.keys())[0] if dag.models else DEFAULT_RESOLUTION
-                )
+                print(dag.dag.nodes)
+                try:
+                    resolution = dag.dag.final_step
+                except ValueError:
+                    # No apex
+                    resolution = list(dag.dag.nodes.values())[-1]
 
             # Yield CLI parameters instead of app instance
             yield {
-                "resolution": resolution,
+                "collection": resolution.resolution_path.collection,
+                "resolution": resolution.resolution_path.name,
                 "warehouse": str(warehouse_engine.url),
                 "samples": 20,
             }
@@ -184,6 +182,8 @@ def main(
                 "matchbox.client.cli.main",
                 "eval",
                 "start",
+                "--collection",
+                cli_params["collection"],
                 "--resolution",
                 cli_params["resolution"],
                 "--warehouse",

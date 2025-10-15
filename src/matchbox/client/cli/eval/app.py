@@ -3,7 +3,6 @@
 import logging
 import traceback
 from pathlib import Path
-from typing import Any
 
 from textual.app import App, ComposeResult
 from textual.containers import Vertical
@@ -13,7 +12,7 @@ from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.client.cli.eval.handlers import EvaluationHandlers
 from matchbox.client.cli.eval.state import EvaluationState
-from matchbox.client.cli.eval.utils import EvalData, get_samples
+from matchbox.client.cli.eval.utils import EvalData, EvaluationItem, get_samples
 from matchbox.client.cli.eval.widgets.status import StatusBar
 from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
 from matchbox.client.dags import DAG
@@ -35,7 +34,6 @@ class EntityResolutionApp(App):
         ("ctrl+g", "jump_to_entity", "Jump"),
         ("question_mark,f1", "show_help", "Help"),
         ("escape", "clear_assignments", "Clear"),
-        ("grave_accent", "toggle_view_mode", "Toggle view"),
         ("ctrl+q,ctrl+c", "quit", "Quit"),
     ]
 
@@ -189,10 +187,6 @@ class EntityResolutionApp(App):
         """Clear all group assignments and held letters for current entity."""
         await self.handlers.action_clear_assignments()
 
-    async def action_toggle_view_mode(self) -> None:
-        """Toggle between compact and detailed view modes."""
-        await self.handlers.action_toggle_view_mode()
-
     async def action_show_help(self) -> None:
         """Show the help modal."""
         await self.handlers.action_show_help()
@@ -201,7 +195,9 @@ class EntityResolutionApp(App):
         """Submit all painted entities, remove from queue, fetch new samples."""
         await self.handlers.action_submit_and_fetch()
 
-    async def _fetch_additional_samples(self, count: int) -> dict[int, Any] | None:
+    async def _fetch_additional_samples(
+        self, count: int
+    ) -> dict[int, EvaluationItem] | None:
         """Fetch additional samples using the loaded DAG."""
         try:
             return get_samples(

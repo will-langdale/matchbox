@@ -193,8 +193,8 @@ class TestE2EModelEvaluation:
         )
 
         # Load DAG from server with warehouse location
-        dag = DAG(str(self.final_resolution_1_path.collection)).load_run(
-            run_id=self.final_resolution_1_path.run, location=warehouse_location
+        dag = DAG(str(self.final_resolution_1_path.collection)).load_pending(
+            location=warehouse_location
         )
 
         # Pass loaded DAG to app

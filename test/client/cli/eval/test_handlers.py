@@ -233,13 +233,6 @@ class TestEvaluationHandlers:
             handlers.state.clear_current_assignments.assert_called_once()
             handlers.state.clear_group_selection.assert_called_once()
 
-        @pytest.mark.asyncio
-        async def test_toggle_view_mode(self, handlers):
-            """Test toggling view mode."""
-            await handlers.action_toggle_view_mode()
-
-            handlers.state.toggle_view_mode.assert_called_once()
-
     class TestModalActions:
         """Test modal-related actions."""
 

@@ -41,11 +41,10 @@ class HelpModal(ModalScreen):
                     Navigation shortcuts:
                     • → or Enter - Next entity
                     • ← - Previous entity
-                    • Space - Submit current judgement & fetch more samples  
+                    • Space - Submit current judgement & fetch more samples
                     • Ctrl+G - Jump to entity number
                     • ? or F1 - Show this help
                     • Esc - Clear current group selection
-                    • ` (backtick) - Toggle between compact and detailed view
                     • / (slash) - Toggle precision-recall plot display
                     • Ctrl+C or Ctrl+Q - Quit
 
@@ -55,11 +54,7 @@ class HelpModal(ModalScreen):
                     • Each group gets unique colour + symbol combination
                     • Column headers show group assignment with coloured symbols
                     • Status bar shows group counts with visual indicators
-
-                    View modes:
-                    • Compact view (default): Shows non-empty values, one row per field
-                    • Detailed view: Shows source attribution (e.g. "field (source)")
-                    • Empty rows are automatically filtered out in both modes
+                    • Empty rows are automatically filtered out
 
                     Tips for speed:
                     • Press letter with left hand, numbers with right

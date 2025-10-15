@@ -68,24 +68,12 @@ class TestComparisonDisplayTable:
     def test_render_compact_view(self, mock_state, mock_current_item):
         """Test rendering in compact view mode."""
         mock_state.queue.current = mock_current_item
-        mock_state.compact_view_mode = True
         table = ComparisonDisplayTable(mock_state)
 
         result = table.render()
 
         assert isinstance(result, Table)
         # Should have field name column plus display columns
-        assert len(result.columns) == 4  # Field + 3 display columns
-
-    def test_render_detailed_view(self, mock_state, mock_current_item):
-        """Test rendering in detailed view mode."""
-        mock_state.queue.current = mock_current_item
-        mock_state.compact_view_mode = False
-        table = ComparisonDisplayTable(mock_state)
-
-        result = table.render()
-
-        assert isinstance(result, Table)
         assert len(result.columns) == 4  # Field + 3 display columns
 
     def test_render_with_assignments(self, mock_state, mock_current_item):

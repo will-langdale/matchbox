@@ -12,12 +12,14 @@ from matchbox.client.models import Model
 from matchbox.client.queries import Query
 from matchbox.client.sources import Location, Source
 from matchbox.common.dtos import (
+    Collection,
     CollectionName,
     ModelResolutionName,
     Resolution,
     ResolutionName,
     ResolutionPath,
     ResolutionType,
+    Run,
     RunID,
     SourceResolutionName,
 )
@@ -301,6 +303,30 @@ class DAG:
 
         return self
 
+    def _load_run(self, run_id: RunID, location: Location) -> Self:
+        """Attach the specified run ID to the current DAG.
+
+        Args:
+            run_id: The ID of the run to attach
+            location: The Location object that will be attached to nodes coming
+                from default Run. Can be updated per-source after instantiation if
+                necessary.
+        """
+        run: Run = _handler.get_run(collection=self.name, run_id=run_id)
+        self.run: RunID = run_id
+
+        def _len_dependencies(res_item: tuple[ResolutionName, Resolution]) -> int:
+            return len(res_item[1].config.dependencies)
+
+        sorted_resolutions: tuple[ResolutionName, Resolution] = sorted(
+            run.resolutions.items(), key=_len_dependencies
+        )
+
+        for name, resolution in sorted_resolutions:
+            self.add_resolution(name=name, resolution=resolution, location=location)
+
+        return self
+
     def load_default(self, location: Location) -> Self:
         """Attach to default run in this collection, loading all DAG nodes.
 
@@ -309,60 +335,25 @@ class DAG:
                 from default Run. Can be updated per-source after instantiation if
                 necessary.
         """
-        collection = _handler.get_collection(self.name)
+        collection: Collection = _handler.get_collection(self.name)
+        return self._load_run(collection.default_run, location)
 
-        run = _handler.get_run(collection=self.name, run_id=collection.default_run)
-        self.run = collection.default_run
+    def load_pending(self, location: Location) -> Self:
+        """Attach to the pending run in this collection, loading all DAG nodes.
 
-        def _len_dependencies(res_item: tuple[ResolutionName, Resolution]) -> int:
-            return len(res_item[1].config.dependencies)
-
-        sorted_resolutions: tuple[ResolutionName, Resolution] = sorted(
-            run.resolutions.items(), key=_len_dependencies
-        )
-
-        for name, resolution in sorted_resolutions:
-            self.add_resolution(name=name, resolution=resolution, location=location)
-
-        return self
-
-    def load_run(self, run_id: RunID, location: Location) -> Self:
-        """Attach to a specific run in this collection, loading all DAG nodes.
-
-        Similar to load_default() but loads a specific run ID rather than
-        the collection's default run.
+        Pending is defined as the last non-default run.
 
         Args:
-            run_id: The specific run ID to load
             location: The Location object that will be attached to nodes coming
                 from this Run. Can be updated per-source after instantiation if
                 necessary.
-
-        Returns:
-            Self for method chaining
-
-        Example:
-            >>> from sqlalchemy import create_engine
-            >>> from matchbox.client.sources import RelationalDBLocation
-            >>>
-            >>> engine = create_engine("postgresql://user:pass@host/db")
-            >>> location = RelationalDBLocation(name="warehouse", client=engine)
-            >>> dag = DAG("companies").load_run(run_id=123, location=location)
         """
-        run = _handler.get_run(collection=self.name, run_id=run_id)
-        self.run = run_id
+        collection: Collection = _handler.get_collection(self.name)
 
-        def _len_dependencies(res_item: tuple[ResolutionName, Resolution]) -> int:
-            return len(res_item[1].config.dependencies)
+        default_run: set[RunID] = collection.default_run or set()
+        pending_runs: set[RunID] = set(collection.runs) - default_run
 
-        sorted_resolutions: tuple[ResolutionName, Resolution] = sorted(
-            run.resolutions.items(), key=_len_dependencies
-        )
-
-        for name, resolution in sorted_resolutions:
-            self.add_resolution(name=name, resolution=resolution, location=location)
-
-        return self
+        return self._load_run(list(pending_runs)[-1], location)
 
     def run_and_sync(
         self,

@@ -23,10 +23,7 @@ class ComparisonDisplayTable(Widget):
         if not current or not hasattr(current, "display_dataframe"):
             return self._create_loading_table()
 
-        if self.state.compact_view_mode:
-            return self._render_compact_view(current)
-        else:
-            return self._render_detailed_view(current)
+        return self._render_compact_view(current)
 
     def _create_loading_table(self) -> Table:
         """Create a simple loading table."""
@@ -93,59 +90,6 @@ class ComparisonDisplayTable(Widget):
 
             if any(cell for cell in row_data[1:]):
                 table.add_row(*row_data)
-
-        return table
-
-    def _render_detailed_view(self, current) -> Table:
-        """Render detailed view - source attribution with deduplication."""
-        if current.display_dataframe.is_empty():
-            return self._create_loading_table()
-
-        table = Table(
-            show_header=True,
-            header_style="bold",
-            show_lines=False,
-            row_styles=[],
-            box=None,
-            padding=(0, 1),
-        )
-        table.add_column("Field", style="bright_white", min_width=20, max_width=50)
-        self._add_table_columns(table, current)
-
-        # Group by field and source for detailed view
-        field_source_groups = (
-            current.display_dataframe.group_by(["field_name", "source_name"])
-            .agg([pl.col("leaf_id"), pl.col("value")])
-            .sort(["field_name", "source_name"])
-        )
-
-        field_source_data = {}
-        for row in field_source_groups.iter_rows(named=True):
-            field_name = row["field_name"]
-            source_name = row["source_name"]
-            leaf_ids = row["leaf_id"]
-            values = row["value"]
-
-            field_source_data.setdefault(field_name, {})
-            field_source_data[field_name][f"{field_name} ({source_name})"] = dict(
-                zip(leaf_ids, values, strict=True)
-            )
-
-        for field_name in sorted(field_source_data.keys()):
-            source_data = field_source_data[field_name]
-            if table.rows:
-                separator_row = ["─" * 15] + ["─" * 8] * len(current.display_columns)
-                table.add_row(*separator_row, style="dim")
-
-            for source_field_name in sorted(source_data.keys()):
-                leaf_value_map = source_data[source_field_name]
-                row_data = [source_field_name]
-
-                for representative_leaf_id in current.display_columns:
-                    row_data.append(leaf_value_map.get(representative_leaf_id, ""))
-
-                if any(cell.strip() for cell in row_data[1:]):
-                    table.add_row(*row_data)
 
         return table
 

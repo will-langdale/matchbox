@@ -142,7 +142,6 @@ class TestEvaluationState:
         """Test initial state values."""
         assert state.sample_limit == 100
         assert not state.current_group_selection
-        assert state.compact_view_mode is True
         assert state.show_plot is False
         assert state.eval_data is None
         assert state.is_loading_eval_data is False
@@ -188,20 +187,6 @@ class TestEvaluationState:
         state.set_group_selection("123")  # Not alpha
         assert not state.current_group_selection  # Unchanged
         listener.assert_not_called()
-
-    def test_view_mode_toggle(self, state):
-        """Test view mode toggling."""
-        listener = Mock()
-        state.add_listener(listener)
-
-        assert state.compact_view_mode is True
-
-        state.toggle_view_mode()
-        assert state.compact_view_mode is False
-        listener.assert_called_once()
-
-        state.toggle_view_mode()
-        assert state.compact_view_mode is True
 
     def test_eval_data_management(self, state):
         """Test eval data state management."""

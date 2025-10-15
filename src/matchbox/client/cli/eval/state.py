@@ -83,7 +83,6 @@ class EvaluationState:
 
         # UI State
         self.current_group_selection: str = ""  # Currently selected group letter
-        self.compact_view_mode: bool = True  # Default to compact view
         self.show_plot: bool = False  # Plot display toggle
 
         # Plot State
@@ -157,11 +156,6 @@ class EvaluationState:
     def clear_group_selection(self) -> None:
         """Clear the current group selection."""
         self.current_group_selection = ""
-        self._notify_listeners()
-
-    def toggle_view_mode(self) -> None:
-        """Toggle between compact and detailed view modes."""
-        self.compact_view_mode = not self.compact_view_mode
         self._notify_listeners()
 
     def toggle_plot(self) -> None:

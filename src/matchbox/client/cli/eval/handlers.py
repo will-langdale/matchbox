@@ -87,10 +87,6 @@ class EvaluationHandlers:
         self.state.clear_current_assignments()
         self.state.clear_group_selection()
 
-    async def action_toggle_view_mode(self) -> None:
-        """Toggle between compact and detailed view modes."""
-        self.state.toggle_view_mode()
-
     async def action_show_help(self) -> None:
         """Show the help modal."""
         self.app.push_screen(HelpModal())

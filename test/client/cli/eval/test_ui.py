@@ -8,6 +8,7 @@ from sqlalchemy import Engine
 
 from matchbox.client.cli.eval.app import EntityResolutionApp
 from matchbox.client.cli.eval.state import EvaluationState
+from matchbox.client.cli.eval.utils import EvaluationItem
 from matchbox.client.cli.eval.widgets.status import StatusBarRight
 from matchbox.client.dags import DAG
 from matchbox.client.sources import RelationalDBLocation
@@ -140,24 +141,19 @@ class TestTextualUI:
         """Test integration with scenario data (requires Docker)."""
         with self.scenario(self.backend, "dedupe") as dag:
             # Get a real model from the scenario
-            model_name = list(dag.models.keys())[0] if dag.models else "test"
-
-            # Construct ModelResolutionPath from DAG context
-            resolution = ModelResolutionPath(
-                collection=dag.dag.name, run=dag.dag.run, name=model_name
-            )
+            model = list(dag.models.values())[0] if dag.models else "test"
 
             # Create warehouse location and load DAG
             warehouse_location = RelationalDBLocation(
                 name="test_warehouse", client=self.warehouse_engine
             )
-            loaded_dag = DAG(str(dag.dag.name)).load_run(
-                run_id=dag.dag.run, location=warehouse_location
+            loaded_dag = DAG(str(dag.dag.name)).load_pending(
+                location=warehouse_location
             )
 
             # Create app with injected parameters - no mocking needed!
             app = EntityResolutionApp(
-                resolution=resolution,
+                resolution=model.resolution_path,
                 num_samples=1,
                 user="test_user",
                 dag=loaded_dag,
@@ -189,8 +185,8 @@ class TestTextualUI:
             warehouse_location = RelationalDBLocation(
                 name="test_warehouse", client=self.warehouse_engine
             )
-            loaded_dag = DAG(str(dag.dag.name)).load_run(
-                run_id=dag.dag.run, location=warehouse_location
+            loaded_dag = DAG(str(dag.dag.name)).load_pending(
+                location=warehouse_location
             )
 
             app = EntityResolutionApp(
@@ -204,7 +200,9 @@ class TestTextualUI:
             await app.authenticate()
 
             # Fetch some evaluation items to work with (use internal method)
-            items_dict = await app._fetch_additional_samples(2)
+            items_dict: dict[int, EvaluationItem] = await app._fetch_additional_samples(
+                2
+            )
             if items_dict:
                 items = list(items_dict.values())
 

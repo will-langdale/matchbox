@@ -9,9 +9,11 @@ from respx import MockRouter
 from sqlalchemy import Engine
 
 from matchbox.client.cli.eval import get_samples
+from matchbox.client.dags import DAG
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, table_to_buffer
+from matchbox.common.dtos import Collection, Run
 from matchbox.common.exceptions import MatchboxSourceTableError
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.sources import source_from_tuple
@@ -69,10 +71,10 @@ def test_get_samples(
         model_settings={"comparisons": "l.key=r.key"},
     )
 
-    # Mock API endpoints for load_run
-    from matchbox.common.dtos import Run
+    # Mock API endpoints for load_pending
 
-    # Mock the run endpoint that load_run() calls
+    # Mock the collection and run endpoint that load_pending() calls
+    collection_data = Collection(runs=[dag.run])
     run_data = Run(
         run_id=dag.run,
         mutable=True,
@@ -81,6 +83,10 @@ def test_get_samples(
             "bar": bar_testkit.source.to_resolution(),
             "baz": baz_testkit.source.to_resolution(),
         },
+    )
+
+    matchbox_api.get(f"/collections/{dag.name}").mock(
+        return_value=Response(200, content=collection_data.model_dump_json())
     )
     matchbox_api.get(f"/collections/{dag.name}/runs/{dag.run}").mock(
         return_value=Response(200, content=run_data.model_dump_json())
@@ -114,11 +120,10 @@ def test_get_samples(
 
     # Create a fresh DAG and load it with warehouse location
     # (can't reuse the existing dag as it already has sources added)
-    from matchbox.client.dags import DAG
 
     loaded_dag = DAG(name=str(dag.name))
     warehouse_location = RelationalDBLocation(name="db", client=sqlite_warehouse)
-    loaded_dag.load_run(run_id=dag.run, location=warehouse_location)
+    loaded_dag.load_pending(location=warehouse_location)
 
     # Check results - test with samples that include all three sources
     # All three sources (foo, bar, baz) are in loaded_dag with the warehouse location
@@ -217,7 +222,7 @@ def test_get_samples(
     # Create new DAG with wrong warehouse (in-memory, no tables)
     bad_dag = DAG(name=str(dag.name))
     bad_location = RelationalDBLocation(name="db", client=sqlite_in_memory_warehouse)
-    bad_dag.load_run(run_id=dag.run, location=bad_location)
+    bad_dag.load_pending(location=bad_location)
 
     matchbox_api.get("/eval/samples").mock(
         return_value=Response(200, content=table_to_buffer(samples_no_baz).read())
