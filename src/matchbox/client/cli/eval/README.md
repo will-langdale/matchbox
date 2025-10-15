@@ -238,7 +238,7 @@ EntityResolutionApp
 
 ### Table rendering system
 
-The `ComparisonDisplayTable` (`widgets/table.py`) renders entity records in two modes:
+The `ComparisonDisplayTable` (`widgets/table.py`) renders entity records in a compact view:
 
 **Compact view**: One row per field, deduplicated columns
 ```
@@ -247,13 +247,7 @@ name      | ACME | ACME   | Acme Corp
 address   | 123  | 123    | 123 Main
 ```
 
-**Detailed view**: Source attribution with field grouping
-```
-Field                | 1    | 2 (×3) | 3
-name (CRN)          | ACME |        |
-name (DUNS)         |      | ACME   |
-name (CDMS)         |      |        | Acme Corp
-```
+Columns with identical data are automatically deduplicated and shown with a count indicator (e.g., "×3").
 
 ### Group styling system
 

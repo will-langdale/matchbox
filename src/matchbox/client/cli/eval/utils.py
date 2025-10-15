@@ -107,7 +107,7 @@ def create_display_dataframe(
         source_configs: List of (source_name, SourceConfig) tuples
 
     Returns:
-        DataFrame with columns: field_name, source_name, record_index, value, leaf_id
+        DataFrame with columns: field_name, record_index, value, leaf_id
     """
     # Get leaf IDs for records
     leaf_ids = (
@@ -138,7 +138,6 @@ def create_display_dataframe(
                             rows.append(
                                 {
                                     "field_name": unqualified_field,
-                                    "source_name": source_name,
                                     "record_index": record_idx,
                                     "value": str_value,
                                     "leaf_id": leaf_id,
@@ -153,14 +152,12 @@ def create_display_dataframe(
         return pl.DataFrame(
             {
                 "field_name": [],
-                "source_name": [],
                 "record_index": [],
                 "value": [],
                 "leaf_id": [],
             },
             schema={
                 "field_name": pl.String,
-                "source_name": pl.String,
                 "record_index": pl.Int32,
                 "value": pl.String,
                 "leaf_id": pl.Int32,

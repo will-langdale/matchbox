@@ -31,7 +31,6 @@ class TestComparisonDisplayTable:
                 "field_name": ["name", "name", "address", "address"],
                 "leaf_id": [1, 2, 1, 3],
                 "value": ["Company A", "Company A", "123 Main St", "123 Main Street"],
-                "source_name": ["crn", "duns", "crn", "cdms"],
             }
         )
 
