@@ -280,4 +280,8 @@ class TestE2EPipelineBuilder:
             check_row_order=False,
         )
 
+        # Load pending to check we can
+        pending_dag = DAG("companies").load_pending(location=dw_loc)
+        assert pending_dag.run == rerun_dag.run
+
         logging.info("DAG pipeline test completed successfully!")

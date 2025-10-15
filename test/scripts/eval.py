@@ -2,8 +2,6 @@
 """Script to run Textual eval app with scenario data via CLI."""
 
 import logging
-import subprocess
-import sys
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -14,6 +12,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine
 
 from matchbox.client._settings import settings
+from matchbox.client.cli.eval_commands import start as eval_start
+from matchbox.common.factories import models as _  # noqa:F401
 from matchbox.common.factories.scenarios import SCENARIO_REGISTRY, setup_scenario
 from matchbox.server.base import MatchboxDatastoreSettings
 from matchbox.server.postgresql import MatchboxPostgres
@@ -175,31 +175,16 @@ def main(
 
     try:
         with scenario_setup(scenario) as cli_params:
-            # Build CLI command
-            cmd = [
-                sys.executable,
-                "-m",
-                "matchbox.client.cli.main",
-                "eval",
-                "start",
-                "--collection",
-                cli_params["collection"],
-                "--resolution",
-                cli_params["resolution"],
-                "--warehouse",
-                cli_params["warehouse"],
-                "--samples",
-                str(cli_params["samples"]),
-            ]
-
-            # Add log file if specified and non-empty
-            if log_file and log_file.strip():
-                cmd.extend(["--log", log_file])
-
-            # Run the CLI command
+            # Call eval command directly instead of subprocess
             try:
-                result = subprocess.run(cmd, check=False)
-                raise typer.Exit(result.returncode)
+                eval_start(
+                    collection=cli_params["collection"],
+                    resolution=cli_params["resolution"],
+                    warehouse=cli_params["warehouse"],
+                    samples=cli_params["samples"],
+                    user=None,
+                    log_file=log_file if log_file and log_file.strip() else None,
+                )
             except KeyboardInterrupt as e:
                 logger.info("\nKeyboard interrupt received, stopping...")
                 raise typer.Exit(0) from e

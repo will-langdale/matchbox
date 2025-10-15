@@ -336,6 +336,10 @@ class DAG:
                 necessary.
         """
         collection: Collection = _handler.get_collection(self.name)
+
+        if not collection.default_run:
+            raise RuntimeError("No default run set.")
+
         return self._load_run(collection.default_run, location)
 
     def load_pending(self, location: Location) -> Self:
@@ -350,8 +354,11 @@ class DAG:
         """
         collection: Collection = _handler.get_collection(self.name)
 
-        default_run: set[RunID] = collection.default_run or set()
+        default_run: set[RunID] = {collection.default_run} or set()
         pending_runs: set[RunID] = set(collection.runs) - default_run
+
+        if not pending_runs:
+            raise RuntimeError("No pending runs available.")
 
         return self._load_run(list(pending_runs)[-1], location)
 
