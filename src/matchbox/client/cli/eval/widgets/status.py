@@ -29,17 +29,17 @@ class StatusBarLeft(Widget):
         # Show entity progress info
         total = self.state.queue.total_count
         current_pos = self.state.queue.current_position
-        painted_count = self.state.painted_count
 
-        # Entity progress
+        # Special handling for no samples state
+        if self.state.has_no_samples:
+            text.append("No samples to evaluate", style="yellow")
+            return text
+
+        # Entity progress - show ■ if current item is painted
         current_painted = "■ " if self.state.has_current_assignments() else ""
         text.append(
             f"{current_painted}Entity {current_pos}/{total}", style="bright_white"
         )
-
-        # Painted count if any
-        if painted_count > 0:
-            text.append(f" | ■ {painted_count} painted", style="green")
 
         text.append(" | ", style="dim")
 

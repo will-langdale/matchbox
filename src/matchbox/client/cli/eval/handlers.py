@@ -53,6 +53,13 @@ class EvaluationHandlers:
 
     async def handle_plot_toggle(self) -> None:
         """Handle plot toggle with centralised data validation."""
+        # If plot modal is already showing, dismiss it (toggle off)
+        if isinstance(self.app.screen, PlotModal):
+            self.state.show_plot = False
+            self.app.pop_screen()
+            return
+
+        # Otherwise, validate and show plot (toggle on)
         can_show, status_msg = can_show_plot(self.state)
         if not can_show:
             self.state.update_status(status_msg, "yellow", auto_clear_after=2.0)
@@ -65,6 +72,7 @@ class EvaluationHandlers:
             return
 
         self.state.update_status(refresh_status, "green", auto_clear_after=2.0)
+        self.state.show_plot = True
         self.app.push_screen(PlotModal(self.state))
 
     async def action_next_entity(self) -> None:
@@ -91,63 +99,42 @@ class EvaluationHandlers:
         """Show the help modal."""
         self.app.push_screen(HelpModal())
 
-    async def _submit_painted_items(self) -> tuple[int, list]:
-        """Submit all painted items and return the number of successful submissions."""
-        painted_items = self.state.queue.painted_items
-        if not painted_items:
-            self.state.update_status("◯ Nothing", "dim", auto_clear_after=2.0)
-            return 0, []
+    async def action_submit_and_fetch(self) -> None:
+        """Submit current entity if fully painted, then fetch more."""
+        current = self.state.queue.current
 
+        # Validate we have a current item
+        if not current:
+            self.state.update_status("◯ No data", "yellow")
+            return
+
+        # Validate current item is fully painted
+        if not current.is_painted:
+            self.state.update_status("⚠ Not ready", "yellow", auto_clear_after=3.0)
+            return
+
+        # Submit just the current item
         self.state.is_submitting = True
         self.state.update_status("⚡ Sending", "yellow")
 
-        successful_submissions = 0
-        for item in painted_items:
-            judgement = item.to_judgement(self.state.user_id)
-            _handler.send_eval_judgement(judgement=judgement)
-            successful_submissions += 1
+        judgement = current.to_judgement(self.state.user_id)
+        _handler.send_eval_judgement(judgement=judgement)
 
-        logger.info(
-            f"Successfully submitted {successful_submissions}/{len(painted_items)} "
-            "painted entities"
-        )
-        return successful_submissions, painted_items
+        logger.info(f"Successfully submitted entity {current.cluster_id}")
 
-    async def _post_submission_update(
-        self, successful_submissions: int, painted_items: list
-    ) -> None:
-        """Update queue and UI after submission."""
-        if successful_submissions > 0:
-            self.state.queue.submit_painted(painted_items)
-            remaining_count = self.state.queue.total_count
-            self.state.update_status("✓ Sent", "green")
-            logger.info(
-                "Removed submitted items from queue, %s entities remaining",
-                remaining_count,
-            )
-            await self.app.refresh_display()
+        # Remove current item from queue
+        self.state.queue.remove_current()
+        remaining = self.state.queue.total_count
+        logger.info(f"Removed submitted item, {remaining} entities remaining in queue")
 
-    async def action_submit_and_fetch(self) -> None:
-        """Submit painted entities, remove them, and fetch new samples."""
-        remaining_before_backfill = self.state.queue.total_count
+        # Backfill queue
+        await self._backfill_samples()
 
-        successful_submissions, painted_items = await self._submit_painted_items()
-        await self._post_submission_update(successful_submissions, painted_items)
-
-        if successful_submissions > 0:
-            await self._backfill_samples()
+        # Refresh display to show next item
+        await self.app.refresh_display()
 
         self.state.is_submitting = False
-
-        final_count = self.state.queue.total_count
-        if final_count > remaining_before_backfill:
-            self.state.update_status("✓ Ready", "green", auto_clear_after=4.0)
-            logger.info(f"Queue backfilled: now has {final_count} entities available")
-        else:
-            self.state.update_status("✓ Done", "green", auto_clear_after=4.0)
-            logger.info(
-                f"Submission complete: {final_count} entities remaining in queue"
-            )
+        self.state.update_status("✓ Sent", "green", auto_clear_after=2.0)
 
     async def _backfill_samples(self) -> None:
         """Fetch new samples to replace submitted ones."""
@@ -185,5 +172,18 @@ class EvaluationHandlers:
 
     def _handle_no_samples_available(self, needed: int) -> None:
         """Handle the case where no new samples are available."""
-        self.state.update_status("◯ Empty", "dim")
-        logger.warning(f"No new samples available - requested {needed} but got none")
+        # Check if queue is now completely empty
+        if self.state.queue.total_count == 0:
+            # Queue is empty and we can't fetch more - truly out of samples
+            self.state.has_no_samples = True
+            self.state.update_status("◯ No data", "yellow")
+            logger.warning(
+                f"Queue is empty and no new samples available - "
+                f"requested {needed} but got none"
+            )
+        else:
+            # Queue still has items, just can't fetch more right now
+            self.state.update_status("◯ Empty", "dim")
+            logger.warning(
+                f"No new samples available - requested {needed} but got none"
+            )

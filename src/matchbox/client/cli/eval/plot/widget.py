@@ -75,6 +75,12 @@ class PRCurveDisplay(PlotextPlot):
         # Compute interpolated PR curve with extrapolation tracking
         r_curve, p_curve, is_extrapolated = interpolate_pr_curve(pr_data)
 
+        # Check if we have plottable data (arrays must not be empty)
+        if len(r_curve) == 0 or len(r_grid) == 0:
+            self.plt.title("📊 Need more labeled samples to plot PR curve")
+            self._has_plotted = False
+            return
+
         # Plot confidence bounds in magenta
         self.plt.plot(r_grid, p_upper, color="magenta", marker="braille")
         self.plt.plot(r_grid, p_lower, color="magenta", marker="braille")
@@ -112,6 +118,17 @@ class PRCurveDisplay(PlotextPlot):
         if "cannot be empty" in error_str and "judgement" in error_str:
             # Expected case when no judgements exist yet
             self.plt.title("📊 Submit some judgements first")
+        elif (
+            "at least 2 elements" in error_str or "at least 2 data points" in error_str
+        ):
+            # Expected case when insufficient unique data points exist
+            # This can happen with very few judgements that all produce the same outcome
+            self.plt.title("📊 Need more labeled samples to plot PR curve")
+        elif isinstance(error, IndexError) and (
+            "out of bounds" in error_str or "index" in error_str
+        ):
+            # Expected when arrays are empty (should now be prevented by early check)
+            self.plt.title("📊 Need more labeled samples to plot PR curve")
         else:
             # Unexpected error - log details and show generic message
             logger.error(f"Plot generation failed - {type(error).__name__}: {error}")
@@ -122,4 +139,8 @@ class PRCurveDisplay(PlotextPlot):
 
     def _on_state_change(self) -> None:
         """Handle state changes by updating the plot."""
+        # Only update if widget is actually mounted AND plot is being displayed
+        # This prevents wasteful background calculation when modal is dismissed
+        if not self.is_mounted or not self.state.show_plot:
+            return
         self.update_plot()

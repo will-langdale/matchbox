@@ -250,55 +250,6 @@ class TestEvaluationHandlers:
         """Test submit and fetch functionality."""
 
         @pytest.mark.asyncio
-        async def test_submit_no_painted_items(self, handlers):
-            """Test submit when no items are painted."""
-            handlers.state.queue.painted_items = []
-
-            (
-                successful_submissions,
-                painted_items,
-            ) = await handlers._submit_painted_items()
-
-            assert successful_submissions == 0
-            assert painted_items == []
-            handlers.state.update_status.assert_called_once_with(
-                "◯ Nothing", "dim", auto_clear_after=2.0
-            )
-
-        @pytest.mark.asyncio
-        @patch("matchbox.client.cli.eval.handlers._handler.send_eval_judgement")
-        async def test_submit_painted_items(self, mock_send, handlers):
-            """Test submitting painted items."""
-            painted_items = [Mock(), Mock()]
-            handlers.state.queue.painted_items = painted_items
-            handlers.state.user_id = 123
-
-            for item in painted_items:
-                item.to_judgement.return_value = Mock()
-
-            (
-                successful_submissions,
-                submitted_items,
-            ) = await handlers._submit_painted_items()
-
-            assert successful_submissions == 2
-            assert submitted_items == painted_items
-            assert mock_send.call_count == 2
-            handlers.state.update_status.assert_called_once_with("⚡ Sending", "yellow")
-
-        @pytest.mark.asyncio
-        async def test_post_submission_update(self, handlers):
-            """Test post-submission UI and queue updates."""
-            painted_items = [Mock(), Mock()]
-            handlers.state.queue.total_count = 0  # No items left after submit
-
-            await handlers._post_submission_update(2, painted_items)
-
-            handlers.state.queue.submit_painted.assert_called_once_with(painted_items)
-            handlers.state.update_status.assert_called_once_with("✓ Sent", "green")
-            handlers.app.refresh_display.assert_called_once()
-
-        @pytest.mark.asyncio
         async def test_backfill_samples_success(self, handlers):
             """Test successful sample backfilling."""
             handlers.state.queue.total_count = 80

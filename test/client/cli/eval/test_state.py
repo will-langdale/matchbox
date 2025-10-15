@@ -22,7 +22,6 @@ class TestEvaluationQueue:
         for i in range(3):
             item = Mock()
             item.cluster_id = f"cluster_{i}"
-            item.is_painted = False
             item.assignments = {}
             item.display_columns = [1, 2, 3]
             item.duplicate_groups = [[1], [2], [3]]
@@ -34,8 +33,6 @@ class TestEvaluationQueue:
         assert queue.current is None
         assert queue.current_position == 0
         assert queue.total_count == 0
-        assert queue.painted_count == 0
-        assert len(queue.painted_items) == 0
 
     def test_add_items(self, queue, sample_items):
         """Test adding items to the queue."""
@@ -86,39 +83,6 @@ class TestEvaluationQueue:
         assert queue.current_position == 2
         assert queue.current is sample_items[1]
 
-    def test_painted_items_tracking(self, queue, sample_items):
-        """Test tracking of painted items."""
-        queue.add_items(sample_items)
-
-        # No painted items initially
-        assert queue.painted_count == 0
-        assert len(queue.painted_items) == 0
-
-        # Paint first and third items
-        sample_items[0].is_painted = True
-        sample_items[2].is_painted = True
-
-        assert queue.painted_count == 2
-        painted = queue.painted_items
-        assert len(painted) == 2
-        assert sample_items[0] in painted
-        assert sample_items[2] in painted
-        assert sample_items[1] not in painted
-
-    def test_submit_painted(self, queue, sample_items):
-        """Test submitting painted items removes them from queue."""
-        queue.add_items(sample_items)
-
-        sample_items[0].is_painted = True
-        sample_items[2].is_painted = True
-
-        painted_items = queue.painted_items
-        queue.submit_painted(painted_items)
-
-        assert queue.total_count == 1
-        assert queue.current is sample_items[1]
-        assert queue.painted_count == 0
-
     def test_clear(self, queue, sample_items):
         """Test clearing the queue."""
         queue.add_items(sample_items)
@@ -152,7 +116,6 @@ class TestEvaluationState:
 
     def test_queue_delegation(self, state):
         """Test that state properly delegates to queue."""
-        assert state.painted_count == state.queue.painted_count
         assert state.current_cluster_id is None  # No current item
         assert state.current_df is None  # No current item
 

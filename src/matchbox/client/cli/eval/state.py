@@ -34,16 +34,6 @@ class EvaluationQueue:
         """Total number of items in queue."""
         return len(self.items)
 
-    @property
-    def painted_items(self) -> list[EvaluationItem]:
-        """Get all currently painted items in the queue."""
-        return [item for item in self.items if item.is_painted]
-
-    @property
-    def painted_count(self) -> int:
-        """Count of painted items ready for submission."""
-        return len(self.painted_items)
-
     def move_next(self):
         """Rotate forward, increment position."""
         if len(self.items) > 1:
@@ -56,11 +46,12 @@ class EvaluationQueue:
             self.items.appendleft(self.items.pop())
             self._position_offset = (self._position_offset - 1) % len(self.items)
 
-    def submit_painted(self, painted_items: list[EvaluationItem]):
-        """Remove submitted painted items permanently."""
-        self.items = deque([item for item in self.items if item not in painted_items])
-        if painted_items and self.items:
-            self._position_offset = 0
+    def remove_current(self) -> EvaluationItem | None:
+        """Remove and return the current item (at index 0)."""
+        if not self.items:
+            return None
+        # Position stays at 0 since we're removing index 0
+        return self.items.popleft()
 
     def add_items(self, items: list[EvaluationItem]):
         """Add new items to the end of the queue."""
@@ -80,6 +71,7 @@ class EvaluationState:
         # Queue Management - replaces samples dict and entity_judgements
         self.queue: EvaluationQueue = EvaluationQueue()
         self.sample_limit: int = 100
+        self.has_no_samples: bool = False  # True when no samples available
 
         # UI State
         self.current_group_selection: str = ""  # Currently selected group letter
@@ -123,11 +115,6 @@ class EvaluationState:
             "9": 9,
             "0": 10,
         }
-
-    @property
-    def painted_count(self) -> int:
-        """Get count of painted entities."""
-        return self.queue.painted_count
 
     @property
     def current_cluster_id(self) -> int | None:

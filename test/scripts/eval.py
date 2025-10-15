@@ -104,7 +104,6 @@ def scenario_setup(scenario_name: str):
             if scenario_name in ["bare", "index"]:
                 raise RuntimeError("Scenario has nothing to evaluate.")
             else:
-                print(dag.dag.nodes)
                 try:
                     resolution = dag.dag.final_step
                 except ValueError:

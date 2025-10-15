@@ -79,6 +79,20 @@ class EntityResolutionApp(App):
                 "Ensure DAG is passed during initialisation."
             )
         await self.load_samples()
+
+        # Check if no samples were loaded
+        if self.state.queue.total_count == 0:
+            self.state.has_no_samples = True
+            self.state.update_status("◯ No data", "yellow")
+            logger.warning(
+                f"No samples available for resolution '{self.state.resolution}'. "
+                "This may be because all clusters have been recently judged "
+                "by this user, or the resolution has no probability data."
+            )
+            # Still load eval data for consistency, but skip display refresh
+            await self.load_eval_data()
+            return
+
         await self.load_eval_data()
         if self.state.queue.current:
             await self.refresh_display()

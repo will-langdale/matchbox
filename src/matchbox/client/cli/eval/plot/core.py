@@ -176,6 +176,39 @@ def project_to_envelope(
     return recall_grid, p_upper, p_lower
 
 
+def _ensure_origin_point(
+    pr_data: list[tuple[float, float, float, float, float]],
+) -> list[tuple[float, float, float, float, float]]:
+    """Ensure PR data includes the origin point (recall=0, precision=1).
+
+    For all precision-recall curves, the point (recall=0, precision=1) is
+    mathematically valid and represents the most conservative threshold where
+    no predictions are made. This ensures we always have at least one point,
+    preventing interpolation failures with sparse data.
+
+    Args:
+        pr_data: List of (threshold, precision, recall, p_ci, r_ci) tuples
+
+    Returns:
+        PR data with origin point guaranteed to be present
+    """
+    if not pr_data:
+        # No data at all - return just the origin point
+        return [(1.0, 1.0, 0.0, 0.0, 0.0)]
+
+    # Check if we already have a point at recall ≈ 0 (within small tolerance)
+    has_origin = any(abs(recall) < 0.001 for _, _, recall, _, _ in pr_data)
+
+    if has_origin:
+        return pr_data
+
+    # Prepend the origin point
+    # threshold=1.0 (max threshold), precision=1.0 (perfect), recall=0.0 (none found)
+    # p_ci=0.0, r_ci=0.0 (no uncertainty at boundary)
+    origin = (1.0, 1.0, 0.0, 0.0, 0.0)
+    return [origin] + pr_data
+
+
 def _deduplicate_recall_values(
     pr_data: list[tuple[float, float, float, float, float]],
 ) -> list[tuple[float, float, float, float, float]]:
@@ -260,11 +293,20 @@ def interpolate_pr_curve(
     - Allows natural extrapolation beyond observed data
     - Tracks which regions are interpolated vs extrapolated
     """
-    if not pr_data:
-        return np.array([]), np.array([]), np.array([])
+    # Ensure we have the origin point (recall=0, precision=1)
+    pr_data_with_origin = _ensure_origin_point(pr_data)
 
     # Deduplicate recall values to ensure strictly increasing sequence
-    deduplicated_data = _deduplicate_recall_values(pr_data)
+    deduplicated_data = _deduplicate_recall_values(pr_data_with_origin)
+
+    # Safety check: ensure we have enough points for interpolation
+    if len(deduplicated_data) < 2:
+        logger.warning(
+            f"Insufficient unique data points after deduplication: "
+            f"got {len(deduplicated_data)}, need at least 2. "
+            f"Submit more judgements with different outcomes."
+        )
+        return np.array([]), np.array([]), np.array([])
 
     # Extract data (now guaranteed to have unique recall values)
     _, precisions, recalls, _, _ = zip(*deduplicated_data, strict=False)
@@ -309,17 +351,30 @@ def compute_pr_envelope(
     Theoretical foundation: Works with continuous mathematical objects throughout,
     discretising only for final visualisation.
     """
-    if not pr_data:
+    # Ensure we have the origin point (recall=0, precision=1)
+    pr_data_with_origin = _ensure_origin_point(pr_data)
+
+    # Safety check: need at least 2 points for meaningful envelope calculation
+    if len(pr_data_with_origin) < 2:
+        logger.warning(
+            f"Insufficient data points for PR envelope: "
+            f"got {len(pr_data_with_origin)}, need at least 2. "
+            f"Submit more judgements to compute confidence bounds."
+        )
         return np.array([]), np.array([]), np.array([])
 
     # Fit monotonic 3D tube
     precision_func, recall_func, precision_width_func, recall_width_func = fit_tube(
-        pr_data
+        pr_data_with_origin
     )
 
     # Vectorised projection to 2D envelope
     return project_to_envelope(
-        pr_data, precision_func, recall_func, precision_width_func, recall_width_func
+        pr_data_with_origin,
+        precision_func,
+        recall_func,
+        precision_width_func,
+        recall_width_func,
     )
 
 

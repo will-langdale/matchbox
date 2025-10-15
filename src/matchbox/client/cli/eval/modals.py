@@ -95,4 +95,5 @@ class PlotModal(ModalScreen):
     def on_key(self, event) -> None:
         """Handle key events for closing the plot modal."""
         if event.key == "escape":
+            self.state.show_plot = False
             self.dismiss()

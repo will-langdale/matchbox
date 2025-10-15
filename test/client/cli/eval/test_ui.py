@@ -213,10 +213,14 @@ class TestTextualUI:
 
                 app.state.queue.add_items(items)
 
-            # Test submission workflow
+            # Test submission workflow (now submits one item at a time)
             initial_judgements, _ = self.backend.get_judgements()
             initial_count = len(initial_judgements)
 
+            # Submit first item
+            await app.action_submit_and_fetch()
+
+            # Submit second item
             await app.action_submit_and_fetch()
 
             # Verify judgements were submitted
@@ -229,9 +233,6 @@ class TestTextualUI:
             submitted_cluster_ids = {j["shown"] for j in new_judgements}
             expected_cluster_ids = {item.cluster_id for item in items}
             assert submitted_cluster_ids == expected_cluster_ids
-
-            # Verify painted items were removed from queue
-            assert len(app.state.queue.painted_items) == 0
 
         # Also verify the spacebar binding
         assert hasattr(app, "action_submit_and_fetch")

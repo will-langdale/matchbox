@@ -11,6 +11,7 @@ from matchbox.client.cli.eval.plot.widget import PRCurveDisplay
 from matchbox.client.cli.eval.state import EvaluationState
 from matchbox.client.cli.eval.utils import EvalData
 from matchbox.common.arrow import SCHEMA_CLUSTER_EXPANSION, SCHEMA_JUDGEMENTS
+from matchbox.common.logging import logger
 
 
 class TestEvalData:
@@ -262,7 +263,7 @@ class TestEvalData:
                     assert isinstance(item, tuple)
                     assert len(item) == 5
                     threshold, precision, recall, precision_ci, recall_ci = item
-                    print(
+                    logger.info(
                         f"Threshold: {threshold}, Precision: {precision}, "
                         f"Recall: {recall}, P_CI: {precision_ci}, R_CI: {recall_ci}"
                     )

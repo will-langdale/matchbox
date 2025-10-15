@@ -15,6 +15,7 @@ from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.eval import Judgement, precision_recall
 from matchbox.common.exceptions import (
+    MatchboxTooManySamplesRequested,
     MatchboxUserNotFoundError,
 )
 from matchbox.common.transform import hash_cluster_leaves
@@ -176,7 +177,7 @@ def sample(n: int, resolution_path: ModelResolutionPath, user_id: int):
     # If the user ID does not exist, the exclusion by previous judgements breaks
     if n > 100:
         # This reasonable assumption means simple "IS IN" function later is fine
-        raise ValueError("Can only sample 100 entries at a time.")
+        raise MatchboxTooManySamplesRequested("Can only sample 100 entries at a time.")
 
     with MBDB.get_session() as session:
         # Use ORM to get resolution metadata
@@ -224,7 +225,7 @@ def sample(n: int, resolution_path: ModelResolutionPath, user_id: int):
         return pl.DataFrame(
             {"root": [], "leaf": [], "key": [], "source": []},
             schema=pl.Schema(SCHEMA_EVAL_SAMPLES),
-        )
+        ).to_arrow()
 
     # Sample proportionally to distance from the truth, and get 1D array
     distances = np.abs(to_sample.select("probability").to_numpy() - truth)[:, 0]
