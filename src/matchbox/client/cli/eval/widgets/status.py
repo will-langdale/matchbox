@@ -1,6 +1,7 @@
 """Status bar components for entity resolution evaluation."""
 
 import logging
+from typing import Any
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 class StatusBarLeft(Widget):
     """Left side of status bar with entity progress and groups."""
 
-    def __init__(self, state: EvaluationState, **kwargs):
+    def __init__(self, state: EvaluationState, **kwargs: Any) -> None:  # noqa: ANN401
         """Initialise the left status widget."""
         super().__init__(**kwargs)
         self.state = state
@@ -96,7 +97,7 @@ class StatusBarRight(Widget):
 
     MAX_STATUS_LENGTH = 12
 
-    def __init__(self, state: EvaluationState, **kwargs):
+    def __init__(self, state: EvaluationState, **kwargs: Any) -> None:  # noqa: ANN401
         """Initialise the right status widget."""
         super().__init__(**kwargs)
         self.state = state
@@ -140,7 +141,7 @@ class StatusBarRight(Widget):
 class StatusBar(Widget):
     """Container widget for status bar with left and right sections."""
 
-    def __init__(self, state: EvaluationState, **kwargs):
+    def __init__(self, state: EvaluationState, **kwargs: Any) -> None:  # noqa: ANN401
         """Initialise the status bar container."""
         super().__init__(**kwargs)
         self.state = state

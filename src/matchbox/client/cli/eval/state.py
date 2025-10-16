@@ -3,7 +3,9 @@
 import uuid
 from collections import deque
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+import polars as pl
 
 from matchbox.client.cli.eval.utils import EvaluationItem
 
@@ -14,7 +16,7 @@ if TYPE_CHECKING:
 class EvaluationQueue:
     """Deque-based queue that maintains position illusion."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialise the queue."""
         self.items: deque[EvaluationItem] = deque()
         self._position_offset: int = 0  # Tracks "virtual position"
@@ -34,13 +36,13 @@ class EvaluationQueue:
         """Total number of items in queue."""
         return len(self.items)
 
-    def move_next(self):
+    def move_next(self) -> None:
         """Rotate forward, increment position."""
         if len(self.items) > 1:
             self.items.append(self.items.popleft())
             self._position_offset = (self._position_offset + 1) % len(self.items)
 
-    def move_previous(self):
+    def move_previous(self) -> None:
         """Rotate backward, decrement position."""
         if len(self.items) > 1:
             self.items.appendleft(self.items.pop())
@@ -53,11 +55,11 @@ class EvaluationQueue:
         # Position stays at 0 since we're removing index 0
         return self.items.popleft()
 
-    def add_items(self, items: list[EvaluationItem]):
+    def add_items(self, items: list[EvaluationItem]) -> None:
         """Add new items to the end of the queue."""
         self.items.extend(items)
 
-    def clear(self):
+    def clear(self) -> None:
         """Clear the entire queue."""
         self.items.clear()
         self._position_offset = 0
@@ -66,7 +68,7 @@ class EvaluationQueue:
 class EvaluationState:
     """Single source of truth for all application state."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialise evaluation state."""
         # Queue Management - replaces samples dict and entity_judgements
         self.queue: EvaluationQueue = EvaluationQueue()
@@ -117,7 +119,7 @@ class EvaluationState:
         return current.cluster_id if current else None
 
     @property
-    def current_df(self) -> Any | None:
+    def current_df(self) -> pl.DataFrame | None:
         """Get current DataFrame."""
         current = self.queue.current
         return current.dataframe if current else None

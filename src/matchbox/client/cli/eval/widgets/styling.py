@@ -100,7 +100,7 @@ class GroupStyler:
         return text, colour
 
     @classmethod
-    def reset(cls):
+    def reset(cls) -> None:
         """Reset all assignments (useful for testing)."""
         cls._group_styles.clear()
         cls._used_colours.clear()

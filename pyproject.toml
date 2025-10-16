@@ -121,7 +121,8 @@ extend-select = [
     "TID",
     "BLE",
     "PLC",
-    "SIM"
+    "SIM",
+    "ANN",
 ]
 ignore = []
 fixable = ["ALL"]
@@ -132,9 +133,9 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"**/{test,docs}/*" = ["D"]
+"**/{test,docs}/*" = ["D", "ANN201"]
 # Ignore the new, stricter rules everywhere except the CLI
-"!**/{src/matchbox,test}/client/cli/*" = ["UP", "TID", "BLE", "PLC", "SIM"]
+"!**/{src/matchbox,test}/client/cli/*" = ["UP", "TID", "BLE", "PLC", "SIM", "ANN"]
 
 [tool.ruff.format]
 quote-style = "double"

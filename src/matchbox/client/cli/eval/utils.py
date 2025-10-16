@@ -1,5 +1,7 @@
 """Collection of client-side functions in aid of model evaluation."""
 
+from typing import cast
+
 import polars as pl
 from pydantic import BaseModel, computed_field
 from sqlalchemy.exc import OperationalError
@@ -164,7 +166,7 @@ class DeduplicationResult:
         duplicate_groups: list[list[int]],
         display_columns: list[int],
         leaf_to_display_mapping: dict[int, int],
-    ):
+    ) -> None:
         """Initialise deduplication result."""
         self.duplicate_groups = duplicate_groups
         self.display_columns = display_columns
@@ -295,8 +297,11 @@ def get_samples(
         MatchboxSourceTableError: If a source cannot be queried from warehouse
     """
     # Fetch sample cluster IDs from server
-    samples: pl.DataFrame = pl.from_arrow(
-        _handler.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
+    samples: pl.DataFrame = cast(
+        pl.DataFrame,
+        pl.from_arrow(
+            _handler.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
+        ),
     )
 
     if not len(samples):
@@ -360,11 +365,13 @@ def get_samples(
 class EvalData:
     """Object which caches evaluation data to measure performance of models."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialise evaluation data from resolution name."""
         self.judgements, self.expansion = _handler.download_eval_data()
 
-    def precision_recall(self, results: Results, threshold: float):
+    def precision_recall(
+        self, results: Results, threshold: float
+    ) -> tuple[float, float]:
         """Computes precision and recall at one threshold."""
         if not len(results.clusters):
             raise ValueError("No clusters suggested by these results.")
@@ -372,7 +379,10 @@ class EvalData:
         threshold = int(threshold * 100)
 
         root_leaf = results.root_leaf().rename({"root_id": "root", "leaf_id": "leaf"})
-        return precision_recall([root_leaf], self.judgements, self.expansion)[0]
+        # precision_recall returns list of (precision, recall, p_ci, r_ci)
+        # We only need precision and recall (first two values)
+        result = precision_recall([root_leaf], self.judgements, self.expansion)[0]
+        return (result[0], result[1])
 
 
 def compare_models(resolutions: list[ModelResolutionPath]) -> ModelComparison:

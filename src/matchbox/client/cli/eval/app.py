@@ -3,6 +3,7 @@
 import logging
 from pathlib import Path
 
+from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Footer, Header
@@ -42,7 +43,7 @@ class EntityResolutionApp(App):
         num_samples: int = 100,
         user: str | None = None,
         dag: DAG | None = None,
-    ):
+    ) -> None:
         """Initialise the entity resolution app.
 
         Args:
@@ -130,7 +131,7 @@ class EntityResolutionApp(App):
         )
         yield Footer()
 
-    async def on_key(self, event) -> None:
+    async def on_key(self, event: events.Key) -> None:
         """Delegate key handling to handlers."""
         await self.handlers.handle_key_input(event)
 

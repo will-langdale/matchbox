@@ -66,7 +66,6 @@ test/client/cli/eval/
 ├── test_app_integration.py  # Integration tests
 ├── test_state.py           # State management tests
 ├── test_handlers.py        # Input handling tests
-├── test_plot_data.py       # Plot validation tests (critical)
 └── test_widgets.py         # UI component tests
 ```
 
@@ -112,7 +111,6 @@ The `EvaluationState` class (`state.py`) serves as the single source of truth fo
 
 - **Queue state**: Current entity, position, painted items
 - **UI state**: View mode, group selection, display data
-- **Plot state**: Evaluation data, loading status, errors
 - **User state**: Authentication, resolution settings
 - **Status state**: Messages, colours, timers
 
@@ -124,10 +122,6 @@ The `EvaluationQueue` class provides a deque-based queue that maintains position
 # Rotation maintains user's sense of position
 queue.move_next()      # Rotate forward
 queue.move_previous()  # Rotate backward
-
-# Painted items are tracked separately
-painted = queue.painted_items
-queue.submit_all_painted()  # Remove submitted items
 ```
 
 ### State flow lifecycle
@@ -182,7 +176,6 @@ async def handle_key_input(self, event):
 **Dynamic keys** change behaviour based on application state:
 - Letter keys: Set group selection (a-z)
 - Number keys: Assign columns to selected group (1-9, 0)
-- Slash key: Plot toggle (with state validation)
 
 **Static keys** have fixed behaviour defined in `BINDINGS`:
 - Arrow keys: Entity navigation
@@ -268,7 +261,6 @@ Tests are organised by architectural layer to match the modular code structure:
 - **Unit tests**: Test individual modules in isolation
 - **Integration tests**: Test cross-module interactions
 - **Component tests**: Test UI components with mock state
-- **Regression tests**: Specific tests for known issues (e.g., slash key bug)
 
 ### Testing patterns
 
@@ -295,77 +287,11 @@ def test_render_compact_view(self, mock_state, mock_current_item):
     assert isinstance(result, Table)
 ```
 
-### Critical regression tests
-
-The slash key modal bug has dedicated regression tests in `test_plot_data.py`:
-
-```python
-def test_slash_key_never_shows_modal_when_not_ready(self):
-    """Critical test: slash key should NEVER show modal when plot is not ready."""
-```
-
-These tests verify all scenarios that previously caused incorrect modal display.
-
 ## Development guidelines
 
-### Code style and conventions
-
-- **Modern Python**: Use PEP 604 (union) and PEP 585 (generics) syntax
-- **Type hints**: All functions and methods have complete type annotations
-- **Docstrings**: All public methods documented with purpose and parameters
-- **No comments**: Code should be self-documenting; comments only for complex algorithms
-
-### Adding new features
+When adding new features:
 
 1. **State first**: Add any new state to `EvaluationState`
 2. **Handlers second**: Add input handling to `EvaluationHandlers`
 3. **UI last**: Update widgets to reflect new state
 4. **Tests throughout**: Write tests for each layer
-
-### Error handling strategy
-
-**Explicit over implicit**: Use explicit state checking rather than try/except for control flow.
-
-**Graceful degradation**: UI should handle missing or invalid data gracefully.
-
-**User feedback**: Always provide clear status messages for error conditions.
-
-**Logging**: Log detailed errors for debugging but show simplified messages to users.
-
-### Performance considerations
-
-**State updates**: Batch state updates where possible to minimise observer notifications.
-
-**Table rendering**: Large tables use Polars for efficient data processing.
-
-**Queue operations**: Deque-based queue provides O(1) rotation operations.
-
-**Lazy loading**: Plot data and widgets are created on-demand.
-
-## Key design decisions and rationales
-
-**Maintainability vs simplicity**: The modular architecture requires more files but makes each component easier to understand and modify.
-
-**Performance vs clarity**: Some operations could be more efficient with tighter coupling, but the clarity benefits outweigh performance costs for this use case.
-
-**Testability vs directness**: Dependency injection adds indirection but makes comprehensive testing possible.
-
-### Observer pattern choice
-
-**Alternative considered**: Manual UI updates after each state change.
-
-**Choice rationale**: Observer pattern ensures UI consistency automatically and reduces coupling between state and UI components.
-
-**Trade-off**: Slight performance overhead for automatic updates vs risk of UI inconsistency with manual updates.
-
-### Input handling architecture
-
-**Alternative considered**: All keys handled through Textual's binding system.
-
-**Choice rationale**: Dynamic keys (letters, numbers) need contextual behaviour that static bindings can't provide efficiently.
-
-**Trade-off**: Mixed input handling approaches vs consistent but inflexible binding system.
-
----
-
-This architecture serves as the foundation for a maintainable, testable, and extensible entity resolution evaluation tool. The modular design ensures that future enhancements can be made without compromising the system's stability or clarity.

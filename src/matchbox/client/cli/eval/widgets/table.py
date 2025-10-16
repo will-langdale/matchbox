@@ -1,17 +1,20 @@
 """Comparison display table for entity resolution evaluation."""
 
+from typing import Any
+
 import polars as pl
 from rich.table import Table
 from textual.widget import Widget
 
 from matchbox.client.cli.eval.state import EvaluationState
+from matchbox.client.cli.eval.utils import EvaluationItem
 from matchbox.client.cli.eval.widgets.styling import GroupStyler
 
 
 class ComparisonDisplayTable(Widget):
     """Minimal table for side-by-side record comparison with colour highlighting."""
 
-    def __init__(self, state: EvaluationState, **kwargs):
+    def __init__(self, state: EvaluationState, **kwargs: Any) -> None:  # noqa: ANN401
         """Initialise the comparison display table."""
         super().__init__(**kwargs)
         self.state = state
@@ -50,7 +53,7 @@ class ComparisonDisplayTable(Widget):
         no_samples_table.add_row("Press Ctrl+Q to exit.", style="dim")
         return no_samples_table
 
-    def _add_table_columns(self, table: Table, current) -> None:
+    def _add_table_columns(self, table: Table, current: EvaluationItem) -> None:
         """Add styled columns to the table for each display column."""
         current_assignments = self.state.current_assignments
         for display_col_index, _ in enumerate(current.display_columns):
@@ -72,7 +75,7 @@ class ComparisonDisplayTable(Widget):
             else:
                 table.add_column(header_text, style="dim", min_width=15, max_width=50)
 
-    def _render_compact_view(self, current) -> Table:
+    def _render_compact_view(self, current: EvaluationItem) -> Table:
         """Render compact view - one row per field, deduplicated columns."""
         if current.display_dataframe.is_empty():
             return self._create_loading_table()

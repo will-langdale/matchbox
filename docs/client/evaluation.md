@@ -11,12 +11,12 @@ To calculate these, we need a **ground truth** - a set of correct matches create
 
 Matchbox provides a terminal-based UI to help you create this validation data. Here's how it works:
 
-1. **Launch the evaluation tool** using `matchbox eval start --resolution <resolution_name> --samples <number> --user <your_username>`
+1. **Launch the evaluation tool** using `matchbox eval start --collection <collection_name> --samples <number> --user <your_username>`
     a. You can also set yours username with the `MB__CLIENT__USER` environment variable.
+    b. If your DAG isn't complete, you'll also need `--resolution <resolution_name>`
 2. Matchbox will **download clusters** for you to review. It avoids clusters you've already judged and focuses on ones the model is unsure about.
 3. In the terminal interface, you'll review each cluster:
    * Use keyboard commands like `b+1,3,5` to assign rows 1, 3, and 5 to group B
-   * Use extended groups like `aa+7` for more complex splits
    * Navigate with arrow keys between entities
    * Press `?` or `F1` for help with commands
 
@@ -81,15 +81,23 @@ model = source.query().deduper(
 results = model.run()
 ```
 
-Download validation data and create evaluation object, then get precision and recall at a specific threshold:
+Download validation data:
 
 ```python
-from matchbox.client.cli.eval import EvalData
+from matchbox.client.eval import EvalData
 eval_data = EvalData()
+```
 
-# Get precision and recall at a specific threshold
-precision, recall = eval_data.precision_recall(results, threshold=0.5)
-print(f"At threshold 0.5: Precision={precision:.2f}, Recall={recall:.2f}")
+Plot a precision-recall curve:
+
+```python
+eval_data.pr_curve(results)
+```
+
+Or get precision and recall at a specific threshold:
+
+```python
+p, r = eval_data.precision_recall(results, threshold=0.5)
 ```
 
 !!! tip "Deterministic models"

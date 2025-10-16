@@ -1,9 +1,15 @@
 """Input handlers and action methods for entity resolution evaluation."""
 
 import logging
+from typing import TYPE_CHECKING
+
+from textual import events
 
 from matchbox.client import _handler
 from matchbox.client.cli.eval.modals import HelpModal
+
+if TYPE_CHECKING:
+    from matchbox.client.cli.eval.app import EntityResolutionApp
 
 logger = logging.getLogger(__name__)
 
@@ -11,12 +17,12 @@ logger = logging.getLogger(__name__)
 class EvaluationHandlers:
     """Handles all input events and actions for the evaluation app."""
 
-    def __init__(self, app):
+    def __init__(self, app: "EntityResolutionApp") -> None:
         """Initialise handlers with app reference."""
         self.app = app
         self.state = app.state
 
-    async def handle_key_input(self, event) -> None:
+    async def handle_key_input(self, event: events.Key) -> None:
         """Handle keyboard events for group assignment shortcuts."""
         key = event.key
 

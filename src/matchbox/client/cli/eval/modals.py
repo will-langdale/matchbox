@@ -2,7 +2,7 @@
 
 from textwrap import dedent
 
-from textual import on
+from textual import events, on
 from textual.app import ComposeResult
 from textual.containers import Container
 from textual.screen import ModalScreen
@@ -68,7 +68,7 @@ class HelpModal(ModalScreen):
         """Close the help modal."""
         self.dismiss()
 
-    def on_key(self, event) -> None:
+    def on_key(self, event: events.Key) -> None:
         """Handle key events for closing the help modal."""
         if event.key == "escape" or event.key == "question_mark":
             self.dismiss()
