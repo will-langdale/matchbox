@@ -24,9 +24,6 @@ class ComparisonDisplayTable(Widget):
         """Render the table with current state using Rich Table."""
         current = self.state.queue.current
         if not current or not hasattr(current, "display_dataframe"):
-            # Check if we have no samples vs still loading
-            if self.state.has_no_samples:
-                return self._create_no_samples_table()
             return self._create_loading_table()
 
         return self._render_compact_view(current)
@@ -37,21 +34,6 @@ class ComparisonDisplayTable(Widget):
         loading_table.add_column("")
         loading_table.add_row("Loading...")
         return loading_table
-
-    def _create_no_samples_table(self) -> Table:
-        """Create a table showing no samples are available."""
-        no_samples_table = Table(show_header=False, show_lines=False, padding=(1, 2))
-        no_samples_table.add_column("", style="yellow")
-        no_samples_table.add_row("")
-        no_samples_table.add_row("No samples available for this resolution.")
-        no_samples_table.add_row("")
-        no_samples_table.add_row("Possible reasons:")
-        no_samples_table.add_row("  • All clusters have been recently judged by you")
-        no_samples_table.add_row("  • The resolution has no probability data")
-        no_samples_table.add_row("  • No clusters exist for this resolution")
-        no_samples_table.add_row("")
-        no_samples_table.add_row("Press Ctrl+Q to exit.", style="dim")
-        return no_samples_table
 
     def _add_table_columns(self, table: Table, current: EvaluationItem) -> None:
         """Add styled columns to the table for each display column."""

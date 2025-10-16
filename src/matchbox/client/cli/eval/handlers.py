@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from textual import events
 
 from matchbox.client import _handler
-from matchbox.client.cli.eval.modals import HelpModal
+from matchbox.client.cli.eval.modals import HelpModal, NoSamplesModal
 
 if TYPE_CHECKING:
     from matchbox.client.cli.eval.app import EntityResolutionApp
@@ -72,6 +72,10 @@ class EvaluationHandlers:
         """Show the help modal."""
         self.app.push_screen(HelpModal())
 
+    async def action_show_no_samples(self) -> None:
+        """Show the no samples modal."""
+        self.app.push_screen(NoSamplesModal())
+
     async def action_submit_and_fetch(self) -> None:
         """Submit current entity if fully painted, then fetch more."""
         current = self.state.queue.current
@@ -131,7 +135,7 @@ class EvaluationHandlers:
         if new_samples_dict:
             await self._process_new_samples(new_samples_dict)
         else:
-            self._handle_no_samples_available(needed)
+            await self._handle_no_samples_available(needed)
 
     async def _process_new_samples(self, new_samples_dict: dict) -> None:
         """Process newly fetched samples and update the queue."""
@@ -143,7 +147,7 @@ class EvaluationHandlers:
         if self.state.current_df is None and new_items:
             await self.app.refresh_display()
 
-    def _handle_no_samples_available(self, needed: int) -> None:
+    async def _handle_no_samples_available(self, needed: int) -> None:
         """Handle the case where no new samples are available."""
         # Check if queue is now completely empty
         if self.state.queue.total_count == 0:
@@ -154,6 +158,7 @@ class EvaluationHandlers:
                 f"Queue is empty and no new samples available - "
                 f"requested {needed} but got none"
             )
+            await self.action_show_no_samples()
         else:
             # Queue still has items, just can't fetch more right now
             self.state.update_status("◯ Empty", "dim")

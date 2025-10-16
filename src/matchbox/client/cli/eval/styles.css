@@ -34,6 +34,29 @@ Screen {
     width: 20;
 }
 
+#no-samples-dialog {
+    width: 65;
+    height: 18;
+    background: $surface;
+    border: thick $primary;
+}
+
+#no-samples-title {
+    text-align: center;
+    text-style: bold;
+    color: $accent;
+    margin: 1;
+}
+
+#no-samples-content {
+    margin: 1 2;
+}
+
+#quit-no-samples {
+    margin: 1 2;
+    width: 20;
+}
+
 .status-bar {
     layout: horizontal;
     height: 3;

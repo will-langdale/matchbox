@@ -137,6 +137,34 @@ class TestTextualUI:
             await pilot.press("f1")
             await pilot.pause()
 
+    @patch("matchbox.client.cli.eval.app.get_samples")
+    @patch("matchbox.client.cli.eval.app._handler.login")
+    @patch("matchbox.client.cli.eval.app.settings")
+    @pytest.mark.asyncio
+    async def test_no_samples_modal(
+        self,
+        mock_settings: Mock,
+        mock_login: Mock,
+        mock_get_samples: Mock,
+        test_resolution: ModelResolutionPath,
+    ) -> None:
+        """Test that no samples modal appears when no samples available."""
+        # Setup mocks
+        mock_settings.user = "test_user"
+        mock_login.return_value = 123
+        mock_get_samples.return_value = {}  # Empty samples triggers no samples state
+
+        app = EntityResolutionApp(resolution=test_resolution, num_samples=1)
+        app.state.dag = Mock()
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            # Should have triggered no samples state and shown modal
+            assert app.state.has_no_samples is True
+            # Check that a modal screen is active
+            assert len(pilot.app.screen_stack) > 1
+
     @pytest.mark.asyncio
     async def test_command_input_parsing(
         self,

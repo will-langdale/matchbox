@@ -89,6 +89,7 @@ class EntityResolutionApp(App):
                 "This may be because all clusters have been recently judged "
                 "by this user, or the resolution has no probability data."
             )
+            await self.handlers.action_show_no_samples()
             return
 
         if self.state.queue.current:

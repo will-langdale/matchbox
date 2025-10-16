@@ -72,3 +72,36 @@ class HelpModal(ModalScreen):
         """Handle key events for closing the help modal."""
         if event.key == "escape" or event.key == "question_mark":
             self.dismiss()
+
+
+class NoSamplesModal(ModalScreen):
+    """Modal screen showing no samples are available."""
+
+    def compose(self) -> ComposeResult:
+        """Compose the no samples modal UI."""
+        with Container(id="no-samples-dialog"):
+            yield Static("No samples available", id="no-samples-title")
+            yield Static(
+                dedent("""
+                    No samples are available for this resolution.
+
+                    Possible reasons:
+                    • All clusters have been recently judged by you
+                    • The resolution has no probability data
+                    • No clusters exist for this resolution
+
+                    Since there are no samples to evaluate, you may want to quit.
+                """).strip(),
+                id="no-samples-content",
+            )
+            yield Button("Quit (Ctrl+Q)", id="quit-no-samples")
+
+    @on(Button.Pressed, "#quit-no-samples")
+    def quit_app(self) -> None:
+        """Quit the application."""
+        self.app.exit()
+
+    def on_key(self, event: events.Key) -> None:
+        """Handle key events for the no samples modal."""
+        if event.key in ("escape", "ctrl+q", "ctrl+c"):
+            self.app.exit()
