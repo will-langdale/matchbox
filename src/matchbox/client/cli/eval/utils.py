@@ -595,32 +595,16 @@ class EvalData:
             logger.debug("Processing deduper model")
             # Deduper model - left_query contains the only source
             left_source = model_config.left_query.source_resolutions[0]
-            source_data = _handler.query(
+            left_data = _handler.query(
                 source=left_source,
-                resolution=None,
+                resolution=resolution,
                 return_leaf_id=True,
             )
-            source_df = pl.from_arrow(source_data)
-            logger.debug(f"Retrieved {len(source_df)} source records")
+            left_df = pl.from_arrow(left_data)
+            logger.debug(f"Retrieved {len(left_df)} source records")
 
-            # Create root_leaf mapping from probabilities and leaf_id
-            id_to_leaf = dict(
-                zip(
-                    source_df["id"].to_list(),
-                    source_df["leaf_id"].to_list(),
-                    strict=False,
-                )
-            )
-
-            # Map left_id and right_id to their leaf_ids
-            root_leaf_data = []
-            for row in probs_df.iter_rows(named=True):
-                left_leaf = id_to_leaf.get(row["left_id"])
-                right_leaf = id_to_leaf.get(row["right_id"])
-                if left_leaf is not None and right_leaf is not None:
-                    root_leaf_data.append({"root": left_leaf, "leaf": right_leaf})
-
-            root_leaf_df = pl.DataFrame(root_leaf_data).unique()
+            # For deduper, right is same as left
+            right_df = None
         else:
             logger.debug("Processing linker model")
             # Linker model - has both left and right queries with sources
@@ -628,45 +612,37 @@ class EvalData:
             right_source = model_config.right_query.source_resolutions[0]
             left_data = _handler.query(
                 source=left_source,
-                resolution=None,
+                resolution=resolution,
                 return_leaf_id=True,
             )
             right_data = _handler.query(
                 source=right_source,
-                resolution=None,
+                resolution=resolution,
                 return_leaf_id=True,
             )
-
-            # Build root_leaf mapping
             left_df = pl.from_arrow(left_data)
             right_df = pl.from_arrow(right_data)
             logger.debug(
                 f"Retrieved {len(left_df)} left records, {len(right_df)} right records"
             )
 
-            # Create leaf_id lookup tables
-            left_lookup = left_df.select(["id", "leaf_id"]).rename(
-                {"leaf_id": "left_leaf"}
-            )
-            right_lookup = right_df.select(["id", "leaf_id"]).rename(
-                {"leaf_id": "right_leaf"}
-            )
+        # Create Results object and use its root_leaf()
+        results = Results(
+            probabilities=probs_df,
+            left_root_leaf=left_df,
+            right_root_leaf=right_df,
+        )
 
-            # Join probabilities with leaf lookups
-            root_leaf_df = (
-                probs_df.join(left_lookup, left_on="left_id", right_on="id", how="left")
-                .join(right_lookup, left_on="right_id", right_on="id", how="left")
-                .select(
-                    [
-                        pl.col("left_leaf").alias("root"),
-                        pl.col("right_leaf").alias("leaf"),
-                    ]
-                )
-                .unique()
-            )
+        # Use Results.root_leaf() to get proper cluster structure
+        root_leaf = (
+            results.root_leaf()
+            .rename({"root_id": "root", "leaf_id": "leaf"})
+            .to_arrow()
+        )
 
-        root_leaf = root_leaf_df.to_arrow()
-        logger.info(f"EvalData created successfully with {len(root_leaf)} records")
+        logger.info(
+            f"EvalData created successfully with {len(root_leaf)} root-leaf records"
+        )
         return cls(root_leaf, thresholds, probabilities)
 
     def refresh_judgements(self) -> None:
