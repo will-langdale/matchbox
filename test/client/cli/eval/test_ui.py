@@ -15,6 +15,7 @@ from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.exceptions import MatchboxClientSettingsException
 from matchbox.common.factories.scenarios import setup_scenario
+from matchbox.server.base import MatchboxDBAdapter
 
 backends = [
     pytest.param("matchbox_postgres", id="postgres"),
@@ -22,7 +23,7 @@ backends = [
 
 
 @pytest.fixture(scope="function")
-def backend_instance(request: pytest.FixtureRequest, backend: str):
+def backend_instance(request: pytest.FixtureRequest, backend: str) -> MatchboxDBAdapter:
     """Create a fresh backend instance for each test."""
     backend_obj = request.getfixturevalue(backend)
     backend_obj.clear(certain=True)
@@ -35,20 +36,22 @@ class TestTextualUI:
     """Test the Textual UI using scenario data like adapter tests."""
 
     @pytest.fixture
-    def test_resolution(self):
+    def test_resolution(self) -> ModelResolutionPath:
         """Create test resolution path."""
         return ModelResolutionPath(
             collection="test_collection", run=1, name="test_resolution"
         )
 
     @pytest.fixture(autouse=True)
-    def setup(self, backend_instance: str, sqlite_warehouse: Engine):
+    def setup(self, backend_instance: str, sqlite_warehouse: Engine) -> None:
         self.backend = backend_instance
         self.warehouse_engine = sqlite_warehouse
         self.scenario = partial(setup_scenario, warehouse=sqlite_warehouse)
 
     @pytest.mark.asyncio
-    async def test_app_initialisation(self, test_resolution):
+    async def test_app_initialisation(
+        self, test_resolution: ModelResolutionPath
+    ) -> None:
         """Test that the app can be initialised."""
         app = EntityResolutionApp(resolution=test_resolution, num_samples=5)
         assert app.state.resolution == test_resolution
@@ -56,7 +59,11 @@ class TestTextualUI:
         assert app.state.queue.current_position == 0
 
     @pytest.mark.asyncio
-    async def test_app_runs_headless(self, test_resolution, mock_eval_dependencies):
+    async def test_app_runs_headless(
+        self,
+        test_resolution: ModelResolutionPath,
+        mock_eval_dependencies: dict[str, Mock],
+    ) -> None:
         """Test that the app can run in test mode."""
         app = EntityResolutionApp(resolution=test_resolution, num_samples=5)
         app.state.dag = Mock()
@@ -68,7 +75,9 @@ class TestTextualUI:
 
     @patch("matchbox.client.cli.eval.app.settings")
     @pytest.mark.asyncio
-    async def test_authentication_required(self, mock_settings, test_resolution):
+    async def test_authentication_required(
+        self, mock_settings: Mock, test_resolution: ModelResolutionPath
+    ) -> None:
         """Test that authentication is required."""
         # No user set
         mock_settings.user = None
@@ -85,8 +94,12 @@ class TestTextualUI:
     @patch("matchbox.client.cli.eval.app.settings")
     @pytest.mark.asyncio
     async def test_basic_workflow_with_mocked_data(
-        self, mock_settings, mock_login, mock_get_samples, test_resolution
-    ):
+        self,
+        mock_settings: Mock,
+        mock_login: Mock,
+        mock_get_samples: Mock,
+        test_resolution: ModelResolutionPath,
+    ) -> None:
         """Test basic workflow with mocked sample data."""
         # Setup mocks
         mock_settings.user = "test_user"
@@ -110,7 +123,11 @@ class TestTextualUI:
             assert app.state.queue.total_count == len(mock_samples)
 
     @pytest.mark.asyncio
-    async def test_help_modal(self, test_resolution, mock_eval_dependencies):
+    async def test_help_modal(
+        self,
+        test_resolution: ModelResolutionPath,
+        mock_eval_dependencies: dict[str, Mock],
+    ) -> None:
         """Test that help modal can be triggered."""
         app = EntityResolutionApp(resolution=test_resolution, num_samples=1)
         app.state.dag = Mock()
@@ -121,7 +138,11 @@ class TestTextualUI:
             await pilot.pause()
 
     @pytest.mark.asyncio
-    async def test_command_input_parsing(self, test_resolution, mock_eval_dependencies):
+    async def test_command_input_parsing(
+        self,
+        test_resolution: ModelResolutionPath,
+        mock_eval_dependencies: dict[str, Mock],
+    ) -> None:
         """Test command parsing functionality."""
         app = EntityResolutionApp(resolution=test_resolution, num_samples=1)
         app.push_screen = Mock()
@@ -137,7 +158,7 @@ class TestTextualUI:
             assert state.parse_number_key("1") == 1
 
     @pytest.mark.asyncio
-    async def test_scenario_integration(self):
+    async def test_scenario_integration(self) -> None:
         """Test integration with scenario data (requires Docker)."""
         with self.scenario(self.backend, "dedupe") as dag:
             # Get a real model from the scenario
@@ -176,7 +197,7 @@ class TestTextualUI:
                 )  # Could be 0 if no evaluation clusters yet
 
     @pytest.mark.asyncio
-    async def test_action_submit_and_fetch_functionality(self):
+    async def test_action_submit_and_fetch_functionality(self) -> None:
         """Test that the UI's action_submit_and_fetch properly submits painted items."""
         with self.scenario(self.backend, "dedupe") as dag:
             model_name: str = "naive_test_crn"
@@ -239,7 +260,9 @@ class TestTextualUI:
         space_binding = next((b for b in app.BINDINGS if b[0] == "space"), None)
         assert space_binding[1] == "submit_and_fetch"
 
-    def test_persistent_painting_functionality(self, test_resolution):
+    def test_persistent_painting_functionality(
+        self, test_resolution: ModelResolutionPath
+    ) -> None:
         """Test that painting persists across entity navigation."""
         app = EntityResolutionApp(resolution=test_resolution, num_samples=5)
 
@@ -255,7 +278,7 @@ class TestTextualUI:
         app.state.set_display_data([1])
         assert app.state.display_leaf_ids == [1]
 
-    def test_status_bar_integration(self):
+    def test_status_bar_integration(self) -> None:
         """Test that status bar widget works in app context."""
         state = EvaluationState()
         status_widget = StatusBarRight(state)

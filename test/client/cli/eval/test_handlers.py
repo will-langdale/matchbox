@@ -11,7 +11,7 @@ class TestEvaluationHandlers:
     """Test the EvaluationHandlers class."""
 
     @pytest.fixture
-    def mock_app(self):
+    def mock_app(self) -> Mock:
         """Create a mock app for testing."""
         app = Mock()
         app.state = Mock()
@@ -27,12 +27,12 @@ class TestEvaluationHandlers:
         return app
 
     @pytest.fixture
-    def handlers(self, mock_app):
+    def handlers(self, mock_app: Mock) -> EvaluationHandlers:
         """Create handlers instance with mock app."""
         return EvaluationHandlers(mock_app)
 
     @pytest.fixture
-    def mock_event(self):
+    def mock_event(self) -> Mock:
         """Create a mock key event."""
         event = Mock()
         event.prevent_default = Mock()
@@ -43,14 +43,18 @@ class TestEvaluationHandlers:
 
         @pytest.mark.asyncio
         @pytest.mark.parametrize("key", ["left", "right", "enter", "space"])
-        async def test_navigation_keys_not_handled(self, handlers, mock_event, key):
+        async def test_navigation_keys_not_handled(
+            self, handlers: EvaluationHandlers, mock_event: Mock, key: str
+        ) -> None:
             """Test that navigation keys are passed through to bindings."""
             mock_event.key = key
             await handlers.handle_key_input(mock_event)
             mock_event.prevent_default.assert_not_called()
 
         @pytest.mark.asyncio
-        async def test_escape_clears_group_selection(self, handlers, mock_event):
+        async def test_escape_clears_group_selection(
+            self, handlers: EvaluationHandlers, mock_event: Mock
+        ) -> None:
             """Test that escape key clears group selection."""
             mock_event.key = "escape"
 
@@ -62,8 +66,8 @@ class TestEvaluationHandlers:
         @pytest.mark.asyncio
         @pytest.mark.parametrize("letter", ["a", "b", "z", "A", "B", "Z"])
         async def test_letter_keys_set_group_selection(
-            self, handlers, mock_event, letter
-        ):
+            self, handlers: EvaluationHandlers, mock_event: Mock, letter: str
+        ) -> None:
             """Test that letter keys set group selection."""
             mock_event.key = letter
             await handlers.handle_key_input(mock_event)
@@ -72,14 +76,18 @@ class TestEvaluationHandlers:
 
         @pytest.mark.asyncio
         @pytest.mark.parametrize("key", ["1", "!", "@"])
-        async def test_non_alpha_keys_ignored(self, handlers, mock_event, key):
+        async def test_non_alpha_keys_ignored(
+            self, handlers: EvaluationHandlers, mock_event: Mock, key: str
+        ) -> None:
             """Test that non-alphabetic keys don't set group selection."""
             mock_event.key = key
             await handlers.handle_key_input(mock_event)
             handlers.state.set_group_selection.assert_not_called()
 
         @pytest.mark.asyncio
-        async def test_number_keys_assign_columns(self, handlers, mock_event):
+        async def test_number_keys_assign_columns(
+            self, handlers: EvaluationHandlers, mock_event: Mock
+        ) -> None:
             """Test that number keys assign columns to current group."""
             handlers.state.current_group_selection = "a"
             handlers.state.parse_number_key.return_value = 3
@@ -97,7 +105,9 @@ class TestEvaluationHandlers:
             mock_event.prevent_default.assert_called_once()
 
         @pytest.mark.asyncio
-        async def test_number_keys_no_group_selected(self, handlers, mock_event):
+        async def test_number_keys_no_group_selected(
+            self, handlers: EvaluationHandlers, mock_event: Mock
+        ) -> None:
             """Test that number keys do nothing when no group is selected."""
             handlers.state.current_group_selection = ""
             handlers.state.parse_number_key.return_value = 3
@@ -113,7 +123,9 @@ class TestEvaluationHandlers:
         """Test entity navigation actions."""
 
         @pytest.mark.asyncio
-        async def test_next_entity_multiple_items(self, handlers):
+        async def test_next_entity_multiple_items(
+            self, handlers: EvaluationHandlers
+        ) -> None:
             """Test moving to next entity when multiple items exist."""
             handlers.state.queue.total_count = 3
 
@@ -123,7 +135,9 @@ class TestEvaluationHandlers:
             handlers.app.refresh_display.assert_called_once()
 
         @pytest.mark.asyncio
-        async def test_next_entity_single_item_submits_and_quits(self, handlers):
+        async def test_next_entity_single_item_submits_and_quits(
+            self, handlers: EvaluationHandlers
+        ) -> None:
             """Test moving to next when only one item submits and quits."""
             handlers.state.queue.total_count = 1
             handlers.action_submit_and_fetch = AsyncMock()
@@ -135,7 +149,9 @@ class TestEvaluationHandlers:
             handlers.app.action_quit.assert_called_once()
 
         @pytest.mark.asyncio
-        async def test_previous_entity_multiple_items(self, handlers):
+        async def test_previous_entity_multiple_items(
+            self, handlers: EvaluationHandlers
+        ) -> None:
             """Test moving to previous entity when multiple items exist."""
             handlers.state.queue.total_count = 3
 
@@ -145,7 +161,9 @@ class TestEvaluationHandlers:
             handlers.app.refresh_display.assert_called_once()
 
         @pytest.mark.asyncio
-        async def test_previous_entity_single_item_does_nothing(self, handlers):
+        async def test_previous_entity_single_item_does_nothing(
+            self, handlers: EvaluationHandlers
+        ) -> None:
             """Test moving to previous when only one item does nothing."""
             handlers.state.queue.total_count = 1
 
@@ -158,7 +176,7 @@ class TestEvaluationHandlers:
         """Test assignment-related actions."""
 
         @pytest.mark.asyncio
-        async def test_clear_assignments(self, handlers):
+        async def test_clear_assignments(self, handlers: EvaluationHandlers) -> None:
             """Test clearing assignments and group selection."""
             await handlers.action_clear_assignments()
 
@@ -169,7 +187,7 @@ class TestEvaluationHandlers:
         """Test modal-related actions."""
 
         @pytest.mark.asyncio
-        async def test_show_help(self, handlers):
+        async def test_show_help(self, handlers: EvaluationHandlers) -> None:
             """Test showing help modal."""
             await handlers.action_show_help()
 
@@ -182,7 +200,9 @@ class TestEvaluationHandlers:
         """Test submit and fetch functionality."""
 
         @pytest.mark.asyncio
-        async def test_backfill_samples_success(self, handlers):
+        async def test_backfill_samples_success(
+            self, handlers: EvaluationHandlers
+        ) -> None:
             """Test successful sample backfilling."""
             handlers.state.queue.total_count = 80
             handlers.state.sample_limit = 100
@@ -197,7 +217,9 @@ class TestEvaluationHandlers:
             handlers.state.queue.add_items.assert_called_once()
 
         @pytest.mark.asyncio
-        async def test_backfill_samples_already_at_capacity(self, handlers):
+        async def test_backfill_samples_already_at_capacity(
+            self, handlers: EvaluationHandlers
+        ) -> None:
             """Test backfill when queue is already at capacity."""
             handlers.state.queue.total_count = 100
             handlers.state.sample_limit = 100
@@ -208,7 +230,9 @@ class TestEvaluationHandlers:
             handlers.state.update_status.assert_called_with("✓ Ready", "green")
 
         @pytest.mark.asyncio
-        async def test_backfill_samples_no_samples_available(self, handlers):
+        async def test_backfill_samples_no_samples_available(
+            self, handlers: EvaluationHandlers
+        ) -> None:
             """Test backfill when no new samples are available."""
             handlers.state.queue.total_count = 80
             handlers.state.sample_limit = 100

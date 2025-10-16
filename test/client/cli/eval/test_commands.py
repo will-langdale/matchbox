@@ -13,11 +13,11 @@ from matchbox.common.factories.sources import (
 class TestKeyboardShortcuts:
     """Test keyboard shortcut functionality."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         self.state = EvaluationState()
 
-    def test_single_letter_group(self):
+    def test_single_letter_group(self) -> None:
         """Test single letter group selection."""
         self.state.set_group_selection("a")
         assert self.state.current_group_selection == "a"
@@ -25,7 +25,7 @@ class TestKeyboardShortcuts:
         self.state.clear_group_selection()
         assert not self.state.current_group_selection
 
-    def test_group_switching(self):
+    def test_group_switching(self) -> None:
         """Test switching between different groups."""
         # Set group A
         self.state.set_group_selection("a")
@@ -43,7 +43,7 @@ class TestKeyboardShortcuts:
         self.state.clear_group_selection()
         assert not self.state.current_group_selection
 
-    def test_set_group_overrides(self):
+    def test_set_group_overrides(self) -> None:
         """Test that setting a group overrides the previous group."""
         self.state.set_group_selection("a")
         assert self.state.current_group_selection == "a"
@@ -56,7 +56,7 @@ class TestKeyboardShortcuts:
         self.state.set_group_selection("b")
         assert self.state.current_group_selection == "b"
 
-    def test_case_insensitive_keys(self):
+    def test_case_insensitive_keys(self) -> None:
         """Test that uppercase keys are converted to lowercase."""
         self.state.set_group_selection("A")
         assert self.state.current_group_selection == "a"
@@ -74,11 +74,11 @@ class TestKeyboardShortcuts:
             ("a", None),
         ],
     )
-    def test_number_key_parsing(self, key, expected):
+    def test_number_key_parsing(self, key: str, expected: int | None) -> None:
         """Test number key to column number conversion."""
         assert self.state.parse_number_key(key) == expected
 
-    def test_various_single_letter_groups(self):
+    def test_various_single_letter_groups(self) -> None:
         """Test various single letter groups work."""
         # Test different letters
         test_letters = ["q", "w", "e", "r", "t", "y", "a", "s", "d", "f"]
@@ -87,7 +87,7 @@ class TestKeyboardShortcuts:
             self.state.set_group_selection(letter)
             assert self.state.current_group_selection == letter
 
-    def test_non_alphabetic_keys_ignored(self):
+    def test_non_alphabetic_keys_ignored(self) -> None:
         """Test that non-alphabetic keys are ignored."""
         # These should not change the current group selection
         original_group = self.state.current_group_selection
@@ -100,7 +100,7 @@ class TestKeyboardShortcuts:
 class TestFieldProcessing:
     """Test the SourceConfig-based field processing functionality."""
 
-    def test_create_processed_comparison_data(self):
+    def test_create_processed_comparison_data(self) -> None:
         """Test that field processing works with SourceConfig data."""
 
         # Define the data

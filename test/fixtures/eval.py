@@ -1,5 +1,6 @@
 """Shared fixtures for CLI eval tests."""
 
+from collections.abc import Iterator
 from unittest.mock import Mock, patch
 
 import polars as pl
@@ -7,7 +8,7 @@ import pytest
 
 
 @pytest.fixture
-def mock_current_item():
+def mock_current_item() -> Mock:
     """Create a standard mock current queue item for testing."""
     item = Mock()
     item.cluster_id = "test_cluster"
@@ -30,7 +31,7 @@ def mock_current_item():
 
 
 @pytest.fixture
-def mock_state():
+def mock_state() -> Mock:
     """Create a standard mock state for testing."""
     state = Mock()
     state.add_listener = Mock()
@@ -41,7 +42,7 @@ def mock_state():
 
 
 @pytest.fixture
-def mock_eval_dependencies():
+def mock_eval_dependencies() -> Iterator[dict[str, Mock]]:
     """Mock common eval dependencies for app testing."""
     with (
         patch("matchbox.client.cli.eval.app.settings") as mock_settings,

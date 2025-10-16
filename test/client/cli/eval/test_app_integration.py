@@ -13,18 +13,20 @@ class TestEntityResolutionAppIntegration:
     """Integration tests for the main app."""
 
     @pytest.fixture
-    def test_resolution(self):
+    def test_resolution(self) -> ModelResolutionPath:
         """Create test resolution path."""
         return ModelResolutionPath(
             collection="test_collection", run=1, name="test_resolution"
         )
 
     @pytest.fixture
-    def app(self, test_resolution):
+    def app(self, test_resolution: ModelResolutionPath) -> EntityResolutionApp:
         """Create app instance for testing."""
         return EntityResolutionApp(resolution=test_resolution, num_samples=5)
 
-    def test_app_initialisation(self, app, test_resolution):
+    def test_app_initialisation(
+        self, app: EntityResolutionApp, test_resolution: ModelResolutionPath
+    ) -> None:
         """Test that app initialises with correct state."""
         assert app.state.resolution == test_resolution
         assert app.state.sample_limit == 5
@@ -32,7 +34,9 @@ class TestEntityResolutionAppIntegration:
         assert app.handlers.state is app.state
 
     @pytest.mark.asyncio
-    async def test_authentication_required(self, test_resolution):
+    async def test_authentication_required(
+        self, test_resolution: ModelResolutionPath
+    ) -> None:
         """Test that authentication is required."""
         app = EntityResolutionApp(resolution=test_resolution)
 
@@ -43,7 +47,9 @@ class TestEntityResolutionAppIntegration:
                 await app.authenticate()
 
     @pytest.mark.asyncio
-    async def test_authentication_with_injected_user(self, test_resolution):
+    async def test_authentication_with_injected_user(
+        self, test_resolution: ModelResolutionPath
+    ) -> None:
         """Test authentication with user injected via constructor."""
         app = EntityResolutionApp(resolution=test_resolution, user="injected_user")
 
@@ -56,7 +62,7 @@ class TestEntityResolutionAppIntegration:
             assert app.state.user_id == 456
 
     @pytest.mark.asyncio
-    async def test_sample_loading(self, test_resolution):
+    async def test_sample_loading(self, test_resolution: ModelResolutionPath) -> None:
         """Test loading evaluation samples."""
         app = EntityResolutionApp(resolution=test_resolution)
         app.state.user_id = 123
@@ -72,7 +78,9 @@ class TestEntityResolutionAppIntegration:
         assert app.state.queue.total_count == 2
 
     @pytest.mark.asyncio
-    async def test_refresh_display_with_current_item(self, test_resolution):
+    async def test_refresh_display_with_current_item(
+        self, test_resolution: ModelResolutionPath
+    ) -> None:
         """Test refresh display with current queue item."""
         app = EntityResolutionApp(resolution=test_resolution)
 
@@ -86,7 +94,9 @@ class TestEntityResolutionAppIntegration:
         assert app.state.display_leaf_ids == [1, 2, 3]
 
     @pytest.mark.asyncio
-    async def test_refresh_display_no_current_item(self, test_resolution):
+    async def test_refresh_display_no_current_item(
+        self, test_resolution: ModelResolutionPath
+    ) -> None:
         """Test refresh display with no current queue item."""
         app = EntityResolutionApp(resolution=test_resolution)
 
@@ -96,7 +106,9 @@ class TestEntityResolutionAppIntegration:
         assert app.state.display_leaf_ids == []
 
     @pytest.mark.asyncio
-    async def test_key_delegation_to_handlers(self, test_resolution):
+    async def test_key_delegation_to_handlers(
+        self, test_resolution: ModelResolutionPath
+    ) -> None:
         """Test that key events are delegated to handlers."""
         app = EntityResolutionApp(resolution=test_resolution)
         app.handlers.handle_key_input = AsyncMock()
@@ -107,7 +119,9 @@ class TestEntityResolutionAppIntegration:
         app.handlers.handle_key_input.assert_called_once_with(mock_event)
 
     @pytest.mark.asyncio
-    async def test_action_delegation_to_handlers(self, test_resolution):
+    async def test_action_delegation_to_handlers(
+        self, test_resolution: ModelResolutionPath
+    ) -> None:
         """Test that actions are delegated to handlers."""
         app = EntityResolutionApp(resolution=test_resolution)
 
@@ -134,7 +148,9 @@ class TestEntityResolutionAppIntegration:
         await app.action_submit_and_fetch()
         app.handlers.action_submit_and_fetch.assert_called_once()
 
-    def test_compose_creates_expected_structure(self, test_resolution):
+    def test_compose_creates_expected_structure(
+        self, test_resolution: ModelResolutionPath
+    ) -> None:
         """Test that compose creates the expected UI structure."""
         app = EntityResolutionApp(resolution=test_resolution)
 
@@ -144,7 +160,9 @@ class TestEntityResolutionAppIntegration:
         assert len(composed) == 3
 
     @pytest.mark.asyncio
-    async def test_fetch_additional_samples_with_dag(self, app):
+    async def test_fetch_additional_samples_with_dag(
+        self, app: EntityResolutionApp
+    ) -> None:
         """Test that _fetch_additional_samples uses the loaded DAG."""
         app.state.user_id = 123
 

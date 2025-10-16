@@ -11,12 +11,12 @@ class TestEvaluationQueue:
     """Test the EvaluationQueue class."""
 
     @pytest.fixture
-    def queue(self):
+    def queue(self) -> EvaluationQueue:
         """Create a fresh queue for each test."""
         return EvaluationQueue()
 
     @pytest.fixture
-    def sample_items(self):
+    def sample_items(self) -> list[Mock]:
         """Create sample evaluation items for testing."""
         items = []
         for i in range(3):
@@ -28,13 +28,13 @@ class TestEvaluationQueue:
             items.append(item)
         return items
 
-    def test_empty_queue_properties(self, queue):
+    def test_empty_queue_properties(self, queue: EvaluationQueue) -> None:
         """Test properties of an empty queue."""
         assert queue.current is None
         assert queue.current_position == 0
         assert queue.total_count == 0
 
-    def test_add_items(self, queue, sample_items):
+    def test_add_items(self, queue: EvaluationQueue, sample_items: list[Mock]) -> None:
         """Test adding items to the queue."""
         queue.add_items(sample_items)
 
@@ -42,7 +42,7 @@ class TestEvaluationQueue:
         assert queue.current is sample_items[0]
         assert queue.current_position == 1
 
-    def test_move_next(self, queue, sample_items):
+    def test_move_next(self, queue: EvaluationQueue, sample_items: list[Mock]) -> None:
         """Test moving to the next item."""
         queue.add_items(sample_items)
 
@@ -65,7 +65,9 @@ class TestEvaluationQueue:
         assert queue.current_position == 1
         assert queue.current is sample_items[0]
 
-    def test_move_previous(self, queue, sample_items):
+    def test_move_previous(
+        self, queue: EvaluationQueue, sample_items: list[Mock]
+    ) -> None:
         """Test moving to the previous item."""
         queue.add_items(sample_items)
 
@@ -83,7 +85,7 @@ class TestEvaluationQueue:
         assert queue.current_position == 2
         assert queue.current is sample_items[1]
 
-    def test_clear(self, queue, sample_items):
+    def test_clear(self, queue: EvaluationQueue, sample_items: list[Mock]) -> None:
         """Test clearing the queue."""
         queue.add_items(sample_items)
         assert queue.total_count == 3
@@ -98,11 +100,11 @@ class TestEvaluationState:
     """Test the EvaluationState class."""
 
     @pytest.fixture
-    def state(self):
+    def state(self) -> EvaluationState:
         """Create a fresh state for each test."""
         return EvaluationState()
 
-    def test_initial_state(self, state):
+    def test_initial_state(self, state: EvaluationState) -> None:
         """Test initial state values."""
         assert state.sample_limit == 100
         assert not state.current_group_selection
@@ -110,12 +112,14 @@ class TestEvaluationState:
         assert state.status_colour == "bright_white"
         assert len(state.listeners) == 0
 
-    def test_queue_delegation(self, state):
+    def test_queue_delegation(self, state: EvaluationState) -> None:
         """Test that state properly delegates to queue."""
         assert state.current_cluster_id is None  # No current item
         assert state.current_df is None  # No current item
 
-    def test_current_assignments(self, state, mock_current_item):
+    def test_current_assignments(
+        self, state: EvaluationState, mock_current_item: Mock
+    ) -> None:
         """Test current assignments property."""
         # No current item
         assert state.current_assignments == {}
@@ -125,7 +129,7 @@ class TestEvaluationState:
         assignments = state.current_assignments
         assert assignments == {0: "a", 2: "b"}
 
-    def test_group_selection(self, state):
+    def test_group_selection(self, state: EvaluationState) -> None:
         """Test group selection functionality."""
         listener = Mock()
         state.add_listener(listener)
@@ -147,7 +151,9 @@ class TestEvaluationState:
         assert not state.current_group_selection  # Unchanged
         listener.assert_not_called()
 
-    def test_column_assignment(self, state, mock_current_item):
+    def test_column_assignment(
+        self, state: EvaluationState, mock_current_item: Mock
+    ) -> None:
         """Test column assignment functionality."""
         state.queue.items.append(mock_current_item)
         listener = Mock()
@@ -165,7 +171,9 @@ class TestEvaluationState:
         assert mock_current_item.assignments == initial_assignments
         listener.assert_not_called()
 
-    def test_clear_assignments(self, state, mock_current_item):
+    def test_clear_assignments(
+        self, state: EvaluationState, mock_current_item: Mock
+    ) -> None:
         """Test clearing assignments."""
         state.queue.items.append(mock_current_item)
         listener = Mock()
@@ -176,7 +184,7 @@ class TestEvaluationState:
         assert len(mock_current_item.assignments) == 0
         listener.assert_called()
 
-    def test_number_key_parsing(self, state):
+    def test_number_key_parsing(self, state: EvaluationState) -> None:
         """Test number key parsing."""
         assert state.parse_number_key("1") == 1
         assert state.parse_number_key("5") == 5
@@ -184,7 +192,9 @@ class TestEvaluationState:
         assert state.parse_number_key("a") is None
         assert state.parse_number_key("11") is None
 
-    def test_has_current_assignments(self, state, mock_current_item):
+    def test_has_current_assignments(
+        self, state: EvaluationState, mock_current_item: Mock
+    ) -> None:
         """Test checking for current assignments."""
         # No current item
         assert state.has_current_assignments() is False
@@ -198,7 +208,9 @@ class TestEvaluationState:
         mock_current_item.assignments = {0: "a"}
         assert state.has_current_assignments() is True
 
-    def test_get_group_counts(self, state, mock_current_item):
+    def test_get_group_counts(
+        self, state: EvaluationState, mock_current_item: Mock
+    ) -> None:
         """Test group count calculation."""
         # No current item
         assert state.get_group_counts() == {}
@@ -216,7 +228,7 @@ class TestEvaluationState:
         expected = {"a": 1, "b": 1, "c": 0, "unassigned": 2}
         assert counts == expected
 
-    def test_status_management(self, state):
+    def test_status_management(self, state: EvaluationState) -> None:
         """Test status message management."""
         listener = Mock()
         state.add_listener(listener)
@@ -234,11 +246,11 @@ class TestEvaluationState:
         assert state.status_colour == "bright_white"
         listener.assert_called()
 
-    def test_listener_error_handling(self, state):
+    def test_listener_error_handling(self, state: EvaluationState) -> None:
         """Test that listener errors are now propagated (no longer swallowed)."""
 
         # Add a listener that raises an exception
-        def failing_listener():
+        def failing_listener() -> None:
             raise ValueError("Test error")
 
         state.add_listener(failing_listener)
