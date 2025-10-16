@@ -106,10 +106,6 @@ class TestEvaluationState:
         """Test initial state values."""
         assert state.sample_limit == 100
         assert not state.current_group_selection
-        assert state.show_plot is False
-        assert state.eval_data is None
-        assert state.is_loading_eval_data is False
-        assert state.eval_data_error is None
         assert not state.status_message
         assert state.status_colour == "bright_white"
         assert len(state.listeners) == 0
@@ -150,40 +146,6 @@ class TestEvaluationState:
         state.set_group_selection("123")  # Not alpha
         assert not state.current_group_selection  # Unchanged
         listener.assert_not_called()
-
-    def test_eval_data_management(self, state):
-        """Test eval data state management."""
-        listener = Mock()
-        state.add_listener(listener)
-
-        # Set loading
-        state.set_eval_data_loading(True)
-        assert state.is_loading_eval_data is True
-        assert state.eval_data_error is None
-        listener.assert_called()
-
-        # Set error
-        listener.reset_mock()
-        state.set_eval_data_error("Test error")
-        assert state.eval_data_error == "Test error"
-        assert state.is_loading_eval_data is False
-        listener.assert_called()
-
-        # Set data
-        listener.reset_mock()
-        test_data = Mock()
-        state.set_eval_data(test_data)
-        assert state.eval_data is test_data
-        assert state.is_loading_eval_data is False
-        assert state.eval_data_error is None
-        listener.assert_called()
-
-        # Clear data
-        listener.reset_mock()
-        state.clear_eval_data()
-        assert state.eval_data is None
-        assert state.eval_data_error is None
-        # clear_eval_data doesn't notify listeners
 
     def test_column_assignment(self, state, mock_current_item):
         """Test column assignment functionality."""

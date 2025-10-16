@@ -3,11 +3,7 @@
 import logging
 
 from matchbox.client import _handler
-from matchbox.client.cli.eval.modals import HelpModal, PlotModal
-from matchbox.client.cli.eval.plot.data import (
-    can_show_plot,
-    refresh_judgements_for_plot,
-)
+from matchbox.client.cli.eval.modals import HelpModal
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +33,6 @@ class EvaluationHandlers:
             event.prevent_default()
             return
 
-        if key == "slash":
-            await self.handle_plot_toggle()
-            event.prevent_default()
-            return
-
         column_number = self.state.parse_number_key(key)
         if column_number is not None:
             current_group = self.state.current_group_selection
@@ -50,30 +41,6 @@ class EvaluationHandlers:
                 if current and 1 <= column_number <= len(current.display_columns):
                     self.state.assign_column_to_group(column_number, current_group)
             event.prevent_default()
-
-    async def handle_plot_toggle(self) -> None:
-        """Handle plot toggle with centralised data validation."""
-        # If plot modal is already showing, dismiss it (toggle off)
-        if isinstance(self.app.screen, PlotModal):
-            self.state.show_plot = False
-            self.app.pop_screen()
-            return
-
-        # Otherwise, validate and show plot (toggle on)
-        can_show, status_msg = can_show_plot(self.state)
-        if not can_show:
-            self.state.update_status(status_msg, "yellow", auto_clear_after=2.0)
-            return
-
-        self.state.update_status("⏳ Loading", "yellow")
-        success, refresh_status = refresh_judgements_for_plot(self.state)
-        if not success:
-            self.state.update_status(refresh_status, "red", auto_clear_after=4.0)
-            return
-
-        self.state.update_status(refresh_status, "green", auto_clear_after=2.0)
-        self.state.show_plot = True
-        self.app.push_screen(PlotModal(self.state))
 
     async def action_next_entity(self) -> None:
         """Move to the next entity via queue rotation."""

@@ -1,6 +1,6 @@
 """Unit tests for input handlers and actions."""
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -79,17 +79,6 @@ class TestEvaluationHandlers:
             handlers.state.set_group_selection.assert_not_called()
 
         @pytest.mark.asyncio
-        async def test_slash_key_triggers_plot_toggle(self, handlers, mock_event):
-            """Test that slash key triggers plot toggle."""
-            mock_event.key = "slash"
-            handlers.handle_plot_toggle = AsyncMock()
-
-            await handlers.handle_key_input(mock_event)
-
-            handlers.handle_plot_toggle.assert_called_once()
-            mock_event.prevent_default.assert_called_once()
-
-        @pytest.mark.asyncio
         async def test_number_keys_assign_columns(self, handlers, mock_event):
             """Test that number keys assign columns to current group."""
             handlers.state.current_group_selection = "a"
@@ -119,63 +108,6 @@ class TestEvaluationHandlers:
 
             handlers.state.assign_column_to_group.assert_not_called()
             mock_event.prevent_default.assert_called_once()
-
-    class TestPlotToggleHandling:
-        """Test plot toggle functionality."""
-
-        @pytest.mark.asyncio
-        @patch("matchbox.client.cli.eval.handlers.can_show_plot")
-        async def test_plot_toggle_cannot_show(self, mock_can_show, handlers):
-            """Test plot toggle when plot cannot be shown."""
-            mock_can_show.return_value = (False, "⏳ Loading")
-
-            await handlers.handle_plot_toggle()
-
-            # Should update status and not show modal
-            handlers.state.update_status.assert_called_once_with(
-                "⏳ Loading", "yellow", auto_clear_after=2.0
-            )
-            handlers.app.push_screen.assert_not_called()
-
-        @pytest.mark.asyncio
-        @patch("matchbox.client.cli.eval.handlers.can_show_plot")
-        @patch("matchbox.client.cli.eval.handlers.refresh_judgements_for_plot")
-        async def test_plot_toggle_can_show_success(
-            self, mock_refresh, mock_can_show, handlers
-        ):
-            """Test plot toggle when plot can be shown and refresh succeeds."""
-            mock_can_show.return_value = (True, "")
-            mock_refresh.return_value = (True, "📊 Got 5")
-
-            await handlers.handle_plot_toggle()
-
-            # Should show loading, then success status, then modal
-            status_calls = handlers.state.update_status.call_args_list
-            assert len(status_calls) == 2
-            assert status_calls[0][0] == ("⏳ Loading", "yellow")
-            assert status_calls[1][0] == ("📊 Got 5", "green")
-
-            handlers.app.push_screen.assert_called_once()
-
-        @pytest.mark.asyncio
-        @patch("matchbox.client.cli.eval.handlers.can_show_plot")
-        @patch("matchbox.client.cli.eval.handlers.refresh_judgements_for_plot")
-        async def test_plot_toggle_can_show_refresh_fails(
-            self, mock_refresh, mock_can_show, handlers
-        ):
-            """Test plot toggle when plot can be shown but refresh fails."""
-            mock_can_show.return_value = (True, "")
-            mock_refresh.return_value = (False, "⚠ Error")
-
-            await handlers.handle_plot_toggle()
-
-            # Should show loading, then error status, but no modal
-            status_calls = handlers.state.update_status.call_args_list
-            assert len(status_calls) == 2
-            assert status_calls[0][0] == ("⏳ Loading", "yellow")
-            assert status_calls[1][0] == ("⚠ Error", "red")
-
-            handlers.app.push_screen.assert_not_called()
 
     class TestEntityNavigation:
         """Test entity navigation actions."""

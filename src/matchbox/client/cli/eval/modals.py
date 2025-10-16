@@ -8,8 +8,6 @@ from textual.containers import Container
 from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
-from matchbox.client.cli.eval.plot.widget import PRCurveDisplay
-
 
 class HelpModal(ModalScreen):
     """Help screen showing commands and shortcuts."""
@@ -45,7 +43,6 @@ class HelpModal(ModalScreen):
                     • Ctrl+G - Jump to entity number
                     • ? or F1 - Show this help
                     • Esc - Clear current group selection
-                    • / (slash) - Toggle precision-recall plot display
                     • Ctrl+C or Ctrl+Q - Quit
 
                     Visual feedback:
@@ -74,26 +71,4 @@ class HelpModal(ModalScreen):
     def on_key(self, event) -> None:
         """Handle key events for closing the help modal."""
         if event.key == "escape" or event.key == "question_mark":
-            self.dismiss()
-
-
-class PlotModal(ModalScreen):
-    """Modal screen for displaying precision-recall plots."""
-
-    def __init__(self, state):
-        """Initialise the plot modal with evaluation state."""
-        super().__init__()
-        self.state = state
-
-    def compose(self) -> ComposeResult:
-        """Compose the plot modal UI."""
-        with Container(id="plot-dialog"):
-            yield Static("Precision-Recall Curve", id="plot-title")
-            yield PRCurveDisplay(self.state, id="plot-widget")
-            yield Static("Press Escape to close", id="plot-help")
-
-    def on_key(self, event) -> None:
-        """Handle key events for closing the plot modal."""
-        if event.key == "escape":
-            self.state.show_plot = False
             self.dismiss()

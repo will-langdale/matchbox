@@ -9,7 +9,6 @@ This tool is part of the broader Matchbox ecosystem, enabling collaborative, mea
 ### Key capabilities
 
 - **Interactive record grouping**: Side-by-side comparison of entity records with keyboard-driven grouping
-- **Real-time precision-recall analysis**: Live plotting of model performance as judgements are submitted  
 - **Collaborative evaluation**: Multi-user support with user attribution for all judgements
 - **Flexible data sources**: Works with any entity resolution pipeline in the Matchbox ecosystem
 - **Performance optimised**: Handles large datasets efficiently with smart queuing and caching
@@ -31,10 +30,9 @@ The evaluation tool follows a clean modular architecture designed for maintainab
 ```
 app.py (orchestration)
 ├── state.py (single source of truth)
-├── handlers.py (input/actions) → plot/data.py (validation)
+├── handlers.py (input/actions)
 ├── widgets/ (UI components)
-├── modals.py (modal screens)
-└── plot/ (plotting system)
+└── modals.py (modal screens)
 ```
 
 ## Directory structure
@@ -59,15 +57,6 @@ widgets/
 ├── table.py            # Record comparison table
 ├── status.py           # Status bar components
 └── styling.py          # Visual styling utilities
-```
-
-### Plot system
-
-```
-plot/
-├── __init__.py
-├── data.py             # Plot data validation and preparation
-└── widget.py          # Plot rendering widget
 ```
 
 ### Testing
@@ -269,60 +258,6 @@ The `GroupStyler` class (`widgets/styling.py`) provides consistent visual differ
 - 12 character maximum with validation
 - Emoji/symbol prefixes for quick recognition
 - Auto-clearing timers for transient messages
-
-## Plot system design
-
-### Plot data validation (critical component)
-
-The `plot/data.py` module provides the single source of truth for plot readiness validation:
-
-```python
-def can_show_plot(state) -> tuple[bool, str]:
-    """Single source of truth for plot display readiness."""
-    # Priority-ordered checks
-    if state.is_loading_eval_data:
-        return False, "⏳ Loading"
-    if state.eval_data_error:
-        return False, "⚠ Error" 
-    if state.eval_data is None:
-        return False, "⚠ No data"
-    
-    # Data sufficiency check (no try/except for control flow)
-    pr_data = state.eval_data.precision_recall()
-    if pr_data is None or len(pr_data) < 2:
-        return False, "∅ Sparse"
-    
-    return True, ""
-```
-
-This function is critical for preventing the slash key modal bug by ensuring the modal only shows when data is ready.
-
-### Widget vs data separation
-
-**Clear separation of concerns**:
-- `plot/data.py`: Validates data availability and readiness
-- `plot/widget.py`: Renders plots based on validated data
-- App-level: Decides whether to show modal based on validation
-
-This prevents the dual-system conflicts that caused the original slash key bug.
-
-### Error handling strategy
-
-**No try/except for control flow**: Error handling uses explicit state checking rather than exception catching for business logic decisions.
-
-**Graceful degradation**: Plot widget handles missing data gracefully with informative messages rather than crashing.
-
-### Modal integration
-
-Plot modals are created on-demand only after validation succeeds:
-
-```python
-# handlers.py
-if can_show:
-    success = await refresh_judgements_for_plot(state)
-    if success:
-        self.app.push_screen(PlotModal(state))
-```
 
 ## Testing architecture
 

@@ -81,35 +81,15 @@ model = source.query().deduper(
 results = model.run()
 ```
 
-Download validation data and create evaluation object:
+Download validation data and create evaluation object, then get precision and recall at a specific threshold:
 
 ```python
 from matchbox.client.cli.eval import EvalData
-eval_data = EvalData.from_results(results)
-```
+eval_data = EvalData()
 
-Plot a precision-recall curve:
-
-```python
-# Matplotlib version (for notebooks)
-fig = eval_data.pr_curve_mpl()
-
-# Plotext version (for terminals) 
-plot_str = eval_data.pr_curve_pltx()
-print(plot_str)
-```
-
-Or get precision and recall at specific thresholds:
-
-```python
-# Get precision/recall at one or more thresholds
-pr_results = eval_data.precision_recall([0.5])
-threshold, p, r, p_ci, r_ci = pr_results[0]
-
-# Or multiple thresholds at once
-pr_results = eval_data.precision_recall([0.3, 0.5, 0.7])
-for threshold, p, r, p_ci, r_ci in pr_results:
-    print(f"At {threshold}: P={p:.2f} R={r:.2f}")
+# Get precision and recall at a specific threshold
+precision, recall = eval_data.precision_recall(results, threshold=0.5)
+print(f"At threshold 0.5: Precision={precision:.2f}, Recall={recall:.2f}")
 ```
 
 !!! tip "Deterministic models"

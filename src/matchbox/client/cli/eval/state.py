@@ -75,12 +75,6 @@ class EvaluationState:
 
         # UI State
         self.current_group_selection: str = ""  # Currently selected group letter
-        self.show_plot: bool = False  # Plot display toggle
-
-        # Plot State
-        self.eval_data: Any | None = None  # EvalData object loaded at startup
-        self.is_loading_eval_data: bool = False  # Loading state flag
-        self.eval_data_error: str | None = None  # Error message if loading fails
 
         # Display State (derived from current queue item)
         self.display_leaf_ids: list[int] = []
@@ -143,36 +137,6 @@ class EvaluationState:
     def clear_group_selection(self) -> None:
         """Clear the current group selection."""
         self.current_group_selection = ""
-        self._notify_listeners()
-
-    def toggle_plot(self) -> None:
-        """Toggle plot display on/off."""
-        self.show_plot = not self.show_plot
-        self._notify_listeners()
-
-    def clear_eval_data(self) -> None:
-        """Clear eval data (e.g., when resolution changes)."""
-        self.eval_data = None
-        self.eval_data_error = None
-
-    def set_eval_data_loading(self, loading: bool) -> None:
-        """Set the loading state for eval data."""
-        self.is_loading_eval_data = loading
-        if loading:
-            self.eval_data_error = None
-        self._notify_listeners()
-
-    def set_eval_data_error(self, error: str) -> None:
-        """Set an error message for eval data loading."""
-        self.eval_data_error = error
-        self.is_loading_eval_data = False
-        self._notify_listeners()
-
-    def set_eval_data(self, eval_data: Any) -> None:
-        """Set the eval data object."""
-        self.eval_data = eval_data
-        self.is_loading_eval_data = False
-        self.eval_data_error = None
         self._notify_listeners()
 
     def assign_column_to_group(self, column_number: int, group: str) -> None:

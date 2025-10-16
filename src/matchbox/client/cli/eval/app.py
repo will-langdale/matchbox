@@ -1,7 +1,6 @@
 """Main application for entity resolution evaluation."""
 
 import logging
-import traceback
 from pathlib import Path
 
 from textual.app import App, ComposeResult
@@ -12,7 +11,7 @@ from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.client.cli.eval.handlers import EvaluationHandlers
 from matchbox.client.cli.eval.state import EvaluationState
-from matchbox.client.cli.eval.utils import EvalData, EvaluationItem, get_samples
+from matchbox.client.cli.eval.utils import EvaluationItem, get_samples
 from matchbox.client.cli.eval.widgets.status import StatusBar
 from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
 from matchbox.client.dags import DAG
@@ -89,11 +88,8 @@ class EntityResolutionApp(App):
                 "This may be because all clusters have been recently judged "
                 "by this user, or the resolution has no probability data."
             )
-            # Still load eval data for consistency, but skip display refresh
-            await self.load_eval_data()
             return
 
-        await self.load_eval_data()
         if self.state.queue.current:
             await self.refresh_display()
 
@@ -113,56 +109,6 @@ class EntityResolutionApp(App):
         if samples_dict:
             # samples_dict contains EvaluationItems (converted by get_samples)
             self.state.queue.add_items(list(samples_dict.values()))
-
-    async def load_eval_data(self) -> None:
-        """Load EvalData for precision/recall calculations."""
-        if not self.state.resolution:
-            return
-
-        self.state.set_eval_data_loading(True)
-        self.state.update_status("⏳ Loading", "yellow")
-
-        try:
-            await self._perform_eval_data_loading()
-        except Exception as e:  # noqa: BLE001
-            self._handle_eval_data_error(e)
-
-    async def _perform_eval_data_loading(self) -> None:
-        """Perform the actual EvalData loading operation."""
-        # Enable debug logging for this operation
-        eval_logger = logging.getLogger("matchbox.client.cli.eval.utils")
-        eval_logger.setLevel(logging.INFO)
-
-        eval_data = EvalData.from_resolution(self.state.resolution)
-        self.state.set_eval_data(eval_data)
-        self.state.update_status("✓ Loaded", "green", auto_clear_after=2.0)
-
-        # Log successful loading
-        logger.info(
-            f"Successfully loaded EvalData for resolution '{self.state.resolution}'"
-        )
-
-    def _handle_eval_data_error(self, error: Exception) -> None:
-        """Handle errors during EvalData loading with appropriate user messaging."""
-        # Log the error details
-        logger.error(f"EvalData loading failed: {error}")
-        logger.error(f"Full traceback:\n{traceback.format_exc()}")
-
-        # Generate user-friendly error message
-        error_msg = self._create_eval_data_error_message(error)
-
-        self.state.set_eval_data_error(error_msg)
-        self.state.update_status(error_msg, "red", auto_clear_after=8.0)
-
-    def _create_eval_data_error_message(self, error: Exception) -> str:
-        """Create a user-friendly error message for EvalData loading failures."""
-        error_details = str(error).lower()
-
-        if "not found" in error_details:
-            return f"Model '{self.state.resolution}' not found"
-        if "empty" in error_details:
-            return f"No data available for model '{self.state.resolution}'"
-        return f"EvalData error ({type(error).__name__}): {error}"
 
     async def refresh_display(self) -> None:
         """Refresh display with current queue item."""

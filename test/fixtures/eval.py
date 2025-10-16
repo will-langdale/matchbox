@@ -5,8 +5,6 @@ from unittest.mock import Mock, patch
 import polars as pl
 import pytest
 
-from matchbox.client.cli.eval.utils import EvalData
-
 
 @pytest.fixture
 def mock_current_item():
@@ -40,30 +38,6 @@ def mock_state():
     state.current_assignments = {}
     state.queue.current = None
     return state
-
-
-@pytest.fixture
-def evaldata_factory():
-    """Factory fixture for creating EvalData instances with test data."""
-
-    def _create_evaldata(
-        judgements, expansion, model_root_leaf, thresholds=None, probabilities=None
-    ):
-        if thresholds is None:
-            thresholds = [1.0]
-
-        with patch(
-            "matchbox.client.cli.eval.utils._handler.download_eval_data"
-        ) as mock:
-            mock.return_value = (judgements, expansion)
-
-            return EvalData(
-                root_leaf=model_root_leaf,
-                thresholds=thresholds,
-                probabilities=probabilities,
-            )
-
-    return _create_evaldata
 
 
 @pytest.fixture

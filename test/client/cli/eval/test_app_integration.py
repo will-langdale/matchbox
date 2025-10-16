@@ -32,33 +32,6 @@ class TestEntityResolutionAppIntegration:
         assert app.handlers.state is app.state
 
     @pytest.mark.asyncio
-    async def test_app_runs_in_test_mode(self, test_resolution):
-        """Test that the app can run in test mode without errors."""
-        app = EntityResolutionApp(resolution=test_resolution, num_samples=5)
-
-        # Mock DAG for the test
-        app.state.dag = Mock()
-
-        with (
-            patch("matchbox.client.cli.eval.app.settings") as mock_settings,
-            patch("matchbox.client.cli.eval.app._handler.login") as mock_login,
-            patch("matchbox.client.cli.eval.app.get_samples") as mock_get_samples,
-            patch(
-                "matchbox.client.cli.eval.app.EvalData.from_resolution"
-            ) as mock_eval_data,
-        ):
-            mock_settings.user = "test_user"
-            mock_login.return_value = 123
-            mock_get_samples.return_value = {}
-            mock_eval_data.return_value = Mock()
-
-            # Should not raise any exceptions during mount
-            await app.on_mount()
-
-            assert app.state.user_name == "test_user"
-            assert app.state.user_id == 123
-
-    @pytest.mark.asyncio
     async def test_authentication_required(self, test_resolution):
         """Test that authentication is required."""
         app = EntityResolutionApp(resolution=test_resolution)
@@ -81,42 +54,6 @@ class TestEntityResolutionAppIntegration:
 
             assert app.state.user_name == "injected_user"
             assert app.state.user_id == 456
-
-    @pytest.mark.asyncio
-    async def test_eval_data_loading_success(self, test_resolution):
-        """Test successful eval data loading."""
-        app = EntityResolutionApp(resolution=test_resolution)
-
-        mock_eval_data = Mock()
-        with patch(
-            "matchbox.client.cli.eval.app.EvalData.from_resolution"
-        ) as mock_from_resolution:
-            mock_from_resolution.return_value = mock_eval_data
-
-            await app.load_eval_data()
-
-            assert app.state.eval_data is mock_eval_data
-            assert app.state.is_loading_eval_data is False
-            assert app.state.eval_data_error is None
-
-    @pytest.mark.asyncio
-    async def test_eval_data_loading_error(self):
-        """Test eval data loading error handling."""
-        error_resolution = ModelResolutionPath(
-            collection="test_collection", run=1, name="nonexistent_resolution"
-        )
-        app = EntityResolutionApp(resolution=error_resolution)
-
-        with patch(
-            "matchbox.client.cli.eval.app.EvalData.from_resolution"
-        ) as mock_from_resolution:
-            mock_from_resolution.side_effect = ValueError("Model not found")
-
-            await app.load_eval_data()
-
-            assert app.state.eval_data is None
-            assert app.state.is_loading_eval_data is False
-            assert "not found" in app.state.eval_data_error.lower()
 
     @pytest.mark.asyncio
     async def test_sample_loading(self, test_resolution):
@@ -227,20 +164,3 @@ class TestEntityResolutionAppIntegration:
                 user_id=app.state.user_id,
                 dag=mock_dag,
             )
-
-    def test_error_message_creation(self, test_resolution):
-        """Test creation of user-friendly error messages."""
-        app = EntityResolutionApp(resolution=test_resolution)
-
-        # Test various error types
-        not_found_error = ValueError("Model 'test' not found in database")
-        msg = app._create_eval_data_error_message(not_found_error)
-        assert "not found" in msg.lower()
-
-        empty_error = ValueError("Empty dataset for model")
-        msg = app._create_eval_data_error_message(empty_error)
-        assert "no data available" in msg.lower()
-
-        generic_error = ConnectionError("Network timeout")
-        msg = app._create_eval_data_error_message(generic_error)
-        assert "ConnectionError" in msg
