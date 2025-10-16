@@ -101,14 +101,20 @@ def scenario_setup(scenario_name: str):
         ) as dag:
             logger.info("Scenario ready! Starting Textual eval app via CLI...")
 
-            if scenario_name in ["bare", "index"]:
-                raise RuntimeError("Scenario has nothing to evaluate.")
-            else:
-                try:
-                    resolution = dag.dag.final_step
-                except ValueError:
-                    # No apex
-                    resolution = list(dag.dag.nodes.values())[-1]
+            # Select the appropriate resolution for each scenario
+            match scenario_name:
+                case "bare" | "index" | "convergent":
+                    raise RuntimeError("Scenario has nothing to evaluate.")
+                case "dedupe":
+                    resolution = dag.dag.nodes["naive_test_crn"]
+                case "probabilistic_dedupe":
+                    resolution = dag.dag.nodes["probabilistic_test_crn"]
+                case "link":
+                    resolution = dag.dag.nodes["final_join"]
+                case "alt_dedupe":
+                    resolution = dag.dag.nodes["dedupe_foo_a"]
+                case _:
+                    raise ValueError(f"Unknown scenario: {scenario_name}")
 
             # Yield CLI parameters instead of app instance
             yield {
