@@ -59,33 +59,33 @@ def start(
     Example:
         matchbox eval start --collection companies --warehouse postgresql://user:pass@localhost/warehouse
     """
-    try:
-        # Set up logging redirect if --log specified
-        if log_file:
-            _setup_logging_redirect(log_file)
+    # Set up logging redirect if --log specified
+    if log_file:
+        _setup_logging_redirect(log_file)
 
-        # Create warehouse engine and location (required for loading DAG)
-        if not warehouse:
-            raise typer.BadParameter(
-                "Warehouse connection string is required. "
-                "Provide via --warehouse or -w flag."
-            )
-
-        # Create engine from connection string (with password)
-        warehouse_engine = create_engine(warehouse)
-
-        # Create RelationalDBLocation for this warehouse
-        warehouse_location = RelationalDBLocation(
-            name="evaluation_warehouse", client=warehouse_engine
+    # Create warehouse engine and location (required for loading DAG)
+    if not warehouse:
+        raise typer.BadParameter(
+            "Warehouse connection string is required. "
+            "Provide via --warehouse or -w flag."
         )
 
-        # Load DAG from server with warehouse location attached to all sources
-        dag = DAG(name=collection)
-        dag = dag.load_pending(location=warehouse_location)
+    # Create engine from connection string (with password)
+    warehouse_engine = create_engine(warehouse)
 
-        # Get resolution name from --resolution or DAG's final_step
-        model = dag.get_model(resolution) or dag.final_step
+    # Create RelationalDBLocation for this warehouse
+    warehouse_location = RelationalDBLocation(
+        name="evaluation_warehouse", client=warehouse_engine
+    )
 
+    # Load DAG from server with warehouse location attached to all sources
+    dag = DAG(name=collection)
+    dag = dag.load_pending(location=warehouse_location)
+
+    # Get resolution name from --resolution or DAG's final_step
+    model = dag.get_model(resolution) or dag.final_step
+
+    try:
         # Create app with loaded DAG (not warehouse string)
         app = EntityResolutionApp(
             resolution=model.resolution_path,
@@ -118,6 +118,3 @@ def _setup_logging_redirect(log_file_path: str) -> None:
     # Add file handler to root logger
     root_logger.addHandler(file_handler)
     root_logger.setLevel(logging.INFO)  # Capture INFO and above
-
-    # Also suppress stdout/stderr from other libraries that might bypass logging
-    # This keeps the Textual UI completely clean

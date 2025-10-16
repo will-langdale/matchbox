@@ -174,7 +174,7 @@ class DeduplicationResult:
 
 
 def deduplicate_columns(display_df: pl.DataFrame) -> DeduplicationResult:
-    """Analyze columns for duplicates and create deduplication mapping.
+    """Analyse columns for duplicates and create deduplication mapping.
 
     Args:
         display_df: Enhanced display DataFrame

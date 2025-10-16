@@ -17,6 +17,7 @@ Matchbox provides a terminal-based UI to help you create this validation data. H
 2. Matchbox will **download clusters** for you to review. It avoids clusters you've already judged and focuses on ones the model is unsure about.
 3. In the terminal interface, you'll review each cluster:
    * Use keyboard commands like `b+1,3,5` to assign rows 1, 3, and 5 to group B
+   * Press `space` to send your judgements to Matchbox
    * Navigate with arrow keys between entities
    * Press `?` or `F1` for help with commands
 
