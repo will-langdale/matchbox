@@ -11,6 +11,7 @@ import httpx
 import polars as pl
 from pyarrow import Table
 from pyarrow.parquet import read_table
+from pydantic import ValidationError
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -120,20 +121,24 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
             raise RuntimeError(f"Unexpected 400 error: {res.content}")
 
     if res.status_code == 404:
-        error = NotFoundError.model_validate(res.json())
-        match error.entity:
-            case BackendResourceType.COLLECTION:
-                raise MatchboxCollectionNotFoundError(error.details)
-            case BackendResourceType.RUN:
-                raise MatchboxRunNotFoundError(error.details)
-            case BackendResourceType.RESOLUTION:
-                raise MatchboxResolutionNotFoundError(error.details)
-            case BackendResourceType.CLUSTER:
-                raise MatchboxDataNotFound(error.details)
-            case BackendResourceType.USER:
-                raise MatchboxUserNotFoundError(error.details)
-            case _:
-                raise RuntimeError(f"Unexpected 404 error: {error.details}")
+        try:
+            error = NotFoundError.model_validate(res.json())
+            match error.entity:
+                case BackendResourceType.COLLECTION:
+                    raise MatchboxCollectionNotFoundError(error.details)
+                case BackendResourceType.RUN:
+                    raise MatchboxRunNotFoundError(error.details)
+                case BackendResourceType.RESOLUTION:
+                    raise MatchboxResolutionNotFoundError(error.details)
+                case BackendResourceType.CLUSTER:
+                    raise MatchboxDataNotFound(error.details)
+                case BackendResourceType.USER:
+                    raise MatchboxUserNotFoundError(error.details)
+                case _:
+                    raise RuntimeError(f"Unexpected 404 error: {error.details}")
+        # Validation will fail if endpoint does not exist
+        except ValidationError as e:
+            raise httpx.HTTPError(f"Error with request {res._request}: {res}") from e
 
     if res.status_code == 409:
         error = ResourceOperationStatus.model_validate(res.json())
