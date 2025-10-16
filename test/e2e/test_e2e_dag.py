@@ -12,7 +12,6 @@ from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.factories.sources import (
     FeatureConfig,
-    LinkedSourcesTestkit,
     SourceTestkitParameters,
     SuffixRule,
     linked_sources_factory,
@@ -22,11 +21,6 @@ from matchbox.common.factories.sources import (
 @pytest.mark.docker
 class TestE2EPipelineBuilder:
     """End to end tests for DAG pipeline functionality."""
-
-    client: Client | None = None
-    warehouse_engine: Engine | None = None
-    linked_testkit: LinkedSourcesTestkit | None = None
-    n_true_entities: int | None = None
 
     def _clean_company_name(self, column: str) -> str:
         """Generate cleaning SQL for a company name column.
@@ -58,12 +52,9 @@ class TestE2EPipelineBuilder:
         postgres_warehouse: Engine,
     ):
         """Set up warehouse and database using fixtures."""
-        # Store fixtures as class attributes
+        # Persist shared setup for use in the test body
         n_true_entities = 10  # Keep it small for simplicity
-
-        self.__class__.client = matchbox_client
-        self.__class__.warehouse_engine = postgres_warehouse
-        self.__class__.n_true_entities = n_true_entities
+        self.warehouse_engine = postgres_warehouse
 
         # Create simple feature configurations - just two sources
         features = {
@@ -106,7 +97,7 @@ class TestE2EPipelineBuilder:
         )
 
         # Create linked sources testkit
-        self.__class__.linked_testkit = linked_sources_factory(
+        self.linked_testkit = linked_sources_factory(
             source_parameters=source_parameters,
             seed=42,
         )

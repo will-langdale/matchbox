@@ -7,10 +7,8 @@ from matchbox.client.cli.eval import EntityResolutionApp
 from matchbox.client.dags import DAG
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.sources import RelationalDBLocation
-from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.factories.sources import (
     FeatureConfig,
-    LinkedSourcesTestkit,
     SourceTestkitParameters,
     SuffixRule,
     linked_sources_factory,
@@ -20,15 +18,6 @@ from matchbox.common.factories.sources import (
 @pytest.mark.docker
 class TestE2EModelEvaluation:
     """End to end tests for model evaluation functionality."""
-
-    client: Client | None = None
-    warehouse_engine: Engine | None = None
-    linked_testkit: LinkedSourcesTestkit | None = None
-    n_true_entities: int | None = None
-    final_resolution_1_name: str | None = None
-    final_resolution_2_name: str | None = None
-    final_resolution_1_path: ModelResolutionPath | None = None
-    final_resolution_2_path: ModelResolutionPath | None = None
 
     def _clean_company_name(self, column: str) -> str:
         """Generate cleaning SQL for a company name column."""
@@ -50,15 +39,11 @@ class TestE2EModelEvaluation:
         postgres_warehouse: Engine,
     ):
         """Set up warehouse and database using fixtures."""
-        # Store fixtures as class attributes
+        # Persist shared setup for use in the test body
         n_true_entities = 10
-        self.__class__.client = matchbox_client
-        self.__class__.warehouse_engine = postgres_warehouse
-        self.__class__.n_true_entities = n_true_entities
-        self.__class__.final_resolution_1_name = "final_1"
-        self.__class__.final_resolution_2_name = "final_2"
-        self.__class__.final_resolution_1_path = None
-        self.__class__.final_resolution_2_path = None
+        final_resolution_1_name = "final_1"
+        final_resolution_2_name = "final_2"
+        self.warehouse_engine = postgres_warehouse
 
         # Create a SINGLE source with duplicates
         source_parameters = (
@@ -83,7 +68,7 @@ class TestE2EModelEvaluation:
                 repetition=1,  # Duplicate all rows for deduplication
             ),
         )
-        self.__class__.linked_testkit = linked_sources_factory(
+        self.linked_testkit = linked_sources_factory(
             source_parameters=source_parameters, seed=42
         )
         for source_testkit in self.linked_testkit.sources.values():
@@ -116,7 +101,7 @@ class TestE2EModelEvaluation:
         )
 
         source_a_dag1.query().deduper(
-            name=self.final_resolution_1_name,
+            name=final_resolution_1_name,
             description="Deduplicate by registration ID",
             model_class=NaiveDeduper,
             model_settings={
@@ -127,10 +112,8 @@ class TestE2EModelEvaluation:
 
         dag1.run_and_sync()
 
-        # Construct ModelResolutionPath after DAG is synced
-        self.__class__.final_resolution_1_path = ModelResolutionPath(
-            collection=dag1.name, run=dag1.run, name=self.final_resolution_1_name
-        )
+        # Retain DAG for use in tests
+        self.dag1 = dag1
 
         # === DAG 2: Created by User 2 (Loose Deduplication) ===
         dag2 = DAG("companies2").new_run()
@@ -158,7 +141,7 @@ class TestE2EModelEvaluation:
                 )
             }
         ).deduper(
-            name=self.final_resolution_2_name,
+            name=final_resolution_2_name,
             description="Deduplicate by company name",
             model_class=NaiveDeduper,
             model_settings={"id": "id", "unique_fields": ["company_name"]},
@@ -166,10 +149,7 @@ class TestE2EModelEvaluation:
 
         dag2.run_and_sync()
 
-        # Construct ModelResolutionPath after DAG is synced
-        self.__class__.final_resolution_2_path = ModelResolutionPath(
-            collection=dag2.name, run=dag2.run, name=self.final_resolution_2_name
-        )
+        self.dag2 = dag2
 
         yield
 
@@ -193,13 +173,11 @@ class TestE2EModelEvaluation:
         )
 
         # Load DAG from server with warehouse location
-        dag = DAG(str(self.final_resolution_1_path.collection)).load_pending(
-            location=warehouse_location
-        )
+        dag = DAG(str(self.dag1.name)).load_pending(location=warehouse_location)
 
         # Pass loaded DAG to app
         app = EntityResolutionApp(
-            resolution=self.final_resolution_1_path,
+            resolution=dag.final_step.resolution_path,
             num_samples=5,
             user="alice",
             dag=dag,
@@ -259,3 +237,20 @@ class TestE2EModelEvaluation:
         final_judgements, expansion = _handler.download_eval_data()
         assert len(final_judgements) > 0, "Should have judgements to evaluate with"
         assert len(expansion) > 0, "Should have cluster expansion data"
+
+        # Phase 5: Compare the two deduper models
+        comparison = _handler.compare_models(
+            [
+                dag.final_step.resolution_path,
+                self.dag2.final_step.resolution_path,
+            ]
+        )
+        expected_keys = {
+            str(dag.final_step.resolution_path),
+            str(self.dag2.final_step.resolution_path),
+        }
+        assert expected_keys.issubset(
+            comparison.keys()
+        ), "Comparison should include both models"
+        for key in expected_keys:
+            assert len(comparison[key]) == 2, "Each model should have precision/recall"

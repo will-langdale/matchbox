@@ -524,7 +524,7 @@ def compare_models(
         ModelResolutionPath(
             collection=resolution.collection,
             run=resolution.run,
-            name=resolution,
+            name=resolution.name,
         )
         for resolution in resolutions
     ]
