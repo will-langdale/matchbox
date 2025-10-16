@@ -9,7 +9,9 @@ from pyarrow import Table
 from sqlalchemy import BIGINT, func, select
 
 from matchbox.common.arrow import (
+    SCHEMA_CLUSTER_EXPANSION,
     SCHEMA_EVAL_SAMPLES,
+    SCHEMA_JUDGEMENTS,
 )
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import ModelResolutionPath
@@ -99,6 +101,31 @@ def insert_judgement(judgement: Judgement):
 
 def get_judgements() -> tuple[pa.Table, pa.Table]:
     """Get all judgements from server."""
+
+    def _cast_tables(
+        judgements: pl.DataFrame, cluster_expansion: pl.DataFrame
+    ) -> tuple[pa.Table, pa.Table]:
+        """Cast judgement tables to conform to data transfer schema."""
+        judgements = judgements.with_columns(
+            [
+                pl.col("user_id").cast(pl.UInt64),
+                pl.col("endorsed").cast(pl.UInt64),
+                pl.col("shown").cast(pl.UInt64),
+            ]
+        )
+
+        cluster_expansion = cluster_expansion.with_columns(
+            [
+                pl.col("root").cast(pl.UInt64),
+                pl.col("leaves").cast(pl.List(pl.UInt64)),
+            ]
+        )
+
+        return (
+            judgements.to_arrow().cast(SCHEMA_JUDGEMENTS),
+            cluster_expansion.to_arrow().cast(SCHEMA_CLUSTER_EXPANSION),
+        )
+
     judgements_stmt = select(
         EvalJudgements.user_id,
         EvalJudgements.endorsed_cluster_id.label("endorsed"),
@@ -109,31 +136,20 @@ def get_judgements() -> tuple[pa.Table, pa.Table]:
         judgements = sql_to_df(
             stmt=compile_sql(judgements_stmt),
             connection=conn.dbapi_connection,
-            return_type="arrow",
+            return_type="polars",
         )
 
-        if not len(judgements):
-            return (
-                pa.table(
-                    {
-                        "user_id": pa.array([], type=pa.uint64()),
-                        "endorsed": pa.array([], type=pa.uint64()),
-                        "shown": pa.array([], type=pa.uint64()),
-                    }
-                ),
-                pa.table(
-                    {
-                        "root": pa.array([], type=pa.uint64()),
-                        "leaves": pa.array([], type=pa.list_(pa.uint64())),
-                    }
-                ),
-            )
-
-        shown_clusters = set(judgements["shown"].to_pylist())
-        endorsed_clusters = set(judgements["endorsed"].to_pylist())
-        referenced_clusters = Table.from_pydict(
-            {"root": list(shown_clusters | endorsed_clusters)}
+    if not len(judgements):
+        cluster_expansion = pl.DataFrame(
+            schema={"root": pl.UInt64, "leaves": pl.List(pl.UInt64)}
         )
+        return _cast_tables(judgements, cluster_expansion)
+
+    shown_clusters = set(judgements["shown"].to_list())
+    endorsed_clusters = set(judgements["endorsed"].to_list())
+    referenced_clusters = Table.from_pydict(
+        {"root": list(shown_clusters | endorsed_clusters)}
+    )
 
     with ingest_to_temporary_table(
         table_name="judgements",
@@ -154,21 +170,10 @@ def get_judgements() -> tuple[pa.Table, pa.Table]:
             cluster_expansion = sql_to_df(
                 stmt=compile_sql(cluster_expansion_stmt),
                 connection=conn.dbapi_connection,
-                return_type="arrow",
+                return_type="polars",
             )
 
-    # Do a bit of casting to conform to data transfer schema
-    for i, col in enumerate(["user_id", "endorsed", "shown"]):
-        judgements = judgements.set_column(i, col, judgements[col].cast(pa.uint64()))
-
-    cluster_expansion = cluster_expansion.set_column(
-        0, "root", cluster_expansion["root"].cast(pa.uint64())
-    )
-    cluster_expansion = cluster_expansion.set_column(
-        1, "leaves", cluster_expansion["leaves"].cast(pa.list_(pa.uint64()))
-    )
-
-    return judgements, cluster_expansion
+    return _cast_tables(judgements, cluster_expansion)
 
 
 def sample(n: int, resolution_path: ModelResolutionPath, user_id: int):

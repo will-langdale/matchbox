@@ -1120,8 +1120,11 @@ class TestMatchboxBackend:
             # Now, let's try to get the judgements back
             # Data gets back in the right shape
             judgements, expansion = self.backend.get_judgements()
-            judgements.schema.equals(SCHEMA_JUDGEMENTS)
-            expansion.schema.equals(SCHEMA_CLUSTER_EXPANSION)
+            assert judgements.schema.equals(SCHEMA_JUDGEMENTS)
+            assert expansion.schema.equals(SCHEMA_CLUSTER_EXPANSION)
+            # Verify column types are unsigned (catches int64 vs uint64 bugs)
+            assert judgements["user_id"].type == pa.uint64()
+            assert expansion["root"].type == pa.uint64()
 
             # Only one user ID was used
             assert judgements["user_id"].unique().to_pylist() == [alice_id]
