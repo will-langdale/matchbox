@@ -97,10 +97,12 @@ The `key_field` is the field in your source that contains some unique code that 
     ```python
     from matchbox.client import RelationalDBLocation
 
+    warehouse = RelationalDBLocation(name="dbname").set_client(engine)
+
     # Companies House data
     companies_house = dag.source(
         name="companies_house",
-        location=RelationalDBLocation(name="dbname", client=engine),
+        location=warehouse,
         extract_transform="""
             select
                 number::str as company_number,
@@ -117,7 +119,7 @@ The `key_field` is the field in your source that contains some unique code that 
     # Exporters data
     exporters = dag.source(
         name="hmrc_exporters",
-        location=RelationalDBLocation(name="dbname", client=engine),
+        location=warehouse,
         extract_transform="""
             select
                 id,
@@ -134,7 +136,7 @@ The `key_field` is the field in your source that contains some unique code that 
 
 Each [`Source`][matchbox.client.sources.Source] object requires:
 
-- A `location`, such as [`RelationalDBLocation`][matchbox.client.sources.RelationalDBLocation]. This will need a `name`, and `client`
+- A `location`, such as [`RelationalDBLocation`][matchbox.client.locations.RelationalDBLocation]. This will need a `name`, and `client`
     - The name of a location is a way of tagging it, such that later on you can filter sources you want to retrieve from the server
     - For a relational database, a SQLAlchemy engine is your client
 - An `extract_transform` string, which will take data from the location and transform it into your key and index fields. Its syntax will depend on the type of location
@@ -165,6 +167,7 @@ Dedupe steps identify and resolve duplicates within a single source.
         },
         truth=1.0,
     )
+    ```
 
 A query can optionally take instructions on how to clean the data. These are defined using a dictionary where:
 
@@ -532,9 +535,7 @@ You might want to publish a new run of your DAG based on newer data. You can ret
 === "Example"
     ```python    
     # Create a new DAG identical to the previous default
-    dag = DAG(name="companies").load_default(
-        location=RelationalDBLocation(name="dbname", client=engine)
-    ).new_run()
+    dag = DAG(name="companies").load_default().set_client(engine).new_run()
     # Run new DAG
     dag.run_and_sync()
     # Make the DAG the new default

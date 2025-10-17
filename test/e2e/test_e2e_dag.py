@@ -7,9 +7,9 @@ from polars.testing import assert_frame_equal
 from sqlalchemy import Engine, text
 
 from matchbox.client.dags import DAG
+from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
-from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.factories.sources import (
     FeatureConfig,
     LinkedSourcesTestkit,
@@ -137,7 +137,7 @@ class TestE2EPipelineBuilder:
         """
 
         # === SETUP PHASE ===
-        dw_loc = RelationalDBLocation(name="dbname", client=self.warehouse_engine)
+        dw_loc = RelationalDBLocation(name="dbname").set_client(self.warehouse_engine)
 
         dag = DAG("companies").new_run()
 
@@ -257,7 +257,7 @@ class TestE2EPipelineBuilder:
         logging.info("Running DAG again to test downloading and using the default")
 
         # Load default
-        reconstructed_dag = DAG("companies").load_default(location=dw_loc)
+        reconstructed_dag = DAG("companies").load_default()
         assert reconstructed_dag.run == dag.run
 
         # Can directly read data from default
@@ -268,7 +268,7 @@ class TestE2EPipelineBuilder:
         )
 
         # Start a new run
-        rerun_dag = reconstructed_dag.new_run()
+        rerun_dag = reconstructed_dag.set_client(self.warehouse_engine).new_run()
         assert rerun_dag.run != dag.run
         rerun_dag.run_and_sync()
 
