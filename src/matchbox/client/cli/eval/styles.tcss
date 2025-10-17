@@ -5,7 +5,7 @@ Screen {
 }
 
 #main-container {
-    width: 95%;
+    width: 100%;
     min-width: 80;
     height: 1fr;
 }
@@ -57,8 +57,7 @@ Screen {
     width: 20;
 }
 
-.status-bar {
-    layout: horizontal;
+#status-bar {
     height: 3;
     background: $panel;
     padding: 1;
@@ -79,6 +78,7 @@ Screen {
 #record-table {
     height: 1fr;
     width: 100%;
+    padding: 0 2;
 }
 
 #pr-curve-display {

@@ -6,15 +6,15 @@ from pathlib import Path
 
 from textual import events
 from textual.app import App, ComposeResult
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
 from textual.timer import Timer
-from textual.widgets import Footer, Header
+from textual.widgets import Footer, Header, Label
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.client.cli.eval.modals import HelpModal, NoSamplesModal
-from matchbox.client.cli.eval.widgets.status import StatusBar
+from matchbox.client.cli.eval.widgets.styling import get_display_text
 from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
 from matchbox.client.dags import DAG
 from matchbox.client.eval import EvaluationItem, create_judgement, get_samples
@@ -80,12 +80,14 @@ class EvaluationQueue:
 class EntityResolutionApp(App):
     """Main Textual application for entity resolution evaluation."""
 
-    CSS_PATH = Path(__file__).parent / "styles.css"
+    CSS_PATH = Path(__file__).parent / "styles.tcss"
+    TITLE = "Matchbox evaluate"
+    SUB_TITLE = "match labelling tool"
 
     BINDINGS = [
-        ("right", "skip", "Skip → back"),
-        ("space", "submit", "Submit current"),
-        ("escape", "clear", "Clear groups"),
+        ("right", "skip", "Skip"),
+        ("space", "submit", "Submit"),
+        ("escape", "clear", "Clear"),
         ("question_mark,f1", "show_help", "Help"),
         ("ctrl+q,ctrl+c", "quit", "Quit"),
     ]
@@ -196,16 +198,18 @@ class EntityResolutionApp(App):
             table = self.query_one(ComparisonDisplayTable)
             table.load_comparison(current)
 
-            status_bar = self.query_one(StatusBar)
-            status_bar.queue_position = 1
-            status_bar.queue_total = self.queue.total_count
-            status_bar.current_group = self.current_group
+            self._refresh_status()
 
     def compose(self) -> ComposeResult:
         """Compose the main application UI."""
         yield Header()
         yield Vertical(
-            StatusBar(id="status-bar", classes="status-bar"),
+            Horizontal(
+                Label(id="status-left"),
+                Label(id="status-right"),
+                id="status-bar",
+                classes="status-bar",
+            ),
             ComparisonDisplayTable(id="record-table"),
             id="main-container",
         )
@@ -217,8 +221,7 @@ class EntityResolutionApp(App):
 
         if key.isalpha() and len(key) == 1:
             self.current_group = key.lower()
-            status_bar = self.query_one(StatusBar)
-            status_bar.current_group = self.current_group
+            self._refresh_status()
             event.stop()
             return
 
@@ -235,8 +238,7 @@ class EntityResolutionApp(App):
                 table = self.query_one(ComparisonDisplayTable)
                 table.refresh()
 
-                status_bar = self.query_one(StatusBar)
-                status_bar.group_counts = self._compute_group_counts()
+                self._refresh_status()
 
             event.stop()
             return
@@ -268,6 +270,46 @@ class EntityResolutionApp(App):
             counts["unassigned"] = unassigned_leaf_count
 
         return counts
+
+    def _build_status_left(self) -> str:
+        """Build left status text with entity progress and groups."""
+        parts = []
+
+        if self.queue.total_count > 0:
+            parts.append(f"[bright_white]Entity 1/{self.queue.total_count}[/]")
+        else:
+            return "[yellow]No samples to evaluate[/]"
+
+        parts.append("[dim] | [/]")
+
+        group_counts = self._compute_group_counts()
+        if not group_counts:
+            parts.append("[dim]No groups assigned[/]")
+        else:
+            parts.append("[bright_white]Groups: [/]")
+            group_parts = []
+            for group, count in group_counts.items():
+                display_text, colour = get_display_text(group, count)
+
+                if group == self.current_group:
+                    group_parts.append(f"[bold {colour} underline]{display_text}[/]")
+                else:
+                    group_parts.append(f"[bold {colour}]{display_text}[/]")
+
+            parts.append("  ".join(group_parts))
+
+        return "".join(parts)
+
+    def _build_status_right(self) -> str:
+        """Build right status text with status indicator."""
+        if self.status_message:
+            return f"[{self.status_colour}]{self.status_message}[/]"
+        return "[dim]○ Ready[/]"
+
+    def _refresh_status(self) -> None:
+        """Update status bar labels with current state."""
+        self.query_one("#status-left", Label).update(self._build_status_left())
+        self.query_one("#status-right", Label).update(self._build_status_right())
 
     async def action_skip(self) -> None:
         """Skip current entity (moves to back of queue)."""
@@ -318,9 +360,7 @@ class EntityResolutionApp(App):
             table = self.query_one(ComparisonDisplayTable)
             table.refresh()
 
-            status_bar = self.query_one(StatusBar)
-            status_bar.current_group = ""
-            status_bar.group_counts = {}
+            self._refresh_status()
 
     async def action_show_help(self) -> None:
         """Show the help modal."""
@@ -409,9 +449,7 @@ class EntityResolutionApp(App):
         self.status_message = message
         self.status_colour = colour
 
-        status_bar = self.query_one(StatusBar)
-        status_bar.status_message = message
-        status_bar.status_colour = colour
+        self.query_one("#status-right", Label).update(self._build_status_right())
 
         if clear_after:
             self._status_timer = self.set_timer(

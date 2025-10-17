@@ -1,32 +1,35 @@
 """Styling utilities for entity resolution evaluation UI."""
 
 GROUP_STYLES = {
-    "a": ("■", "red"),
-    "b": ("●", "blue"),
-    "c": ("▲", "green"),
-    "d": ("◆", "yellow"),
-    "e": ("★", "magenta"),
-    "f": ("⬢", "cyan"),
-    "g": ("♦", "bright_red"),
-    "h": ("▼", "bright_blue"),
-    "i": ("○", "bright_green"),
-    "j": ("△", "bright_yellow"),
-    "k": ("◇", "bright_magenta"),
-    "l": ("☆", "bright_cyan"),
-    "m": ("⬡", "white"),
-    "n": ("✦", "bright_white"),
-    "o": ("✧", "red"),
-    "p": ("⟐", "blue"),
-    "q": ("■", "green"),
-    "r": ("●", "yellow"),
-    "s": ("▲", "magenta"),
-    "t": ("◆", "cyan"),
-    "u": ("★", "bright_red"),
-    "v": ("⬢", "bright_blue"),
-    "w": ("♦", "bright_green"),
-    "x": ("▼", "bright_yellow"),
-    "y": ("○", "bright_magenta"),
-    "z": ("△", "bright_cyan"),
+    # Row: q w e r t y u i o p
+    "q": ("■", "#e53935"),  # red
+    "w": ("●", "#43a047"),  # green
+    "e": ("▲", "#1e88e5"),  # blue
+    "r": ("◆", "#fdd835"),  # yellow
+    "t": ("★", "#d81b60"),  # magenta
+    "y": ("⬢", "#00acc1"),  # cyan
+    "u": ("♦", "#fb8c00"),  # orange
+    "i": ("▼", "#00897b"),  # teal
+    "o": ("○", "#8e24aa"),  # purple
+    "p": ("△", "#6d4c41"),  # brown
+    # Row: a s d f g h j k l
+    "a": ("◇", "#d81b60"),  # magenta
+    "s": ("☆", "#00acc1"),  # cyan
+    "d": ("⬡", "#e53935"),  # red
+    "f": ("✦", "#43a047"),  # green
+    "g": ("✧", "#1e88e5"),  # blue
+    "h": ("⟐", "#fdd835"),  # yellow
+    "j": ("✚", "#d81b60"),  # magenta
+    "k": ("✖", "#3949ab"),  # indigo (keeps distance from teal above-left)
+    "l": ("□", "#e53935"),  # red
+    # Row: z x c v b n m
+    "z": ("▽", "#fb8c00"),  # orange
+    "x": ("◯", "#8e24aa"),  # purple (far from cyan/red above)
+    "c": ("◻", "#fdd835"),  # yellow
+    "v": ("◼", "#6d4c41"),  # brown
+    "b": ("⬤", "#e53935"),  # red
+    "n": ("☑", "#43a047"),  # green
+    "m": ("✤", "#1e88e5"),  # blue
 }
 
 

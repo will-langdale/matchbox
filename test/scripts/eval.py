@@ -121,7 +121,7 @@ def scenario_setup(scenario_name: str):
                 "collection": resolution.resolution_path.collection,
                 "resolution": resolution.resolution_path.name,
                 "warehouse": str(warehouse_engine.url),
-                "samples": 5,
+                "samples": 3,
             }
 
     finally:

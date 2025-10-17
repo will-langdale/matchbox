@@ -190,15 +190,20 @@ class TestActions:
         app = EntityResolutionApp(resolution=test_resolution)
 
         # Add item with assignments
-        item = Mock(assignments={"a": 1, "b": 2})
+        item = Mock(
+            assignments={"a": 1, "b": 2},
+            duplicate_groups=[[1], [2]],
+            display_columns=[1, 2],
+        )
         app.queue.items.append(item)
         app.current_group = "a"
 
         # Mock query_one since app isn't running
         with patch.object(app, "query_one") as mock_query:
             mock_table = Mock()
-            mock_status = Mock()
-            mock_query.side_effect = [mock_table, mock_status]
+            mock_label_left = Mock()
+            mock_label_right = Mock()
+            mock_query.side_effect = [mock_table, mock_label_left, mock_label_right]
 
             await app.action_clear()
 
