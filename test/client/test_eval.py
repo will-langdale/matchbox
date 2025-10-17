@@ -8,8 +8,8 @@ from pyarrow import Table
 from respx import MockRouter
 from sqlalchemy import Engine
 
-from matchbox.client.cli.eval import get_samples
 from matchbox.client.dags import DAG
+from matchbox.client.eval import get_samples
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, table_to_buffer

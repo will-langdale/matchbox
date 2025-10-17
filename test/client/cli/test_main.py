@@ -22,16 +22,11 @@ class TestMainCLI:
         """Test that help command works."""
         result = self.runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        assert "Matchbox: Entity resolution" in result.output
-
-    def test_eval_help_command(self) -> None:
-        """Test that eval help command works."""
-        result = self.runner.invoke(app, ["eval", "--help"])
-        assert result.exit_code == 0
-        assert "Entity evaluation and manual labelling tools" in result.output
+        # With a single command, Typer shows that command's help directly
+        assert "interactive entity resolution" in result.output.lower()
 
     def test_eval_start_help(self) -> None:
-        """Test that eval start help works."""
+        """Test that eval help works."""
         result = self.runner.invoke(app, ["eval", "start", "--help"])
         assert result.exit_code == 0
 
@@ -39,5 +34,6 @@ class TestMainCLI:
         clean_output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
 
         assert "interactive entity resolution" in clean_output.lower()
+        assert "--collection" in clean_output
         assert "--resolution" in clean_output
         assert "--samples" in clean_output

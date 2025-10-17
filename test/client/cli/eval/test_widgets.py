@@ -209,7 +209,7 @@ class TestStatusBarRight:
 
     def test_max_status_length_constant(self) -> None:
         """Test that MAX_STATUS_LENGTH is set correctly."""
-        assert StatusBarRight.MAX_STATUS_LENGTH == 12
+        assert StatusBarRight.MAX_STATUS_LENGTH == 18
 
     def test_state_change_triggers_refresh(self, mock_state: Mock) -> None:
         """Test that state changes trigger refresh."""

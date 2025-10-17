@@ -1,6 +1,6 @@
 """Unit tests for input handlers and actions."""
 
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, PropertyMock
 
 import pytest
 
@@ -19,6 +19,8 @@ class TestEvaluationHandlers:
         app.refresh_display = AsyncMock()
         app.action_quit = AsyncMock()
         app._fetch_additional_samples = AsyncMock(return_value={})
+        app.state.add_queue_items = Mock(return_value=0)
+        app.state.mark_submitted = Mock()
 
         mock_current = Mock()
         mock_current.display_columns = []
@@ -175,6 +177,45 @@ class TestEvaluationHandlers:
         handlers.state.clear_group_selection.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_submit_and_fetch_multiple_painted(
+        self, handlers: EvaluationHandlers, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Submit multiple painted items and backfill queue."""
+        item_one = Mock()
+        item_one.cluster_id = 1
+        item_one.to_judgement.return_value = Mock()
+        item_two = Mock()
+        item_two.cluster_id = 2
+        item_two.to_judgement.return_value = Mock()
+
+        handlers.state.painted_items = [item_one, item_two]
+        handlers.state.user_id = 42
+        handlers.state.mark_submitted = Mock()
+        handlers.state.queue.total_count = 5
+        handlers.state.update_status.reset_mock()
+
+        send_mock = Mock()
+        monkeypatch.setattr(
+            "matchbox.client.cli.eval.handlers._handler.send_eval_judgement",
+            send_mock,
+        )
+
+        handlers._backfill_samples = AsyncMock()
+
+        await handlers.action_submit_and_fetch()
+
+        assert send_mock.call_count == 2
+        send_mock.assert_any_call(judgement=item_one.to_judgement.return_value)
+        send_mock.assert_any_call(judgement=item_two.to_judgement.return_value)
+        handlers.state.mark_submitted.assert_called_once_with({1, 2})
+        handlers._backfill_samples.assert_called_once()
+        # Final status call should indicate success
+        assert any(
+            call.args[0].startswith("✓ Sent")
+            for call in handlers.state.update_status.call_args_list
+        )
+
+    @pytest.mark.asyncio
     async def test_show_help(self, handlers: EvaluationHandlers) -> None:
         """Test showing help modal."""
         await handlers.action_show_help()
@@ -187,17 +228,23 @@ class TestEvaluationHandlers:
     @pytest.mark.asyncio
     async def test_backfill_samples_success(self, handlers: EvaluationHandlers) -> None:
         """Test successful sample backfilling."""
-        handlers.state.queue.total_count = 80
+        # Simulate queue count increasing from 80 to 100 as items are added
+        # Each add_queue_items call adds 2 items, so: 80, 82, 84, ..., 100
+        # Need extra 100 at end for final check after loop completes
+        queue_counts = [80, 82, 84, 86, 88, 90, 92, 94, 96, 98, 100, 100]
+        type(handlers.state.queue).total_count = PropertyMock(side_effect=queue_counts)
         handlers.state.sample_limit = 100
         handlers.app._fetch_additional_samples = AsyncMock(
             return_value={"1": Mock(), "2": Mock()}
         )
         handlers.state.current_df = Mock()  # Not empty state
+        handlers.state.add_queue_items.return_value = 2
 
         await handlers._backfill_samples()
 
-        handlers.app._fetch_additional_samples.assert_called_once_with(20)
-        handlers.state.queue.add_items.assert_called_once()
+        # Should fetch samples 10 times to go from 80 to 100
+        assert handlers.app._fetch_additional_samples.call_count == 10
+        assert handlers.state.add_queue_items.call_count == 10
 
     @pytest.mark.asyncio
     async def test_backfill_samples_already_at_capacity(

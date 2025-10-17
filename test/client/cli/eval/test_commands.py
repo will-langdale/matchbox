@@ -4,7 +4,7 @@ import polars as pl
 import pytest
 
 from matchbox.client.cli.eval.state import EvaluationState
-from matchbox.client.cli.eval.utils import create_evaluation_item
+from matchbox.client.eval import create_evaluation_item
 from matchbox.common.factories.sources import (
     source_from_tuple,
 )

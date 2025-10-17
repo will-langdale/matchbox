@@ -79,7 +79,7 @@ class StatusBarLeft(Widget):
 class StatusBarRight(Widget):
     """Right side of status bar with status indicator.
 
-    IMPORTANT: This widget has limited display space (~12 characters max).
+    IMPORTANT: This widget has limited display space (~18 characters max).
     Status messages must be concise and include appropriate symbols/emoji.
     Messages longer than MAX_STATUS_LENGTH will be rejected with an error.
 
@@ -95,7 +95,7 @@ class StatusBarRight(Widget):
     Write status messages to fit within the length limit from the start.
     """
 
-    MAX_STATUS_LENGTH = 12
+    MAX_STATUS_LENGTH = 18
 
     def __init__(self, state: EvaluationState, **kwargs: Any) -> None:  # noqa: ANN401
         """Initialise the right status widget."""
@@ -118,7 +118,7 @@ class StatusBarRight(Widget):
                     f"'{self.state.status_message}'"
                 )
                 logger.error(
-                    "Status messages must be <= 12 characters. Fix the calling code."
+                    "Status messages must be <= 18 characters. Fix the calling code."
                 )
 
                 # Show error indicator to make the problem visible

@@ -1122,10 +1122,6 @@ class TestMatchboxBackend:
             judgements, expansion = self.backend.get_judgements()
             assert judgements.schema.equals(SCHEMA_JUDGEMENTS)
             assert expansion.schema.equals(SCHEMA_CLUSTER_EXPANSION)
-            # Verify column types are unsigned (catches int64 vs uint64 bugs)
-            assert judgements["user_id"].type == pa.uint64()
-            assert expansion["root"].type == pa.uint64()
-
             # Only one user ID was used
             assert judgements["user_id"].unique().to_pylist() == [alice_id]
             # The first shown cluster is repeated because we judged it twice

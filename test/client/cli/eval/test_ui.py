@@ -8,9 +8,9 @@ from sqlalchemy import Engine
 
 from matchbox.client.cli.eval.app import EntityResolutionApp
 from matchbox.client.cli.eval.state import EvaluationState
-from matchbox.client.cli.eval.utils import EvaluationItem
 from matchbox.client.cli.eval.widgets.status import StatusBarRight
 from matchbox.client.dags import DAG
+from matchbox.client.eval import EvaluationItem
 from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.exceptions import MatchboxClientSettingsException
@@ -252,31 +252,29 @@ class TestTextualUI:
             items_dict: dict[int, EvaluationItem] = await app._fetch_additional_samples(
                 2
             )
-            if items_dict:
-                items = list(items_dict.values())
+            if not items_dict:
+                pytest.skip("No evaluation samples available for this scenario")
 
-                # Paint items
-                for i, item in enumerate(items):
-                    for display_col_idx in range(len(item.display_columns)):
-                        item.assignments[display_col_idx] = "a" if i == 0 else "b"
+            items = list(items_dict.values())
 
-                app.state.queue.add_items(items)
+            # Paint items
+            for i, item in enumerate(items):
+                for display_col_idx in range(len(item.display_columns)):
+                    item.assignments[display_col_idx] = "a" if i == 0 else "b"
 
-            # Test submission workflow (now submits one item at a time)
+            app.state.add_queue_items(items)
+
+            # Test submission workflow submits all painted items
             initial_judgements, _ = self.backend.get_judgements()
             initial_count = len(initial_judgements)
 
-            # Submit first item
-            await app.action_submit_and_fetch()
-
-            # Submit second item
             await app.action_submit_and_fetch()
 
             # Verify judgements were submitted
             final_judgements, _ = self.backend.get_judgements()
             final_count = len(final_judgements)
 
-            assert final_count > initial_count
+            assert final_count == initial_count + len(items)
             new_judgements = final_judgements.to_pylist()[initial_count:]
 
             submitted_cluster_ids = {j["shown"] for j in new_judgements}

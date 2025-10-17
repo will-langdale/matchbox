@@ -37,9 +37,7 @@ from matchbox.server.postgresql.utils.db import (
     compile_sql,
     ingest_to_temporary_table,
 )
-from matchbox.server.postgresql.utils.query import (
-    build_unified_query,
-)
+from matchbox.server.postgresql.utils.query import build_unified_query
 
 
 def insert_judgement(judgement: Judgement):
@@ -106,20 +104,8 @@ def get_judgements() -> tuple[pa.Table, pa.Table]:
         judgements: pl.DataFrame, cluster_expansion: pl.DataFrame
     ) -> tuple[pa.Table, pa.Table]:
         """Cast judgement tables to conform to data transfer schema."""
-        judgements = judgements.with_columns(
-            [
-                pl.col("user_id").cast(pl.UInt64),
-                pl.col("endorsed").cast(pl.UInt64),
-                pl.col("shown").cast(pl.UInt64),
-            ]
-        )
-
-        cluster_expansion = cluster_expansion.with_columns(
-            [
-                pl.col("root").cast(pl.UInt64),
-                pl.col("leaves").cast(pl.List(pl.UInt64)),
-            ]
-        )
+        judgements = judgements.cast(pl.Schema(SCHEMA_JUDGEMENTS))
+        cluster_expansion = cluster_expansion.cast(pl.Schema(SCHEMA_CLUSTER_EXPANSION))
 
         return (
             judgements.to_arrow().cast(SCHEMA_JUDGEMENTS),
@@ -140,9 +126,7 @@ def get_judgements() -> tuple[pa.Table, pa.Table]:
         )
 
     if not len(judgements):
-        cluster_expansion = pl.DataFrame(
-            schema={"root": pl.UInt64, "leaves": pl.List(pl.UInt64)}
-        )
+        cluster_expansion = pl.DataFrame(schema=pl.Schema(SCHEMA_CLUSTER_EXPANSION))
         return _cast_tables(judgements, cluster_expansion)
 
     shown_clusters = set(judgements["shown"].to_list())
@@ -227,10 +211,7 @@ def sample(n: int, resolution_path: ModelResolutionPath, user_id: int):
 
     # Return early if nothing to sample from
     if not len(to_sample):
-        return pl.DataFrame(
-            {"root": [], "leaf": [], "key": [], "source": []},
-            schema=pl.Schema(SCHEMA_EVAL_SAMPLES),
-        ).to_arrow()
+        return pl.DataFrame(schema=pl.Schema(SCHEMA_EVAL_SAMPLES)).to_arrow()
 
     # Sample proportionally to distance from the truth, and get 1D array
     distances = np.abs(to_sample.select("probability").to_numpy() - truth)[:, 0]
@@ -282,9 +263,7 @@ def sample(n: int, resolution_path: ModelResolutionPath, user_id: int):
             connection=conn.dbapi_connection,
             return_type="polars",
         )
-        return final_samples.with_columns(
-            [pl.col("root").cast(pl.UInt64), pl.col("leaf").cast(pl.UInt64)]
-        ).to_arrow()
+        return final_samples.cast(pl.Schema(SCHEMA_EVAL_SAMPLES)).to_arrow()
 
 
 def compare_models(

@@ -1,297 +1,42 @@
-# Entity resolution evaluation tool
+# Evaluation CLI architecture
 
-## Overview
+This README summarises the moving parts of the Textual evaluation tool so future
+changes stay coherent.
 
-The entity resolution evaluation tool is a terminal-based data labelling application built with [Textual](https://textual.textualize.io/). It provides an interactive interface for human evaluation of entity resolution results, allowing users to group records that represent the same real-world entity.
+## Module layout
 
-This tool is part of the broader Matchbox ecosystem, enabling collaborative, measurable, and iterative entity matching workflows. The evaluation interface bridges the gap between automated matching algorithms and human judgement, providing ground truth data for model improvement and performance measurement.
+- `app.py` wires the Textual application. It instantiates `EvaluationState`,
+  registers the handlers, and coordinates display refreshes.
+- `state.py` is the single source of truth. It owns the evaluation queue,
+  user metadata, and the observer list used to broadcast state changes.
+- `handlers.py` translates Textual key events into state mutations and API
+  calls. All actions are defined here to keep the app layer declarative.
+- `widgets/` contains dumb view components that subscribe to state updates.
 
-### Key capabilities
+## Observer pattern
 
-- **Interactive record grouping**: Side-by-side comparison of entity records with keyboard-driven grouping
-- **Collaborative evaluation**: Multi-user support with user attribution for all judgements
-- **Flexible data sources**: Works with any entity resolution pipeline in the Matchbox ecosystem
-- **Performance optimised**: Handles large datasets efficiently with smart queuing and caching
-
-## Architecture overview
-
-The evaluation tool follows a clean modular architecture designed for maintainability, testability, and performance. The design emphasises separation of concerns, with clear boundaries between state management, UI rendering, input handling, and business logic.
-
-### Core architectural principles
-
-1. **Single responsibility**: Each module has one clear purpose
-2. **Observer pattern**: State changes propagate automatically through the UI
-3. **Dependency injection**: Components receive their dependencies explicitly
-4. **Model-view separation**: Business logic is separate from presentation logic
-5. **Testability**: Each component can be tested in isolation
-
-### Dependency flow
+`EvaluationState` exposes `add_listener` and invokes `_notify_listeners()` after
+every mutation. Widgets register a callback that simply calls `refresh()`. This
+keeps rendering logic out of the state layer while ensuring updates remain
+synchronous.
 
 ```
-app.py (orchestration)
-├── state.py (single source of truth)
-├── handlers.py (input/actions)
-├── widgets/ (UI components)
-└── modals.py (modal screens)
+state.add_listener(widget.refresh)
+state.update_status("✓ Ready", "green")  # triggers refresh
 ```
 
-## Directory structure
-
-### Core modules
-
-```
-src/matchbox/client/cli/eval/
-├── app.py              # Main application orchestration
-├── state.py            # Centralised state management
-├── handlers.py         # Input handling and actions
-├── modals.py           # Modal screen definitions
-├── utils.py            # Utility functions and data models
-└── styles.css          # Textual styling
-```
-
-### UI components
-
-```
-widgets/
-├── __init__.py
-├── table.py            # Record comparison table
-├── status.py           # Status bar components
-└── styling.py          # Visual styling utilities
-```
-
-### Testing
-
-```
-test/client/cli/eval/
-├── test_app_integration.py  # Integration tests
-├── test_state.py           # State management tests
-├── test_handlers.py        # Input handling tests
-└── test_widgets.py         # UI component tests
-```
-
-## Core design patterns
-
-### Observer pattern for state management
-
-The `EvaluationState` class implements the observer pattern, allowing UI components to automatically update when state changes:
-
-```python
-# State notifies all registered observers
-state.add_listener(self._on_state_change)
-
-# UI components refresh automatically
-def _on_state_change(self):
-    self.refresh()
-```
-
-This ensures the UI stays in sync without manual coordination between components.
-
-### Single source of truth
-
-All application state lives in the `EvaluationState` class, preventing data inconsistencies and race conditions. Components read from state but don't maintain their own copies of data.
-
-### Dependency injection
-
-Components receive their dependencies through constructor injection rather than importing globally:
-
-```python
-class ComparisonDisplayTable(Widget):
-    def __init__(self, state: EvaluationState, **kwargs):
-        super().__init__(**kwargs)
-        self.state = state  # Injected dependency
-```
-
-This makes testing easier and reduces coupling between modules.
-
-## State management system
-
-### EvaluationState: Single source of truth
-
-The `EvaluationState` class (`state.py`) serves as the single source of truth for all application state. It manages:
-
-- **Queue state**: Current entity, position, painted items
-- **UI state**: View mode, group selection, display data
-- **User state**: Authentication, resolution settings
-- **Status state**: Messages, colours, timers
-
-### EvaluationQueue: Entity management
-
-The `EvaluationQueue` class provides a deque-based queue that maintains position illusion while allowing efficient rotation:
-
-```python
-# Rotation maintains user's sense of position
-queue.move_next()      # Rotate forward
-queue.move_previous()  # Rotate backward
-```
-
-### State flow lifecycle
-
-1. **Initialisation**: App creates state with default values
-2. **Authentication**: User credentials stored in state
-3. **Data loading**: Samples and evaluation data loaded asynchronously
-4. **Interactive phase**: User interactions update state via handlers
-5. **Submission**: Painted items submitted and removed from queue
-6. **Cleanup**: State cleared on exit
-
-### Observer pattern implementation
-
-```python
-class EvaluationState:
-    def _notify_listeners(self):
-        """Notify all listeners of state changes."""
-        for callback in self.listeners:
-            try:
-                callback()
-            except Exception:
-                # Don't let listener errors crash the UI
-                pass
-```
-
-Error handling in observers ensures that UI component failures don't cascade through the system.
-
-## Input handling and actions
-
-### Key routing strategy
-
-The `EvaluationHandlers` class (`handlers.py`) implements a layered key routing strategy:
-
-1. **Navigation keys**: Passed through to Textual's binding system
-2. **Dynamic keys**: Handled directly (letters, numbers, slash)
-3. **Action keys**: Delegated to specific action methods
-
-```python
-async def handle_key_input(self, event):
-    # Navigation: let bindings handle
-    if key in ["left", "right", "enter", "space"]:
-        return
-    
-    # Dynamic: handle immediately
-    if key.isalpha():
-        self.state.set_group_selection(key)
-        event.prevent_default()
-```
-
-### Dynamic vs static key bindings
-
-**Dynamic keys** change behaviour based on application state:
-- Letter keys: Set group selection (a-z)
-- Number keys: Assign columns to selected group (1-9, 0)
-
-**Static keys** have fixed behaviour defined in `BINDINGS`:
-- Arrow keys: Entity navigation
-- Space: Submit and fetch
-- Escape: Clear assignments
-
-### Action delegation pattern
-
-The main app delegates all actions to handlers, maintaining separation of concerns:
-
-```python
-# app.py
-async def action_next_entity(self):
-    await self.handlers.action_next_entity()
-
-# handlers.py  
-async def action_next_entity(self):
-    # Actual implementation with state management
-```
-
-### Event flow
-
-```
-User input → app.on_key() → handlers.handle_key_input() → state updates → UI refresh
-```
-
-## UI component architecture
-
-### Widget composition
-
-UI components are composed hierarchically with clear data dependencies:
-
-```
-EntityResolutionApp
-├── Header (Textual built-in)
-├── StatusBar
-│   ├── StatusBarLeft (entity progress, groups)
-│   └── StatusBarRight (status messages)
-├── ComparisonDisplayTable (record comparison)
-└── Footer (Textual built-in)
-```
-
-### Table rendering system
-
-The `ComparisonDisplayTable` (`widgets/table.py`) renders entity records in a compact view:
-
-**Compact view**: One row per field, deduplicated columns
-```
-Field     | 1    | 2 (×3) | 3
-name      | ACME | ACME   | Acme Corp
-address   | 123  | 123    | 123 Main
-```
-
-Columns with identical data are automatically deduplicated and shown with a count indicator (e.g., "×3").
-
-### Group styling system
-
-The `GroupStyler` class (`widgets/styling.py`) provides consistent visual differentiation:
-
-- **Colour cycling**: High-contrast colours distributed to avoid adjacency
-- **Symbol assignment**: Unicode symbols for additional differentiation  
-- **Consistency**: Same group always gets same colour/symbol combination
-- **Conflict avoidance**: Avoids duplicates until all options are exhausted
-
-### Status bar design
-
-**Left status bar**: Entity progress and group assignments
-- Current position (e.g., "Entity 3/10")
-- Painted count (items ready for submission)
-- Group counts with visual indicators
-
-**Right status bar**: System status with strict length limits
-- 12 character maximum with validation
-- Emoji/symbol prefixes for quick recognition
-- Auto-clearing timers for transient messages
-
-## Testing architecture
-
-### Test file organisation
-
-Tests are organised by architectural layer to match the modular code structure:
-
-- **Unit tests**: Test individual modules in isolation
-- **Integration tests**: Test cross-module interactions
-- **Component tests**: Test UI components with mock state
-
-### Testing patterns
-
-**State testing**: Mock-free testing of state management logic
-```python
-def test_group_selection(self, state):
-    state.set_group_selection("A")
-    assert state.current_group_selection == "a"
-```
-
-**Handler testing**: Mock external dependencies, test logic
-```python
-@patch('handlers.can_show_plot')
-async def test_plot_toggle(self, mock_can_show, handlers):
-    mock_can_show.return_value = (False, "⏳ Loading")
-    await handlers.handle_plot_toggle()
-```
-
-**Widget testing**: Test rendering with controlled state
-```python
-def test_render_compact_view(self, mock_state, mock_current_item):
-    table = ComparisonDisplayTable(mock_state)
-    result = table.render()
-    assert isinstance(result, Table)
-```
-
-## Development guidelines
-
-When adding new features:
-
-1. **State first**: Add any new state to `EvaluationState`
-2. **Handlers second**: Add input handling to `EvaluationHandlers`
-3. **UI last**: Update widgets to reflect new state
-4. **Tests throughout**: Write tests for each layer
+When queue mutations occur (submissions, new samples) the state also tracks the
+set of seen clusters so repeated API calls do not reintroduce entities.
+
+## Event flow
+
+1. `EntityResolutionApp` boots, authenticates the user, and seeds the queue via
+   `matchbox.client.eval.get_samples`.
+2. Input events land in `EvaluationHandlers.handle_key_input`, which resolves
+   to an action method (navigate, assign, submit, etc.).
+3. Actions update state; the observer callbacks repaint widgets.
+4. Submissions convert each painted `EvaluationItem` into a judgement, send it
+   through `_handler.send_eval_judgement`, and backfill the queue.
+
+Keeping the event flow inside handlers makes it easy to unit-test behaviours
+and keeps the Textual layer focussed on display concerns.

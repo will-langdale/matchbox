@@ -354,13 +354,14 @@ class DAG:
         """
         collection: Collection = _handler.get_collection(self.name)
 
-        default_run: set[RunID] = {collection.default_run} or set()
-        pending_runs: set[RunID] = set(collection.runs) - default_run
+        pending_runs: list[RunID] = [
+            run_id for run_id in collection.runs if run_id != collection.default_run
+        ]
 
         if not pending_runs:
             raise RuntimeError("No pending runs available.")
 
-        return self._load_run(list(pending_runs)[-1], location)
+        return self._load_run(pending_runs[-1], location)
 
     def run_and_sync(
         self,

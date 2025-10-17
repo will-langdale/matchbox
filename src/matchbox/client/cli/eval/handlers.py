@@ -77,41 +77,74 @@ class EvaluationHandlers:
         self.app.push_screen(NoSamplesModal())
 
     async def action_submit_and_fetch(self) -> None:
-        """Submit current entity if fully painted, then fetch more."""
-        current = self.state.queue.current
-
-        # Validate we have a current item
-        if not current:
-            self.state.update_status("◯ No data", "yellow")
+        """Submit painted entities, then fetch new samples."""
+        painted_items = self.state.painted_items
+        if not painted_items:
+            self.state.update_status("⚠ Paint items", "yellow", auto_clear_after=3.0)
             return
 
-        # Validate current item is fully painted
-        if not current.is_painted:
-            self.state.update_status("⚠ Not ready", "yellow", auto_clear_after=3.0)
+        if self.state.user_id is None:
+            logger.error("Cannot submit judgements without an authenticated user ID")
+            self.state.update_status("⚠ No user", "red", auto_clear_after=4.0)
             return
 
-        # Submit just the current item
+        user_id = self.state.user_id
+
         self.state.is_submitting = True
         self.state.update_status("⚡ Sending", "yellow")
 
-        judgement = current.to_judgement(self.state.user_id)
-        _handler.send_eval_judgement(judgement=judgement)
+        successful_ids: set[int] = set()
+        failed_ids: set[int] = set()
 
-        logger.info(f"Successfully submitted entity {current.cluster_id}")
+        for item in painted_items:
+            try:
+                assert user_id is not None  # For type checkers
+                judgement = item.to_judgement(user_id)
+            except Exception as exc:  # noqa: BLE001
+                failed_ids.add(item.cluster_id)
+                logger.exception(
+                    "Failed to build judgement for cluster %s: %s",
+                    item.cluster_id,
+                    exc,
+                )
+                continue
 
-        # Remove current item from queue
-        self.state.queue.remove_current()
-        remaining = self.state.queue.total_count
-        logger.info(f"Removed submitted item, {remaining} entities remaining in queue")
+            try:
+                _handler.send_eval_judgement(judgement=judgement)
+            except Exception as exc:  # noqa: BLE001
+                failed_ids.add(item.cluster_id)
+                logger.exception(
+                    "Failed to submit judgement for cluster %s: %s",
+                    item.cluster_id,
+                    exc,
+                )
+            else:
+                successful_ids.add(item.cluster_id)
 
-        # Backfill queue
+        if successful_ids:
+            self.state.mark_submitted(successful_ids)
+            self.state.clear_group_selection()
+            logger.info(
+                "Submitted %s painted entities; %s remain queued",
+                len(successful_ids),
+                self.state.queue.total_count,
+            )
+
+        if failed_ids and not successful_ids:
+            self.state.update_status("⚠ Submit err", "red", auto_clear_after=4.0)
+            self.state.is_submitting = False
+            return
+
         await self._backfill_samples()
-
-        # Refresh display to show next item
         await self.app.refresh_display()
 
         self.state.is_submitting = False
-        self.state.update_status("✓ Sent", "green", auto_clear_after=2.0)
+        if failed_ids:
+            self.state.update_status("⚠ Partial", "yellow", auto_clear_after=4.0)
+        else:
+            submitted_count = len(successful_ids)
+            message = f"✓ Sent {submitted_count}" if submitted_count > 1 else "✓ Sent"
+            self.state.update_status(message, "green", auto_clear_after=2.0)
 
     async def _backfill_samples(self) -> None:
         """Fetch new samples to replace submitted ones."""
@@ -131,21 +164,59 @@ class EvaluationHandlers:
             desired_count,
         )
 
-        new_samples_dict = await self.app._fetch_additional_samples(needed)
-        if new_samples_dict:
-            await self._process_new_samples(new_samples_dict)
+        remaining = needed
+        total_added = 0
+
+        while remaining > 0:
+            new_samples_dict = await self.app._fetch_additional_samples(remaining)
+            if not new_samples_dict:
+                break
+
+            added = await self._process_new_samples(new_samples_dict)
+            total_added += added
+
+            if added == 0:
+                # Backend returned only duplicates; avoid tight loop
+                break
+
+            remaining = max(0, desired_count - self.state.queue.total_count)
+
+        if total_added == 0:
+            await self._handle_no_samples_available(remaining or needed)
+            return
+
+        if self.state.queue.total_count < desired_count:
+            missing = desired_count - self.state.queue.total_count
+            await self._handle_no_samples_available(missing)
         else:
-            await self._handle_no_samples_available(needed)
+            self.state.update_status("✓ Ready", "green")
 
-    async def _process_new_samples(self, new_samples_dict: dict) -> None:
-        """Process newly fetched samples and update the queue."""
+    async def _process_new_samples(self, new_samples_dict: dict) -> int:
+        """Process newly fetched samples and update the queue.
+
+        Returns:
+            Count of unique samples added to the queue.
+        """
         new_items = list(new_samples_dict.values())
-        self.state.queue.add_items(new_items)
-        self.state.update_status("✓ Ready", "green")
-        logger.info(f"Successfully added {len(new_items)} new samples to queue")
+        added_count = self.state.add_queue_items(new_items)
 
-        if self.state.current_df is None and new_items:
-            await self.app.refresh_display()
+        if added_count:
+            logger.info(
+                "Added %s new unique samples to queue (requested %s)",
+                added_count,
+                len(new_items),
+            )
+
+            if self.state.current_df is None:
+                await self.app.refresh_display()
+        else:
+            logger.info(
+                "Fetched %s samples but none were new; queue size remains %s",
+                len(new_items),
+                self.state.queue.total_count,
+            )
+
+        return added_count
 
     async def _handle_no_samples_available(self, needed: int) -> None:
         """Handle the case where no new samples are available."""

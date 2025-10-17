@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
-from matchbox.client.cli.eval.utils import EvaluationItem
+from matchbox.client.eval import EvaluationItem
 
 if TYPE_CHECKING:
     from matchbox.client.dags import DAG
@@ -36,6 +36,16 @@ class EvaluationQueue:
         """Total number of items in queue."""
         return len(self.items)
 
+    @property
+    def painted_items(self) -> list[EvaluationItem]:
+        """Get all currently painted items in the queue."""
+        return [item for item in self.items if item.is_painted]
+
+    @property
+    def painted_count(self) -> int:
+        """Count of painted items ready for submission."""
+        return len(self.painted_items)
+
     def move_next(self) -> None:
         """Rotate forward, increment position."""
         if len(self.items) > 1:
@@ -63,6 +73,19 @@ class EvaluationQueue:
         """Clear the entire queue."""
         self.items.clear()
         self._position_offset = 0
+
+    def remove_by_cluster_ids(self, cluster_ids: set[int]) -> None:
+        """Remove items with cluster IDs in the provided set."""
+        if not cluster_ids:
+            return
+
+        self.items = deque(
+            item for item in self.items if item.cluster_id not in cluster_ids
+        )
+        if self.items:
+            self._position_offset = 0
+        else:
+            self._position_offset = 0
 
 
 class EvaluationState:
@@ -156,6 +179,28 @@ class EvaluationState:
             current.assignments.clear()
         self._notify_listeners()
 
+    def add_queue_items(self, items: list[EvaluationItem]) -> int:
+        """Add new evaluation items to the queue, preventing duplicates."""
+        if not items:
+            return 0
+
+        existing_ids = {item.cluster_id for item in self.queue.items}
+        unique_items = [item for item in items if item.cluster_id not in existing_ids]
+
+        if unique_items:
+            self.queue.add_items(unique_items)
+            self._notify_listeners()
+
+        return len(unique_items)
+
+    def mark_submitted(self, cluster_ids: set[int]) -> None:
+        """Remove submitted clusters from the queue."""
+        if not cluster_ids:
+            return
+
+        self.queue.remove_by_cluster_ids(cluster_ids)
+        self._notify_listeners()
+
     def set_display_data(self, display_leaf_ids: list[int]) -> None:
         """Set the display data."""
         self.display_leaf_ids = display_leaf_ids
@@ -213,6 +258,16 @@ class EvaluationState:
     def has_current_assignments(self) -> bool:
         """Check if current entity has any group assignments."""
         return len(self.current_assignments) > 0
+
+    @property
+    def painted_count(self) -> int:
+        """Return number of painted items currently queued."""
+        return self.queue.painted_count
+
+    @property
+    def painted_items(self) -> list[EvaluationItem]:
+        """Expose painted items in the queue."""
+        return self.queue.painted_items
 
     def update_status(
         self,

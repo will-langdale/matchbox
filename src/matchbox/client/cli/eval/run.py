@@ -10,11 +10,8 @@ from matchbox.client.cli.eval.app import EntityResolutionApp
 from matchbox.client.dags import DAG
 from matchbox.client.sources import RelationalDBLocation
 
-eval_app = typer.Typer(help="Entity evaluation commands")
 
-
-@eval_app.command()
-def start(
+def eval(
     collection: Annotated[
         str, typer.Option("--collection", "-c", help="Collection name (required)")
     ],
@@ -57,7 +54,7 @@ def start(
     Requires a warehouse connection to fetch source data for evaluation clusters.
 
     Example:
-        matchbox eval start --collection companies --warehouse postgresql://user:pass@localhost/warehouse
+        matchbox eval --collection companies --warehouse postgresql://user:pass@localhost/warehouse
     """
     # Set up logging redirect if --log specified
     if log_file:

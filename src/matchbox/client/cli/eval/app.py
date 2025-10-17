@@ -12,10 +12,10 @@ from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.client.cli.eval.handlers import EvaluationHandlers
 from matchbox.client.cli.eval.state import EvaluationState
-from matchbox.client.cli.eval.utils import EvaluationItem, get_samples
 from matchbox.client.cli.eval.widgets.status import StatusBar
 from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
 from matchbox.client.dags import DAG
+from matchbox.client.eval import EvaluationItem, get_samples
 from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.exceptions import MatchboxClientSettingsException
 
@@ -108,9 +108,16 @@ class EntityResolutionApp(App):
     async def load_samples(self) -> None:
         """Load evaluation samples from the server."""
         samples_dict = await self._fetch_additional_samples(self.state.sample_limit)
-        if samples_dict:
-            # samples_dict contains EvaluationItems (converted by get_samples)
-            self.state.queue.add_items(list(samples_dict.values()))
+        if not samples_dict:
+            return
+
+        added = self.state.add_queue_items(list(samples_dict.values()))
+        logger.info(
+            "Loaded %s evaluation items (queue now %s/%s)",
+            added,
+            self.state.queue.total_count,
+            self.state.sample_limit,
+        )
 
     async def refresh_display(self) -> None:
         """Refresh display with current queue item."""

@@ -7,8 +7,8 @@ from rich.table import Table
 from textual.widget import Widget
 
 from matchbox.client.cli.eval.state import EvaluationState
-from matchbox.client.cli.eval.utils import EvaluationItem
 from matchbox.client.cli.eval.widgets.styling import GroupStyler
+from matchbox.client.eval import EvaluationItem
 
 
 class ComparisonDisplayTable(Widget):

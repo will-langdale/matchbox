@@ -22,7 +22,6 @@ dependencies = [
     "pydantic>=2.9.2",
     "rich>=13.9.4",
     "rustworkx>=0.15.1",
-    "scipy>=1.16.1",
     "splink>=4.0.5,<4.1.0",
     "sqlalchemy>=2.0.35",
     "sqlglot[rs]>=26.12.1",
@@ -115,7 +114,6 @@ select = [
     "PLC",
     "SIM"
 ]
-# Stricter rules for the CLI
 extend-select = [
     "UP",
     "TID",
@@ -134,7 +132,6 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "**/{test,docs}/*" = ["D"]
-# Ignore the new, stricter rules everywhere except the CLI
 "!**/{src/matchbox,test}/client/cli/*" = ["UP", "TID", "BLE", "PLC", "SIM", "ANN"]
 
 [tool.ruff.format]

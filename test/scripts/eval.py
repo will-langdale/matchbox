@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine
 
 from matchbox.client._settings import settings
-from matchbox.client.cli.eval_commands import start as eval_start
+from matchbox.client.cli.eval import run
 from matchbox.common.factories import models as _  # noqa:F401
 from matchbox.common.factories.scenarios import SCENARIO_REGISTRY, setup_scenario
 from matchbox.server.base import MatchboxDatastoreSettings
@@ -121,7 +121,7 @@ def scenario_setup(scenario_name: str):
                 "collection": resolution.resolution_path.collection,
                 "resolution": resolution.resolution_path.name,
                 "warehouse": str(warehouse_engine.url),
-                "samples": 20,
+                "samples": 5,
             }
 
     finally:
@@ -180,9 +180,9 @@ def main(
 
     try:
         with scenario_setup(scenario) as cli_params:
-            # Call eval command directly instead of subprocess
+            # Call CLI evaluation command directly
             try:
-                eval_start(
+                run.eval(
                     collection=cli_params["collection"],
                     resolution=cli_params["resolution"],
                     warehouse=cli_params["warehouse"],
