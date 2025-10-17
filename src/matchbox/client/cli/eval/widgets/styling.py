@@ -1,109 +1,72 @@
 """Styling utilities for entity resolution evaluation UI."""
 
+GROUP_STYLES = {
+    "a": ("■", "red"),
+    "b": ("●", "blue"),
+    "c": ("▲", "green"),
+    "d": ("◆", "yellow"),
+    "e": ("★", "magenta"),
+    "f": ("⬢", "cyan"),
+    "g": ("♦", "bright_red"),
+    "h": ("▼", "bright_blue"),
+    "i": ("○", "bright_green"),
+    "j": ("△", "bright_yellow"),
+    "k": ("◇", "bright_magenta"),
+    "l": ("☆", "bright_cyan"),
+    "m": ("⬡", "white"),
+    "n": ("✦", "bright_white"),
+    "o": ("✧", "red"),
+    "p": ("⟐", "blue"),
+    "q": ("■", "green"),
+    "r": ("●", "yellow"),
+    "s": ("▲", "magenta"),
+    "t": ("◆", "cyan"),
+    "u": ("★", "bright_red"),
+    "v": ("⬢", "bright_blue"),
+    "w": ("♦", "bright_green"),
+    "x": ("▼", "bright_yellow"),
+    "y": ("○", "bright_magenta"),
+    "z": ("△", "bright_cyan"),
+}
 
-class GroupStyler:
-    """Generate consistent colours and symbols with cycling to minimise duplicates."""
 
-    # High contrast colours distributed to avoid similar adjacents
-    COLOURS = [
-        "red",
-        "blue",
-        "green",
-        "yellow",
-        "magenta",
-        "cyan",
-        "bright_red",
-        "bright_green",
-        "bright_blue",
-        "bright_yellow",
-        "bright_magenta",
-        "bright_cyan",
-        "white",
-        "bright_white",
-    ]
+def get_group_style(group: str) -> tuple[str, str]:
+    """Get symbol and colour for a group letter.
 
-    # Distinct Unicode symbols for visual differentiation
-    SYMBOLS = [
-        "■",
-        "●",
-        "▲",
-        "◆",
-        "★",
-        "⬢",
-        "♦",
-        "▼",
-        "○",
-        "△",
-        "◇",
-        "☆",
-        "⬡",
-        "✦",
-        "✧",
-        "⟐",
-    ]
+    Args:
+        group: Single letter group identifier (a-z)
 
-    # Class-level tracking for consistent assignments
-    _group_styles = {}  # group_name -> (colour, symbol)
-    _used_colours = set()
-    _used_symbols = set()
-    _colour_index = 0
-    _symbol_index = 0
+    Returns:
+        Tuple of (symbol, colour)
+    """
+    return GROUP_STYLES.get(group.lower(), ("■", "white"))
 
-    @classmethod
-    def get_style(cls, group_name: str) -> tuple[str, str]:
-        """Get consistent colour and symbol for a group name using cycling."""
-        # Return cached style if already assigned
-        if group_name in cls._group_styles:
-            return cls._group_styles[group_name]
 
-        # Assign next available colour
-        colour = cls._get_next_colour()
-        symbol = cls._get_next_symbol()
+def get_display_text(group: str, count: int) -> tuple[str, str]:
+    """Get formatted display text with colour and symbol.
 
-        # Cache the assignment
-        cls._group_styles[group_name] = (colour, symbol)
-        return colour, symbol
+    Args:
+        group: Single letter group identifier (a-z) or "unassigned"
+        count: Number of items in this group
 
-    @classmethod
-    def _get_next_colour(cls) -> str:
-        """Get the next colour in cycle, avoiding duplicates when possible."""
-        # If we haven't used all colours yet, find an unused one
-        if len(cls._used_colours) < len(cls.COLOURS):
-            while cls.COLOURS[cls._colour_index] in cls._used_colours:
-                cls._colour_index = (cls._colour_index + 1) % len(cls.COLOURS)
+    Returns:
+        Tuple of (formatted_text, colour)
+    """
+    if group == "unassigned":
+        return f"UNASSIGNED ({count})", "dim"
 
-        colour = cls.COLOURS[cls._colour_index]
-        cls._used_colours.add(colour)
-        cls._colour_index = (cls._colour_index + 1) % len(cls.COLOURS)
+    symbol, colour = get_group_style(group)
+    text = f"{symbol} {group.upper()} ({count})"
+    return text, colour
 
-        return colour
 
-    @classmethod
-    def _get_next_symbol(cls) -> str:
-        """Get the next symbol in cycle, avoiding duplicates when possible."""
-        # If we haven't used all symbols yet, find an unused one
-        if len(cls._used_symbols) < len(cls.SYMBOLS):
-            while cls.SYMBOLS[cls._symbol_index] in cls._used_symbols:
-                cls._symbol_index = (cls._symbol_index + 1) % len(cls.SYMBOLS)
+def generate_css_classes() -> str:
+    """Generate CSS classes for all groups.
 
-        symbol = cls.SYMBOLS[cls._symbol_index]
-        cls._used_symbols.add(symbol)
-        cls._symbol_index = (cls._symbol_index + 1) % len(cls.SYMBOLS)
-
-        return symbol
-
-    @classmethod
-    def get_display_text(cls, group_name: str, count: int) -> tuple[str, str]:
-        """Get formatted display text with colour and symbol."""
-        colour, symbol = cls.get_style(group_name)
-        text = f"{symbol} {group_name.upper()} ({count})"
-        return text, colour
-
-    @classmethod
-    def reset(cls) -> None:
-        """Reset all assignments (useful for testing)."""
-        cls._group_styles.clear()
-        cls._used_colours.clear()
-        cls._used_symbols.clear()
-        cls._colour_index = 0
-        cls._symbol_index = 0
+    Returns:
+        CSS string with all group styling classes
+    """
+    lines = []
+    for group, (_symbol, colour) in GROUP_STYLES.items():
+        lines.append(f"ComparisonTable .group-{group} {{ background: {colour}; }}")
+    return "\n".join(lines)

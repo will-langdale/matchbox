@@ -191,18 +191,18 @@ class TestE2EModelEvaluation:
             await app.authenticate()
 
             # Phase 1: App should be authenticated and have samples
-            assert app.state.user_name == "alice"
-            assert app.state.user_id is not None
+            assert app.user_name == "alice"
+            assert app.user_id is not None
 
             # Let the app fetch samples as a user would experience
-            if not app.state.queue.items:
+            if not app.queue.items:
                 await app.load_samples()
 
             # Should now have samples to work with
-            assert len(app.state.queue.items) > 0, "App should have loaded samples"
+            assert len(app.queue.items) > 0, "App should have loaded samples"
 
             # Phase 2: Simulate user painting clusters (as user would do)
-            initial_items = list(app.state.queue.items)
+            initial_items = list(app.queue.items)
             painted_count = 0
 
             for item in initial_items[:2]:  # Paint first 2 items like a user would
@@ -213,7 +213,11 @@ class TestE2EModelEvaluation:
                 painted_count += 1
 
             # Verify we have painted items
-            painted_items = [item for item in app.state.queue.items if item.is_painted]
+            painted_items = [
+                item
+                for item in app.queue.items
+                if len(item.assignments) == len(item.display_columns)
+            ]
             assert (
                 len(painted_items) >= 1
             ), "Should have painted items ready for submission"
@@ -222,8 +226,10 @@ class TestE2EModelEvaluation:
             initial_judgements, _ = _handler.download_eval_data()
             initial_count = len(initial_judgements)
 
-            # Submit painted items using the app's method
-            await app.action_submit_and_fetch()
+            # Submit painted items one at a time using the app's method
+            for item in painted_items:
+                if len(item.assignments) == len(item.display_columns):
+                    await app.action_submit()
 
             # Verify judgements were submitted
             final_judgements, _ = _handler.download_eval_data()

@@ -3,7 +3,7 @@
 from typing import cast
 
 import polars as pl
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel
 from sqlalchemy.exc import OperationalError
 
 from matchbox.client import _handler
@@ -15,192 +15,92 @@ from matchbox.common.exceptions import MatchboxSourceTableError
 
 
 class EvaluationItem(BaseModel):
-    """A cluster awaiting evaluation, with deduplicated column data."""
+    """A cluster awaiting evaluation, with pre-computed display data."""
 
     model_config = {"arbitrary_types_allowed": True}
 
     cluster_id: int
-    dataframe: pl.DataFrame  # Original raw data
-    display_dataframe: pl.DataFrame  # Enhanced DataFrame for flexible rendering
+    dataframe: pl.DataFrame  # Original raw data (needed for judgement leaf IDs)
+    display_data: dict[str, list[str]]  # field_name -> [val1, val2, val3]
     duplicate_groups: list[list[int]]  # Groups of leaf_ids with identical data
     display_columns: list[int]  # Representative leaf_id for each displayed column
-    leaf_to_display_mapping: dict[int, int]  # actual leaf_id -> display_column_index
     assignments: dict[int, str] = {}  # display_column_index -> group_letter
 
-    @computed_field
-    @property
-    def total_columns(self) -> int:
-        """Total number of display columns in this cluster."""
-        return len(self.display_columns)
 
-    @computed_field
-    @property
-    def is_painted(self) -> bool:
-        """True only if ALL columns have been assigned to groups."""
-        return len(self.assignments) == self.total_columns
+def create_judgement(item: EvaluationItem, user_id: int) -> Judgement:
+    """Convert item assignments to Judgement - no default group assignment.
 
-    def to_judgement(self, user_id: int) -> Judgement:
-        """Convert assignments to Judgement format, expanding duplicate groups."""
-        groups: dict[str, list[int]] = {}
+    Args:
+        item: Evaluation item with assignments
+        user_id: User ID for the judgement
 
-        for display_col_index, group in self.assignments.items():
-            bucket = groups.setdefault(group, [])
-            if display_col_index < len(self.duplicate_groups):
-                bucket.extend(self.duplicate_groups[display_col_index])
+    Returns:
+        Judgement with endorsed groups based on assignments
+    """
+    groups: dict[str, list[int]] = {}
 
-        assigned_display_cols = set(self.assignments.keys())
-        unassigned_leaf_ids: list[int] = []
-        for display_col_index in range(len(self.duplicate_groups)):
-            if display_col_index not in assigned_display_cols:
-                unassigned_leaf_ids.extend(self.duplicate_groups[display_col_index])
+    for col_idx, group in item.assignments.items():
+        leaf_ids = item.duplicate_groups[col_idx]
+        groups.setdefault(group, []).extend(leaf_ids)
 
-        if unassigned_leaf_ids:
-            groups.setdefault("a", []).extend(unassigned_leaf_ids)
-
-        endorsed: list[list[int]] = []
-        seen_groups: set[tuple[int, ...]] = set()
-        for group_items in groups.values():
-            unique_items = sorted(set(group_items))
-            group_tuple = tuple(unique_items)
-            if group_tuple not in seen_groups:
-                endorsed.append(unique_items)
-                seen_groups.add(group_tuple)
-
-        return Judgement(
-            user_id=user_id,
-            shown=self.cluster_id,
-            endorsed=endorsed,
-        )
-
-
-def create_display_dataframe(
-    df: pl.DataFrame, source_configs: list[tuple[str, SourceConfig]]
-) -> pl.DataFrame:
-    """Create enhanced display DataFrame for flexible view rendering."""
-    leaf_ids = (
-        df.select("leaf").to_series().to_list()
-        if "leaf" in df.columns
-        else list(range(len(df)))
-    )
-
-    rows: list[dict[str, object]] = []
-    for record_idx, record in enumerate(df.iter_rows(named=True)):
-        leaf_id = leaf_ids[record_idx]
-        for source_name, source_config in source_configs:
-            for field in source_config.index_fields:
-                qualified_field = source_config.f(source_name, field.name)
-                if qualified_field not in record:
-                    continue
-
-                value = record[qualified_field]
-                if value is None:
-                    continue
-
-                str_value = str(value).strip()
-                if not str_value:
-                    continue
-
-                rows.append(
-                    {
-                        "field_name": field.name,
-                        "record_index": record_idx,
-                        "value": str_value,
-                        "leaf_id": leaf_id,
-                    }
-                )
-
-    if rows:
-        return pl.DataFrame(rows)
-
-    return pl.DataFrame(
-        {
-            "field_name": [],
-            "record_index": [],
-            "value": [],
-            "leaf_id": [],
-        },
-        schema={
-            "field_name": pl.String,
-            "record_index": pl.Int32,
-            "value": pl.String,
-            "leaf_id": pl.Int32,
-        },
-    )
-
-
-class DeduplicationResult:
-    """Result of column deduplication analysis."""
-
-    def __init__(
-        self,
-        duplicate_groups: list[list[int]],
-        display_columns: list[int],
-        leaf_to_display_mapping: dict[int, int],
-    ) -> None:
-        """Initialise deduplication metadata for mapping leaf columns to displays."""
-        self.duplicate_groups = duplicate_groups
-        self.display_columns = display_columns
-        self.leaf_to_display_mapping = leaf_to_display_mapping
-
-
-def deduplicate_columns(display_df: pl.DataFrame) -> DeduplicationResult:
-    """Analyse columns for duplicates and create deduplication mapping."""
-    if display_df.is_empty():
-        return DeduplicationResult([], [], {})
-
-    leaf_ids = sorted(display_df["leaf_id"].unique().to_list())
-    if not leaf_ids:
-        return DeduplicationResult([], [], {})
-
-    column_signatures: dict[int, tuple[tuple[str, str], ...]] = {}
-    for leaf_id in leaf_ids:
-        column_data = (
-            display_df.filter(pl.col("leaf_id") == leaf_id)
-            .sort(["field_name", "record_index"])
-            .select(["field_name", "value"])
-        )
-        signature = tuple(
-            zip(column_data["field_name"], column_data["value"], strict=True)
-        )
-        column_signatures[leaf_id] = signature
-
-    signature_to_leaves: dict[tuple[tuple[str, str], ...], list[int]] = {}
-    for leaf_id, signature in column_signatures.items():
-        signature_to_leaves.setdefault(signature, []).append(leaf_id)
-
-    duplicate_groups: list[list[int]] = []
-    display_columns: list[int] = []
-    leaf_to_display_mapping: dict[int, int] = {}
-
-    for display_col_index, leaf_group in enumerate(signature_to_leaves.values()):
-        leaf_group = sorted(leaf_group)
-        representative_leaf = leaf_group[0]
-        duplicate_groups.append(leaf_group)
-        display_columns.append(representative_leaf)
-        for leaf_id in leaf_group:
-            leaf_to_display_mapping[leaf_id] = display_col_index
-
-    return DeduplicationResult(
-        duplicate_groups=duplicate_groups,
-        display_columns=display_columns,
-        leaf_to_display_mapping=leaf_to_display_mapping,
-    )
+    endorsed = [sorted(set(leaf_ids)) for leaf_ids in groups.values()]
+    return Judgement(user_id=user_id, shown=item.cluster_id, endorsed=endorsed)
 
 
 def create_evaluation_item(
     df: pl.DataFrame, source_configs: list[tuple[str, SourceConfig]], cluster_id: int
 ) -> EvaluationItem:
-    """Create a complete EvaluationItem with deduplication."""
-    display_dataframe = create_display_dataframe(df, source_configs)
-    dedup_result = deduplicate_columns(display_dataframe)
+    """Create EvaluationItem with pre-computed display data."""
+    # Get all data columns (exclude metadata columns)
+    data_cols = [c for c in df.columns if c not in ["root", "leaf", "key"]]
+
+    # Extract field names from source configs
+    field_names = []
+    for _, config in source_configs:
+        for field in config.index_fields:
+            if field.name not in field_names:
+                field_names.append(field.name)
+
+    if not data_cols:
+        # No data columns found - return empty item
+        return EvaluationItem(
+            cluster_id=cluster_id,
+            dataframe=df,
+            display_data={},
+            duplicate_groups=[],
+            display_columns=[],
+            assignments={},
+        )
+
+    # Deduplicate using polars group_by
+    df_dedup = df.select(["leaf"] + data_cols)
+    grouped = df_dedup.group_by(data_cols, maintain_order=True).agg(pl.col("leaf"))
+
+    duplicate_groups = [group for group in grouped["leaf"]]
+    display_columns = [group[0] for group in duplicate_groups]
+
+    # Build display data
+    display_data = {}
+    for field_name in field_names:
+        qualified_cols = [c for c in data_cols if c.endswith(f"_{field_name}")]
+
+        values = []
+        for leaf_id in display_columns:
+            row = df.filter(pl.col("leaf") == leaf_id).row(0, named=True)
+            val = next(
+                (str(row.get(c, "")).strip() for c in qualified_cols if row.get(c)), ""
+            )
+            values.append(val)
+
+        if any(values):  # Only include fields with data
+            display_data[field_name] = values
 
     return EvaluationItem(
         cluster_id=cluster_id,
         dataframe=df,
-        display_dataframe=display_dataframe,
-        duplicate_groups=dedup_result.duplicate_groups,
-        display_columns=dedup_result.display_columns,
-        leaf_to_display_mapping=dedup_result.leaf_to_display_mapping,
+        display_data=display_data,
+        duplicate_groups=duplicate_groups,
+        display_columns=display_columns,
         assignments={},
     )
 
@@ -292,17 +192,3 @@ class EvalData:
 def compare_models(resolutions: list[ModelResolutionPath]) -> ModelComparison:
     """Compare metrics of models based on cached evaluation data."""
     return _handler.compare_models(resolutions)
-
-
-__all__ = [
-    "DeduplicationResult",
-    "EvaluationItem",
-    "create_display_dataframe",
-    "create_evaluation_item",
-    "deduplicate_columns",
-    "EvalData",
-    "get_samples",
-    "compare_models",
-    "ModelComparison",
-    "precision_recall",
-]
