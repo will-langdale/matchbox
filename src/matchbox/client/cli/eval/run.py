@@ -23,10 +23,6 @@ def eval(
             help="Resolution name (defaults to collection's final_step)",
         ),
     ] = None,
-    samples: Annotated[
-        int,
-        typer.Option("--samples", "-n", help="Number of entity clusters to evaluate"),
-    ] = 100,
     user: Annotated[
         str | None,
         typer.Option(
@@ -86,7 +82,6 @@ def eval(
         # Create app with loaded DAG (not warehouse string)
         app = EntityResolutionApp(
             resolution=model.resolution_path,
-            num_samples=samples,
             user=user,
             dag=dag,
         )

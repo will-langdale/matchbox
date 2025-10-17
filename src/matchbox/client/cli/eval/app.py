@@ -101,7 +101,7 @@ class EntityResolutionApp(App):
     status_message: reactive[str] = reactive("○ Ready")
     status_colour: reactive[str] = reactive("dim")
 
-    sample_limit: int = 100
+    sample_limit: int = 5
     resolution: ModelResolutionPath = ""
     user_id: int | None = None
     user_name: str = ""
@@ -125,7 +125,7 @@ class EntityResolutionApp(App):
     def __init__(
         self,
         resolution: ModelResolutionPath,
-        num_samples: int = 100,
+        num_samples: int = 5,
         user: str | None = None,
         dag: DAG | None = None,
     ) -> None:
@@ -272,33 +272,24 @@ class EntityResolutionApp(App):
         return counts
 
     def _build_status_left(self) -> str:
-        """Build left status text with entity progress and groups."""
-        parts = []
-
-        if self.queue.total_count > 0:
-            parts.append(f"[bright_white]Entity 1/{self.queue.total_count}[/]")
-        else:
+        """Build left status text with groups."""
+        if self.queue.total_count == 0:
             return "[yellow]No samples to evaluate[/]"
-
-        parts.append("[dim] | [/]")
 
         group_counts = self._compute_group_counts()
         if not group_counts:
-            parts.append("[dim]No groups assigned[/]")
-        else:
-            parts.append("[bright_white]Groups: [/]")
-            group_parts = []
-            for group, count in group_counts.items():
-                display_text, colour = get_display_text(group, count)
+            return "[dim]No groups assigned[/]"
 
-                if group == self.current_group:
-                    group_parts.append(f"[bold {colour} underline]{display_text}[/]")
-                else:
-                    group_parts.append(f"[bold {colour}]{display_text}[/]")
+        group_parts = []
+        for group, count in group_counts.items():
+            display_text, colour = get_display_text(group, count)
 
-            parts.append("  ".join(group_parts))
+            if group == self.current_group:
+                group_parts.append(f"[bold {colour} underline]{display_text}[/]")
+            else:
+                group_parts.append(f"[bold {colour}]{display_text}[/]")
 
-        return "".join(parts)
+        return "  ".join(group_parts)
 
     def _build_status_right(self) -> str:
         """Build right status text with status indicator."""

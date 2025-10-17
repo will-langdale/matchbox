@@ -121,7 +121,6 @@ def scenario_setup(scenario_name: str):
                 "collection": resolution.resolution_path.collection,
                 "resolution": resolution.resolution_path.name,
                 "warehouse": str(warehouse_engine.url),
-                "samples": 3,
             }
 
     finally:
@@ -186,7 +185,6 @@ def main(
                     collection=cli_params["collection"],
                     resolution=cli_params["resolution"],
                     warehouse=cli_params["warehouse"],
-                    samples=cli_params["samples"],
                     user=None,
                     log_file=log_file if log_file and log_file.strip() else None,
                 )

@@ -7,34 +7,23 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
 HELP_TEXT = """
-Simple workflow:
-• At any moment, you have two choices:
-  1. Skip (→): Not ready to judge → current entity moves to back
-  2. Submit (Space): Fully painted → submit current entity
+A model thinks this data is one entity. Is it?
 
-Group assignment:
+[b]Paint the columns to label this as one or more entities.[/b]
+
+• Each column is data from a single source.
+• Each row is a field from that source.
+
+If you think the model got it right, paint all columns the same.
+
+If you think column 1 and 2 belong to one entity, and 3-5 another,
+paint them that way.
+
+When you're done, submit, and do another!
+
 • Press letter (a-z): Select that group (26 groups available)
 • Press number (1-9, 0): Assign column to selected group
 • Esc: Clear group selection
-
-Navigation & Actions:
-• → - Skip current entity (moves to back of queue)
-• Space - Submit current entity if fully painted
-• Esc - Clear group selection
-• ? or F1 - Show this help
-• Ctrl+C or Ctrl+Q - Quit
-
-Visual feedback:
-• Records are columns, fields are rows
-• Each group gets unique colour + symbol
-• Column headers show group assignment with coloured symbols
-• Status bar shows group counts with visual indicators
-
-Tips for speed:
-• Press letter with left hand, numbers with right
-• Same group always gets same colour/symbol
-• Work in patterns: group obvious matches first
-• Use Esc to clear if you get confused
 """.strip()
 
 NO_SAMPLES_TEXT = """
@@ -55,7 +44,7 @@ class HelpModal(ModalScreen):
     def compose(self) -> ComposeResult:
         """Compose the help modal UI."""
         with Container(id="help-dialog"):
-            yield Static("Entity Resolution - Help", id="help-title")
+            yield Static("Paint the columns!", id="help-title")
             yield Static(HELP_TEXT, id="help-content")
             yield Button("Close (Esc)", id="close-help")
 

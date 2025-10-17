@@ -108,7 +108,7 @@ class TestSampleLoading:
 
         await app.load_samples()
 
-        app._fetch_additional_samples.assert_called_once_with(100)
+        app._fetch_additional_samples.assert_called_once_with(5)
         assert app.queue.total_count == 3
 
     @pytest.mark.asyncio
