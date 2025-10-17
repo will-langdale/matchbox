@@ -79,8 +79,8 @@ def get_samples(
             )
             continue
 
-        location = Location.from_config(
-            resolution.config.location_config, client=client
+        location = Location.from_config(resolution.config.location_config).set_client(
+            client
         )
         source = Source.from_resolution(
             resolution=resolution,

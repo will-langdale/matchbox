@@ -3,8 +3,7 @@
 import warnings
 from collections.abc import Callable, Generator, Iterable
 from datetime import datetime
-from functools import wraps
-from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 import polars as pl
 from pyarrow import Table as ArrowTable
@@ -27,8 +26,6 @@ from matchbox.common.dtos import (
 )
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
-    MatchboxSourceClientError,
-    MatchboxSourceExtractTransformError,
 )
 from matchbox.common.hash import HashMethod, hash_rows
 from matchbox.common.logging import logger
@@ -42,27 +39,6 @@ else:
 
 
 T = TypeVar("T")
-P = ParamSpec("P")
-R = TypeVar("R")
-F = TypeVar("F")
-
-
-def requires_client(method: Callable[..., T]) -> Callable[..., T]:
-    """Decorator that checks if client is set before executing a method.
-
-    A helper method for Location subclasses.
-
-    Raises:
-        MatchboxSourceClientError: If the client is not set.
-    """
-
-    @wraps(method)
-    def wrapper(self: "Location", *args, **kwargs) -> T:
-        if self.client is None:
-            raise MatchboxSourceClientError
-        return method(self, *args, **kwargs)
-
-    return wrapper
 
 
 class Source:
@@ -123,8 +99,7 @@ class Source:
                 If False, you must provide SourceField instances for key_field and
                 index_fields.
         """
-        if not location.validate_extract_transform(extract_transform):
-            raise MatchboxSourceExtractTransformError
+        location.validate_extract_transform(extract_transform)
 
         self.last_run: datetime | None = None
         self.location = location
@@ -154,7 +129,7 @@ class Source:
         key_field: Any,
         index_fields: list[Any],
         type_check: type[str] | type[SourceField],
-    ) -> tuple[F, tuple[F, ...]]:
+    ) -> tuple[T, tuple[T, ...]]:
         """Validate that fields match the expected type (str or SourceField)."""
         if not isinstance(key_field, type_check):
             raise ValueError(

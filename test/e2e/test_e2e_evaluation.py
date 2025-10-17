@@ -82,7 +82,7 @@ class TestE2EModelEvaluation:
         assert response.status_code == 200, "Failed to clear matchbox database"
 
         # Create DAG
-        dw_loc = RelationalDBLocation(name="postgres", client=postgres_warehouse)
+        dw_loc = RelationalDBLocation(name="postgres").set_client(postgres_warehouse)
 
         dag = DAG("companies").new_run()
         self.__class__.dag = dag

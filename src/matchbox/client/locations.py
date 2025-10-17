@@ -4,31 +4,66 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
 from copy import deepcopy
-from typing import Any, Self
+from enum import StrEnum
+from functools import wraps
+from typing import Any, ParamSpec, Self, TypeVar
 
 import polars as pl
 import sqlglot
 from sqlalchemy import Engine
 from sqlalchemy.exc import OperationalError
+from sqlglot.errors import ParseError
 
-from matchbox.client.sources import requires_client
 from matchbox.common.db import (
     QueryReturnClass,
     QueryReturnType,
     sql_to_df,
 )
 from matchbox.common.dtos import DataTypes, LocationConfig, LocationType
-from matchbox.common.exceptions import MatchboxSourceExtractTransformError
+from matchbox.common.exceptions import (
+    MatchboxSourceClientError,
+    MatchboxSourceExtractTransformError,
+)
 from matchbox.common.logging import logger
+
+T = TypeVar("T")
+P = ParamSpec("P")
+
+
+class ClientType(StrEnum):
+    """Enumeration of valid location clients."""
+
+    SQLALCHEMY = "sqlalchemy"
+
+
+CLIENT_CLASSES = {ClientType.SQLALCHEMY: Engine}
+
+
+def requires_client(method: Callable[..., T]) -> Callable[..., T]:
+    """Decorator that checks if client is set before executing a method.
+
+    A helper method for Location subclasses.
+
+    Raises:
+        MatchboxSourceClientError: If the client is not set.
+    """
+
+    @wraps(method)
+    def wrapper(self: "Location", *args, **kwargs) -> T:
+        if self.client is None:
+            raise MatchboxSourceClientError
+        return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class Location(ABC):
     """A location for a data source."""
 
-    def __init__(self, name: str, client: Any):
+    def __init__(self, name: str):
         """Initialise location."""
         self.config = LocationConfig(type=self.location_type, name=name)
-        self.client = client
+        self._client = None
 
     def __deepcopy__(self, memo=None):
         """Create a deep copy of the Location object."""
@@ -36,14 +71,36 @@ class Location(ABC):
             memo = {}
 
         # Both objects should share the same client
-        obj_copy = type(self)(name=deepcopy(self.config.name, memo), client=self.client)
+        obj_copy = type(self)(name=deepcopy(self.config.name, memo))
+        if self.client:
+            obj_copy.set_client(self.client)
 
         return obj_copy
+
+    @property
+    def client(self) -> Any:
+        """Retrieve client."""
+        return self._client
+
+    def set_client(self, client: Any) -> Self:
+        """Set client for location and return the location."""
+        if not isinstance(client, CLIENT_CLASSES[self.client_type]):
+            raise ValueError(
+                f"Type {client.__class__} is not valid for {self.__class__}"
+            )
+        self._client = client
+        return self
 
     @property
     @abstractmethod
     def location_type(self) -> LocationType:
         """Output location type string."""
+        ...
+
+    @property
+    @abstractmethod
+    def client_type(self) -> ClientType:
+        """Client type string."""
         ...
 
     @abstractmethod
@@ -98,10 +155,10 @@ class Location(ABC):
         """
         ...
 
-    def from_config(config: LocationConfig, client: Any) -> Self:
-        """Initialise location from a location config and an appropriate client."""
+    def from_config(config: LocationConfig) -> Self:
+        """Initialise location from a location config."""
         LocClass = location_type_to_class(config.type)
-        return LocClass(name=config.name, client=client)
+        return LocClass(name=config.name)
 
 
 class RelationalDBLocation(Location):
@@ -109,6 +166,7 @@ class RelationalDBLocation(Location):
 
     client: Engine
     location_type: LocationType = LocationType.RDBMS
+    client_type: ClientType = ClientType.SQLALCHEMY
 
     @contextmanager
     def _get_connection(self):
@@ -128,7 +186,7 @@ class RelationalDBLocation(Location):
         except OperationalError:
             return False
 
-    def validate_extract_transform(self, extract_transform: str) -> bool:  # noqa: D102
+    def validate_extract_transform(self, extract_transform: str) -> None:  # noqa: D102
         """Check that the SQL statement only contains a single data-extracting command.
 
         We are NOT attempting a full sanitisation of the SQL statement
@@ -139,9 +197,6 @@ class RelationalDBLocation(Location):
         Args:
             extract_transform: The SQL statement to validate
 
-        Returns:
-            bool: True if the SQL statement is valid
-
         Raises:
             ParseError: If the SQL statement cannot be parsed
             MatchboxSourceExtractTransformError: If validation requirements are not met
@@ -151,15 +206,24 @@ class RelationalDBLocation(Location):
                 "SQL statement is empty or only contains whitespace."
             )
 
-        match self.client.dialect.name:
-            case "postgresql":
-                dialect = "postgres"
-            case "sqlite":
-                dialect = "sqlite"
-            case _:
-                logger.warning("Could not validate specific dialect")
-                dialect = None
-        expressions = sqlglot.parse(extract_transform, dialect=dialect)
+        dialect = None
+        # If a client is present, we can make the SQLGlot validation more targeted
+        if self.client:
+            match self.client.dialect.name:
+                case "postgresql":
+                    dialect = "postgres"
+                case "sqlite":
+                    dialect = "sqlite"
+
+        if not dialect:
+            logger.warning("Could not validate specific dialect.")
+
+        try:
+            expressions = sqlglot.parse(extract_transform, dialect=dialect)
+        except ParseError as e:
+            raise MatchboxSourceExtractTransformError(
+                "SQL statement could not be parsed."
+            ) from e
 
         if len(expressions) > 1:
             raise MatchboxSourceExtractTransformError(
@@ -188,8 +252,6 @@ class RelationalDBLocation(Location):
             raise MatchboxSourceExtractTransformError(
                 "SQL statement must not contain DDL or DML commands."
             )
-
-        return True
 
     @requires_client
     def infer_types(self, extract_transform: str) -> dict[str, DataTypes]:  # noqa: D102

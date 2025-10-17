@@ -97,10 +97,12 @@ The `key_field` is the field in your source that contains some unique code that 
     ```python
     from matchbox.client import RelationalDBLocation
 
+    warehouse = RelationalDBLocation(name="dbname").set_client(engine)
+
     # Companies House data
     companies_house = dag.source(
         name="companies_house",
-        location=RelationalDBLocation(name="dbname", client=engine),
+        location=warehouse,
         extract_transform="""
             select
                 number::str as company_number,
@@ -117,7 +119,7 @@ The `key_field` is the field in your source that contains some unique code that 
     # Exporters data
     exporters = dag.source(
         name="hmrc_exporters",
-        location=RelationalDBLocation(name="dbname", client=engine),
+        location=warehouse,
         extract_transform="""
             select
                 id,
@@ -533,9 +535,7 @@ You might want to publish a new run of your DAG based on newer data. You can ret
 === "Example"
     ```python    
     # Create a new DAG identical to the previous default
-    dag = DAG(name="companies").load_default(
-        location=RelationalDBLocation(name="dbname", client=engine)
-    ).new_run()
+    dag = DAG(name="companies").load_default().set_client(engine).new_run()
     # Run new DAG
     dag.run_and_sync()
     # Make the DAG the new default

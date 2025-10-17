@@ -3,7 +3,6 @@ import pytest
 from polars.testing import assert_frame_equal
 from sqlalchemy import Engine
 from sqlalchemy.exc import OperationalError
-from sqlglot.errors import ParseError
 
 from matchbox.client.locations import RelationalDBLocation
 from matchbox.common.dtos import (
@@ -20,9 +19,20 @@ from matchbox.common.factories.sources import (
 
 def test_relational_db_location_instantiation(sqlite_in_memory_warehouse: Engine):
     """Test that RelationalDBLocation can be instantiated with valid parameters."""
-    location = RelationalDBLocation(name="dbname", client=sqlite_in_memory_warehouse)
+    location = RelationalDBLocation(name="dbname")
     assert location.config.type == LocationType.RDBMS
     assert location.config.name == "dbname"
+
+    # Client can be set and validated
+    assert location.client is None
+
+    with pytest.raises(ValueError):
+        location.set_client(12)
+
+    assert (
+        location.set_client(sqlite_in_memory_warehouse).client
+        == sqlite_in_memory_warehouse
+    )
 
 
 @pytest.mark.parametrize(
@@ -109,14 +119,24 @@ def test_relational_db_extract_transform(
         invalid_clients = [postgres_warehouse]
         valid_clients = [sqlite_warehouse]
 
+    # Dialect-agnostic check
+    if dialects == "none":
+        with pytest.raises(MatchboxSourceExtractTransformError):
+            RelationalDBLocation(name="dbname").validate_extract_transform(sql)
+    elif dialects == "all":
+        RelationalDBLocation(name="dbname").validate_extract_transform(sql)
+
+    # Dialect-specific checks
     for client in valid_clients:
-        location = RelationalDBLocation(name="dbname", client=client)
-        assert location.validate_extract_transform(sql)
+        RelationalDBLocation(name="dbname").set_client(
+            client
+        ).validate_extract_transform(sql)
 
     for client in invalid_clients:
-        location = RelationalDBLocation(name="dbname", client=client)
-        with pytest.raises((MatchboxSourceExtractTransformError, ParseError)):
-            location.validate_extract_transform(sql)
+        with pytest.raises(MatchboxSourceExtractTransformError):
+            RelationalDBLocation(name="dbname").set_client(
+                client
+            ).validate_extract_transform(sql)
 
 
 def test_relational_db_infer_types(sqlite_warehouse: Engine):
@@ -131,7 +151,7 @@ def test_relational_db_infer_types(sqlite_warehouse: Engine):
         name="source",
         engine=sqlite_warehouse,
     ).write_to_location()
-    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
+    location = RelationalDBLocation(name="dbname").set_client(sqlite_warehouse)
 
     query = f"""
         select key as renamed_key, foo, bar from
@@ -156,7 +176,7 @@ def test_relational_db_execute(sqlite_warehouse: Engine):
     source_testkit = source_factory(
         features=features, n_true_entities=10, engine=sqlite_warehouse
     ).write_to_location()
-    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
+    location = RelationalDBLocation(name="dbname").set_client(sqlite_warehouse)
 
     sql = f"select key, upper(company) up_company, employees from {source_testkit.name}"
 
@@ -196,7 +216,7 @@ def test_relational_db_execute(sqlite_warehouse: Engine):
 
 def test_relational_db_execute_invalid(sqlite_warehouse: Engine):
     """Test that invalid queries are handled correctly when executing."""
-    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
+    location = RelationalDBLocation(name="dbname").set_client(sqlite_warehouse)
 
     # Invalid SQL query
     sql = "SELECT * FROM nonexistent_table"

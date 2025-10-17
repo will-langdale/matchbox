@@ -46,7 +46,7 @@ def test_source_infers_type(sqlite_warehouse: Engine):
         engine=sqlite_warehouse,
     ).write_to_location()
 
-    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
+    location = RelationalDBLocation(name="dbname").set_client(sqlite_warehouse)
     source = Source(
         dag=source_testkit.source.dag,
         location=location,
@@ -81,7 +81,7 @@ def test_source_sampling_preserves_original_sql(sqlite_warehouse: Engine):
         engine=sqlite_warehouse,
     ).write_to_location()
 
-    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
+    location = RelationalDBLocation(name="dbname").set_client(sqlite_warehouse)
 
     # Use SQLite's INSTR function (returns position of substring)
     # Other databases use CHARINDEX, POSITION, etc.
@@ -127,7 +127,7 @@ def test_source_fetch(sqlite_warehouse: Engine):
     ).write_to_location()
 
     # Create location and source
-    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
+    location = RelationalDBLocation(name="dbname").set_client(sqlite_warehouse)
     source = Source(
         dag=source_testkit.source.dag,
         location=location,
@@ -171,7 +171,9 @@ def test_source_fetch_name_qualification(
     """Test that column names are qualified when requested."""
     # Mock the location execute method to verify parameters
     mock_execute.return_value = (x for x in [None])  # execute needs to be a generator
-    location = RelationalDBLocation(name="sqlite", client=sqlite_in_memory_warehouse)
+    location = RelationalDBLocation(name="sqlite").set_client(
+        sqlite_in_memory_warehouse
+    )
 
     # Create source
     source = Source(
@@ -221,7 +223,9 @@ def test_source_fetch_batching(
     """Test query with batching options."""
     # Mock the location execute method to verify parameters
     mock_execute.return_value = (x for x in [None])  # execute needs to be a generator
-    location = RelationalDBLocation(name="sqlite", client=sqlite_in_memory_warehouse)
+    location = RelationalDBLocation(name="sqlite").set_client(
+        sqlite_in_memory_warehouse
+    )
 
     # Create source
     source = Source(
@@ -267,7 +271,7 @@ def test_source_run(sqlite_warehouse: Engine, batch_size: int):
     ).write_to_location()
 
     # Create location and source
-    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
+    location = RelationalDBLocation(name="dbname").set_client(sqlite_warehouse)
     source = Source(
         dag=source_testkit.source.dag,
         location=location,
@@ -299,7 +303,9 @@ def test_source_run_null_identifier(
 ):
     """Test hashing data raises an error when source primary keys contain nulls."""
     # Create a source
-    location = RelationalDBLocation(name="sqlite", client=sqlite_in_memory_warehouse)
+    location = RelationalDBLocation(name="sqlite").set_client(
+        sqlite_in_memory_warehouse
+    )
     source = Source(
         dag=DAG("collection"),
         location=location,
