@@ -9,8 +9,8 @@ from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.exceptions import MatchboxClientSettingsException
 
 
-class TestAppInitialization:
-    """Test app initialization and configuration."""
+class TestAppInitialisation:
+    """Test app initialisation and configuration."""
 
     @pytest.fixture
     def test_resolution(self) -> ModelResolutionPath:
@@ -19,10 +19,10 @@ class TestAppInitialization:
             collection="test_collection", run=1, name="test_resolution"
         )
 
-    def test_app_initializes_with_config(
+    def test_app_initialises_with_config(
         self, test_resolution: ModelResolutionPath
     ) -> None:
-        """Test that app initializes with correct configuration."""
+        """Test that app initialises with correct configuration."""
         app = EntityResolutionApp(
             resolution=test_resolution, num_samples=50, user="test_user"
         )
@@ -102,13 +102,15 @@ class TestSampleLoading:
         """Test loading evaluation samples adds them to queue."""
         app = EntityResolutionApp(resolution=test_resolution)
         app.user_id = 123
+        app.update_status = Mock()  # Mock status updates
 
         mock_samples = {1: Mock(), 2: Mock(), 3: Mock()}
         app._fetch_additional_samples = AsyncMock(return_value=mock_samples)
 
         await app.load_samples()
 
-        app._fetch_additional_samples.assert_called_once_with(5)
+        # _fetch_more_samples handles orchestration, calls _fetch_additional_samples
+        app._fetch_additional_samples.assert_called()
         assert app.queue.total_count == 3
 
     @pytest.mark.asyncio

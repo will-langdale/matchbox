@@ -78,7 +78,6 @@ class ComparisonDisplayTable(Widget):
 
         self._add_table_columns(table, current)
 
-        # Just iterate pre-computed display_data dict
         for field_name, values in current.display_data.items():
             table.add_row(field_name, *values)
 

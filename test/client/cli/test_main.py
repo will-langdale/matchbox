@@ -14,10 +14,6 @@ class TestMainCLI:
         """Set up test fixtures."""
         self.runner = CliRunner()
 
-    def test_main_app_exists(self) -> None:
-        """Test that the main CLI app can be imported."""
-        assert app is not None
-
     def test_help_command(self) -> None:
         """Test that help command works."""
         result = self.runner.invoke(app, ["--help"])
@@ -27,7 +23,7 @@ class TestMainCLI:
 
     def test_eval_start_help(self) -> None:
         """Test that eval help works."""
-        result = self.runner.invoke(app, ["eval", "start", "--help"])
+        result = self.runner.invoke(app, ["eval", "--help"])
         assert result.exit_code == 0
 
         # Strip ANSI codes for reliable text matching

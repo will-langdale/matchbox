@@ -84,6 +84,7 @@ class EntityResolutionApp(App):
     TITLE = "Matchbox evaluate"
     SUB_TITLE = "match labelling tool"
 
+    # Triggered by action_* methods
     BINDINGS = [
         ("right", "skip", "Skip"),
         ("space", "submit", "Submit"),
@@ -109,18 +110,6 @@ class EntityResolutionApp(App):
     has_no_samples: bool = False
 
     _status_timer: Timer | None = None
-    number_keys = {
-        "1": 1,
-        "2": 2,
-        "3": 3,
-        "4": 4,
-        "5": 5,
-        "6": 6,
-        "7": 7,
-        "8": 8,
-        "9": 9,
-        "0": 10,
-    }
 
     def __init__(
         self,
@@ -176,17 +165,7 @@ class EntityResolutionApp(App):
 
     async def load_samples(self) -> None:
         """Load evaluation samples from the server."""
-        samples_dict = await self._fetch_additional_samples(self.sample_limit)
-        if not samples_dict:
-            return
-
-        added = self.queue.add_items(list(samples_dict.values()))
-        logger.info(
-            "Loaded %s evaluation items (queue now %s/%s)",
-            added,
-            self.queue.total_count,
-            self.sample_limit,
-        )
+        await self._fetch_more_samples()
 
     def refresh_display(self) -> None:
         """Refresh display with current queue item."""
@@ -216,7 +195,10 @@ class EntityResolutionApp(App):
         yield Footer()
 
     async def on_key(self, event: events.Key) -> None:
-        """Handle keyboard shortcuts for group assignment."""
+        """Handle keyboard shortcuts for group assignment.
+
+        Textual's basic key event handler. Handles keys beyond BINDINGS.
+        """
         key = event.key
 
         if key.isalpha() and len(key) == 1:
@@ -225,8 +207,8 @@ class EntityResolutionApp(App):
             event.stop()
             return
 
-        if key in self.number_keys and self.current_group:
-            col_num = self.number_keys[key]
+        if key.isdigit() and self.current_group:
+            col_num = 10 if key == "0" else int(key)
             current = self.queue.current
             if current and col_num <= len(current.display_columns):
                 new_assignments = self.assignments.copy()

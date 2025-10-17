@@ -11,16 +11,15 @@ To calculate these, we need a **ground truth** - a set of correct matches create
 
 Matchbox provides a terminal-based UI to help you create this validation data. Here's how it works:
 
-1. **Launch the evaluation tool** using `matchbox eval --collection <collection_name> --samples <number> --user <your_username>`
+1. **Launch the evaluation tool** using `matchbox eval --collection <collection_name> --user <your_username>`
     a. You can also set your username with the `MB__CLIENT__USER` environment variable.
     b. Define `MB__CLIENT__DEFAULT_WAREHOUSE` (or use `--warehouse <connection_string>`) so the CLI can reach your warehouse.
     c. If your DAG isn't complete, include `--resolution <resolution_name>` to pick a specific run.
-    d. The value of `--samples` sets both the initial batch size and the steady-state queue size, so the app will keep roughly that many clusters ready to label.
 2. Matchbox will **download clusters** for you to review. It avoids clusters you've already judged and focuses on ones the model is unsure about.
 3. In the terminal interface, you'll review each cluster:
    * Use keyboard commands like `b+1,3,5` to assign rows 1, 3, and 5 to group B
    * Press `space` to send your judgements to Matchbox
-   * Navigate with arrow keys between entities
+   * Skip to the next item without reviewing with `→` (right arrow)
    * Press `?` or `F1` for help with commands
 
 Once enough users have reviewed clusters, this data can be used to evaluate model performance.
