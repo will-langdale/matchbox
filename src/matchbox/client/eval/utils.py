@@ -8,8 +8,9 @@ from sqlalchemy.exc import OperationalError
 
 from matchbox.client import _handler
 from matchbox.client.dags import DAG
+from matchbox.client.locations import Location
 from matchbox.client.results import Results
-from matchbox.client.sources import Location, Source
+from matchbox.client.sources import Source
 from matchbox.common.dtos import ModelResolutionPath, ResolutionPath, ResolutionType
 from matchbox.common.eval import (
     ModelComparison,
@@ -78,8 +79,8 @@ def get_samples(
             )
             continue
 
-        location = Location.from_config(
-            resolution.config.location_config, client=client
+        location = Location.from_config(resolution.config.location_config).set_client(
+            client
         )
         source = Source.from_resolution(
             resolution=resolution,
