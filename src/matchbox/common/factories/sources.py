@@ -16,7 +16,8 @@ from sqlglot import cast, select
 from sqlglot.expressions import column
 
 from matchbox.client.dags import DAG
-from matchbox.client.sources import RelationalDBLocation, Source
+from matchbox.client.locations import RelationalDBLocation
+from matchbox.client.sources import Source
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_QUERY
 from matchbox.common.dtos import (
     DataTypes,

@@ -7,9 +7,9 @@ from polars.testing import assert_frame_equal
 from sqlalchemy import Engine, text
 
 from matchbox.client.dags import DAG
+from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
-from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.factories.sources import (
     FeatureConfig,
     LinkedSourcesTestkit,

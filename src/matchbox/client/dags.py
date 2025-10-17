@@ -3,14 +3,14 @@
 import datetime
 import json
 from collections import defaultdict
-from typing import Self
+from typing import TYPE_CHECKING, Any, Self
 
 from pyarrow import Table as ArrowTable
 
 from matchbox.client import _handler
 from matchbox.client.models import Model
 from matchbox.client.queries import Query
-from matchbox.client.sources import Location, Source
+from matchbox.client.sources import Source
 from matchbox.common.dtos import (
     CollectionName,
     ModelResolutionName,
@@ -27,6 +27,11 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.logging import logger
 from matchbox.common.transform import truth_int_to_float
+
+if TYPE_CHECKING:
+    from matchbox.client.locations import Location
+else:
+    Location = Any
 
 
 class DAG:

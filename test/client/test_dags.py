@@ -11,10 +11,11 @@ from respx import MockRouter
 from sqlalchemy import Engine
 
 from matchbox.client.dags import DAG
+from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.models import Model
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
-from matchbox.client.sources import RelationalDBLocation, Source
+from matchbox.client.sources import Source
 from matchbox.common.arrow import SCHEMA_QUERY, table_to_buffer
 from matchbox.common.dtos import (
     BackendResourceType,

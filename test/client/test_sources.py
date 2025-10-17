@@ -13,8 +13,8 @@ from sqlglot import select
 from sqlglot.errors import ParseError
 
 from matchbox.client.dags import DAG
+from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.sources import (
-    RelationalDBLocation,
     Source,
 )
 from matchbox.common.dtos import (
@@ -374,7 +374,7 @@ def test_source_fetch(sqlite_warehouse: Engine):
         pytest.param(True, id="with_name_qualification"),
     ],
 )
-@patch("matchbox.client.sources.RelationalDBLocation.execute")
+@patch("matchbox.client.locations.RelationalDBLocation.execute")
 def test_source_fetch_name_qualification(
     mock_execute: Mock, qualify_names: bool, sqlite_in_memory_warehouse: Engine
 ):
@@ -421,7 +421,7 @@ def test_source_fetch_name_qualification(
         pytest.param(3, {"batch_size": 3}, id="multiple_batches"),
     ],
 )
-@patch("matchbox.client.sources.RelationalDBLocation.execute")
+@patch("matchbox.client.locations.RelationalDBLocation.execute")
 def test_source_fetch_batching(
     mock_execute: Mock,
     batch_size: int,

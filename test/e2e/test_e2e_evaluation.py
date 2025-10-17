@@ -6,8 +6,8 @@ from sqlalchemy import Engine, text
 from matchbox.client import _handler
 from matchbox.client.dags import DAG
 from matchbox.client.eval import EvalData, get_samples
+from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.models.dedupers import NaiveDeduper
-from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.arrow import SCHEMA_CLUSTER_EXPANSION, SCHEMA_JUDGEMENTS
 from matchbox.common.eval import Judgement
 from matchbox.common.factories.sources import (
