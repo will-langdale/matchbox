@@ -26,27 +26,25 @@ def test_relational_db_location_instantiation(sqlite_in_memory_warehouse: Engine
 
 
 @pytest.mark.parametrize(
-    ["sql", "is_valid"],
+    ["sql", "dialects"],
     [
-        pytest.param("SELECT * FROM test_table", True, id="valid-select"),
+        pytest.param("SELECT * FROM test_table", "all", id="valid-select"),
         pytest.param(
-            "SELECT id, name FROM test_table WHERE id > 1",
-            True,
-            id="valid-where",
+            "SELECT id, name FROM test_table WHERE id > 1", "all", id="valid-where"
         ),
-        pytest.param("SLECT * FROM test_table", False, id="invalid-syntax"),
-        pytest.param("", False, id="empty-string"),
-        pytest.param("ALTER TABLE test_table", False, id="alter-sql"),
+        pytest.param("SLECT * FROM test_table", "none", id="invalid-syntax"),
+        pytest.param("", "none", id="empty-string"),
+        pytest.param("ALTER TABLE test_table", "none", id="alter-sql"),
         pytest.param(
             "INSERT INTO users (name, age) VALUES ('John', '25')",
-            False,
+            "none",
             id="insert-sql",
         ),
-        pytest.param("DROP TABLE test_table", False, id="drop-sql"),
-        pytest.param("SELECT * FROM users /* with a comment */", True, id="comment"),
+        pytest.param("DROP TABLE test_table", "none", id="drop-sql"),
+        pytest.param("SELECT * FROM users /* with a comment */", "all", id="comment"),
         pytest.param(
             "WITH user_cte AS (SELECT * FROM users) SELECT * FROM user_cte",
-            True,
+            "all",
             id="valid-with",
         ),
         pytest.param(
@@ -54,13 +52,13 @@ def test_relational_db_location_instantiation(sqlite_in_memory_warehouse: Engine
                 "WITH user_cte AS (SELECT * FROM users) "
                 "INSERT INTO temp_users SELECT * FROM user_cte"
             ),
-            False,
+            "none",
             id="invalid-with",
         ),
         pytest.param(
-            "SELECT * FROM users; DROP TABLE users;", False, id="multiple-statements"
+            "SELECT * FROM users; DROP TABLE users;", "none", id="multiple-statements"
         ),
-        pytest.param("SELECT * INTO new_table FROM users", False, id="select-into"),
+        pytest.param("SELECT * INTO new_table FROM users", "none", id="select-into"),
         pytest.param(
             """
             WITH updated_rows AS (
@@ -71,7 +69,7 @@ def test_relational_db_location_instantiation(sqlite_in_memory_warehouse: Engine
             )
             SELECT * FROM updated_rows;
             """,
-            False,
+            "none",
             id="non-query-cte",
         ),
         pytest.param(
@@ -80,28 +78,43 @@ def test_relational_db_location_instantiation(sqlite_in_memory_warehouse: Engine
             UNION
             SELECT foo, bar FROM qux;
             """,
-            True,
+            "all",
             id="valid-union",
         ),
-        # This test only works with postgres
         pytest.param(
             """
             SELECT 'ciao' ~ 'hello'
             """,
-            True,
-            id="valid-tilde",
+            "postgres",
+            id="postgres-only",
         ),
+        pytest.param("""select `name` from user""", "sqlite", id="sqlite-only"),
     ],
 )
 def test_relational_db_extract_transform(
-    sql: str, is_valid: bool, postgres_warehouse: Engine
+    sql: str, dialects: str, postgres_warehouse: Engine, sqlite_warehouse: Engine
 ):
     """Test SQL validation in validate_extract_transform."""
-    location = RelationalDBLocation(name="dbname", client=postgres_warehouse)
 
-    if is_valid:
+    if dialects == "none":
+        invalid_clients = [postgres_warehouse, sqlite_warehouse]
+        valid_clients = []
+    if dialects == "all":
+        invalid_clients = []
+        valid_clients = [postgres_warehouse, sqlite_warehouse]
+    if dialects == "postgres":
+        invalid_clients = [sqlite_warehouse]
+        valid_clients = [postgres_warehouse]
+    if dialects == "sqlite":
+        invalid_clients = [postgres_warehouse]
+        valid_clients = [sqlite_warehouse]
+
+    for client in valid_clients:
+        location = RelationalDBLocation(name="dbname", client=client)
         assert location.validate_extract_transform(sql)
-    else:
+
+    for client in invalid_clients:
+        location = RelationalDBLocation(name="dbname", client=client)
         with pytest.raises((MatchboxSourceExtractTransformError, ParseError)):
             location.validate_extract_transform(sql)
 

@@ -154,6 +154,8 @@ class RelationalDBLocation(Location):
         match self.client.dialect.name:
             case "postgresql":
                 dialect = "postgres"
+            case "sqlite":
+                dialect = "sqlite"
             case _:
                 logger.warning("Could not validate specific dialect")
                 dialect = None
