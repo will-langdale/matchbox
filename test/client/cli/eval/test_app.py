@@ -160,7 +160,6 @@ class TestScenarioIntegration:
                 assert app.is_running
                 assert app.user_name == "test_user"
                 assert app.user_id is not None
-                assert pilot.app.query("Header")
                 assert pilot.app.query("Footer")
 
     @pytest.mark.asyncio

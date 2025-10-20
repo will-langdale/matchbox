@@ -9,7 +9,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
 from textual.timer import Timer
-from textual.widgets import Footer, Header, Label
+from textual.widgets import Footer, Label
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
@@ -124,7 +124,6 @@ class EntityResolutionApp(App):
     # Lifecycle methods
     def compose(self) -> ComposeResult:
         """Compose the main application UI."""
-        yield Header()
         yield Vertical(
             Horizontal(
                 Label(id="status-left"),

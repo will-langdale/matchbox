@@ -4,12 +4,13 @@ Screen {
     align: center top;
 }
 
+/* Main container - expanded to fill space */
 #main-container {
     width: 100%;
-    min-width: 80;
-    height: 1fr;
+    height: 100%;
 }
 
+/* Modal dialogs */
 #help-dialog {
     width: 80;
     height: 30;
@@ -57,12 +58,12 @@ Screen {
     width: 20;
 }
 
+/* Status bar */
 #status-bar {
     height: 3;
-    background: $panel;
+    background: #1B2E46;
     padding: 1;
     width: 100%;
-    margin-bottom: 1;
 }
 
 #status-left {
@@ -75,12 +76,44 @@ Screen {
     text-align: right;
 }
 
+/* Table */
 #record-table {
     height: 1fr;
     width: 100%;
-    padding: 0 2;
+    background: $surface;
 }
 
+/* Rich table styling through the widget */
+ComparisonDisplayTable {
+    height: 1fr;
+    width: 100%;
+}
+
+/* Footer */
+Footer {
+    background: #1B2E46;
+    color: $text;
+}
+
+Footer > .footer--highlight {
+    background: #1B2E46;
+}
+
+Footer > .footer--highlight-key {
+    background: #E4A242;
+    color: #1B2E46;
+}
+
+Footer > .footer--key {
+    background: #E4A242;
+    color: #1B2E46;
+}
+
+Footer > .footer--description {
+    color: $text;
+}
+
+/* Other views */
 #pr-curve-display {
     height: auto;
     width: 100%;
@@ -89,10 +122,9 @@ Screen {
 
 .command-area {
     height: 3;
-    background: $panel;
+    background: #1B2E46;
     padding: 1;
 }
-
 
 /* Dynamic group styles will be generated at runtime */
 /* No need for hardcoded group-a through group-g classes */

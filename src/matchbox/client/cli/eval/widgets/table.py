@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from rich import box
 from rich.table import Table
 from textual.widget import Widget
 
@@ -42,8 +43,15 @@ class ComparisonDisplayTable(Widget):
 
     def _add_table_columns(self, table: Table, current: EvaluationItem) -> None:
         """Add styled columns to the table for each display column."""
-        table.add_column("Field", style="bright_white", min_width=20, max_width=50)
+        # First column for field names with distinct styling
+        table.add_column(
+            "",  # No header
+            style="bright_white",
+            min_width=20,
+            max_width=50,
+        )
 
+        # Data columns
         for display_col_index, _ in enumerate(current.display_columns):
             col_num = display_col_index + 1
             duplicate_count = len(current.duplicate_groups[display_col_index])
@@ -57,23 +65,35 @@ class ComparisonDisplayTable(Widget):
             if display_col_index in current.assignments:
                 group = current.assignments[display_col_index]
                 symbol, colour = get_group_style(group)
-                header = f"[{colour}]{symbol} {header_text}[/]"
-                table.add_column(header, style=colour, min_width=15, max_width=50)
+                header = f"[{colour} bold]{symbol} {header_text}[/]"
+                table.add_column(
+                    header,
+                    style=colour,
+                    min_width=15,
+                    max_width=50,
+                )
             else:
-                table.add_column(header_text, style="dim", min_width=15, max_width=50)
+                table.add_column(
+                    f"[dim]{header_text}[/]",
+                    style="dim",
+                    min_width=15,
+                    max_width=50,
+                )
 
     def _render_compact_view(self, current: EvaluationItem) -> Table:
-        """Render compact view."""
+        """Render compact view with improved styling."""
         if not current.display_data:
             return self._create_loading_table()
 
         table = Table(
             show_header=True,
-            header_style="bold",
+            header_style="bold bright_white",
             show_lines=False,
-            row_styles=[],
-            box=None,
+            row_styles=["", "on #0a1628"],
+            box=box.SIMPLE_HEAD,
             padding=(0, 1),
+            expand=True,
+            border_style="#E4A242",
         )
 
         self._add_table_columns(table, current)
