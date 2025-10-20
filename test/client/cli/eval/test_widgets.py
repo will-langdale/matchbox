@@ -1,4 +1,4 @@
-"""Minimal widget tests - test that widgets render, not implementation details."""
+"""Minimal widget tests - verify rendering only."""
 
 import polars as pl
 import pytest

@@ -67,15 +67,6 @@ class EvaluationQueue:
 
         return len(unique_items)
 
-    def remove_by_cluster_ids(self, cluster_ids: set[int]) -> None:
-        """Remove items with cluster IDs in the provided set."""
-        if not cluster_ids:
-            return
-
-        self.items = deque(
-            item for item in self.items if item.cluster_id not in cluster_ids
-        )
-
 
 class EntityResolutionApp(App):
     """Main Textual application for entity resolution evaluation."""
@@ -93,29 +84,25 @@ class EntityResolutionApp(App):
         ("ctrl+q,ctrl+c", "quit", "Quit"),
     ]
 
-    # Queue (inline class)
-    queue: EvaluationQueue
-
+    # Reactive variables that trigger UI updates
     current_group: reactive[str] = reactive("")
     assignments: reactive[dict[int, str]] = reactive({}, init=False)
-
-    status_message: reactive[str] = reactive("○ Ready")
-    status_colour: reactive[str] = reactive("dim")
+    status: reactive[tuple[str, str]] = reactive(("○ Ready", "dim"))
 
     sample_limit: int = 5
     resolution: ModelResolutionPath = ""
     user_id: int | None = None
-    user_name: str = ""
+    user_name: str
     dag: DAG | None = None
-    has_no_samples: bool = False
 
-    _status_timer: Timer | None = None
+    queue: EvaluationQueue
+    timer: Timer | None = None
 
     def __init__(
         self,
         resolution: ModelResolutionPath,
+        user: str,
         num_samples: int = 5,
-        user: str | None = None,
         dag: DAG | None = None,
     ) -> None:
         """Initialise the entity resolution app.
@@ -134,51 +121,7 @@ class EntityResolutionApp(App):
         self.user_name = user or ""
         self.dag = dag
 
-    async def on_mount(self) -> None:
-        """Initialise the application."""
-        await self.authenticate()
-
-        if self.dag is None:
-            raise RuntimeError(
-                "DAG not loaded. EntityResolutionApp requires a pre-loaded DAG."
-            )
-
-        await self.load_samples()
-
-        if self.queue.total_count == 0:
-            self.has_no_samples = True
-            self.update_status("◯ No data", "yellow")
-            logger.warning(f"No samples available for resolution '{self.resolution}'.")
-            await self.action_show_no_samples()
-            return
-
-        self.refresh_display()
-
-    async def authenticate(self) -> None:
-        """Authenticate with the server."""
-        user_name = self.user_name or settings.user
-        if not user_name:
-            raise MatchboxClientSettingsException("User name is unset.")
-
-        self.user_name = user_name
-        self.user_id = _handler.login(user_name=user_name)
-
-    async def load_samples(self) -> None:
-        """Load evaluation samples from the server."""
-        await self._fetch_more_samples()
-
-    def refresh_display(self) -> None:
-        """Refresh display with current queue item."""
-        current = self.queue.current
-        if current:
-            self.assignments = {}
-            self.current_group = ""
-
-            table = self.query_one(ComparisonDisplayTable)
-            table.load_comparison(current)
-
-            self._refresh_status()
-
+    # Lifecycle methods
     def compose(self) -> ComposeResult:
         """Compose the main application UI."""
         yield Header()
@@ -194,6 +137,23 @@ class EntityResolutionApp(App):
         )
         yield Footer()
 
+    async def on_mount(self) -> None:
+        """Initialise the application."""
+        await self.authenticate()
+
+        if self.dag is None:
+            raise RuntimeError(
+                "DAG not loaded. EntityResolutionApp requires a pre-loaded DAG."
+            )
+
+        await self.load_samples()
+
+        if self.queue.total_count == 0:
+            await self._handle_no_samples()
+            return
+
+        self._load_current_item()
+
     async def on_key(self, event: events.Key) -> None:
         """Handle keyboard shortcuts for group assignment.
 
@@ -203,7 +163,6 @@ class EntityResolutionApp(App):
 
         if key.isalpha() and len(key) == 1:
             self.current_group = key.lower()
-            self._refresh_status()
             event.stop()
             return
 
@@ -220,10 +179,37 @@ class EntityResolutionApp(App):
                 table = self.query_one(ComparisonDisplayTable)
                 table.refresh()
 
-                self._refresh_status()
-
             event.stop()
             return
+
+    # Reactive watchers
+    def watch_status(self, new_value: tuple[str, str]) -> None:
+        """React to status changes."""
+        self._update_status_labels()
+
+    def watch_assignments(self, new_value: dict[int, str]) -> None:
+        """React to assignment changes."""
+        self._update_status_labels()
+
+    def watch_current_group(self, new_value: str) -> None:
+        """React to current group changes."""
+        self._update_status_labels()
+
+    # Private methods
+    def _load_current_item(self) -> None:
+        """Load current queue item into the display."""
+        current = self.queue.current
+        if current:
+            self.assignments = {}
+            self.current_group = ""
+
+            table = self.query_one(ComparisonDisplayTable)
+            table.load_comparison(current)
+
+    def _update_status_labels(self) -> None:
+        """Update both status bar labels."""
+        self.query_one("#status-left", Label).update(self._build_status_left())
+        self.query_one("#status-right", Label).update(self._build_status_right())
 
     def _compute_group_counts(self) -> dict[str, int]:
         """Compute group counts for current entity."""
@@ -275,20 +261,89 @@ class EntityResolutionApp(App):
 
     def _build_status_right(self) -> str:
         """Build right status text with status indicator."""
-        if self.status_message:
-            return f"[{self.status_colour}]{self.status_message}[/]"
+        message, colour = self.status
+        if message:
+            return f"[{colour}]{message}[/]"
         return "[dim]○ Ready[/]"
 
-    def _refresh_status(self) -> None:
-        """Update status bar labels with current state."""
-        self.query_one("#status-left", Label).update(self._build_status_left())
-        self.query_one("#status-right", Label).update(self._build_status_right())
+    async def _handle_no_samples(self) -> None:
+        """Handle empty queue state."""
+        self._update_status("◯ No data", "yellow")
+        logger.warning(f"No samples available for resolution '{self.resolution}'.")
+        await self.action_show_no_samples()
 
+    def _update_status(
+        self,
+        message: str,
+        colour: str = "dim",
+        clear_after: float | None = None,
+    ) -> None:
+        """Update status message with optional auto-clear.
+
+        Args:
+            message: Status message to display
+            colour: Colour for the message
+            clear_after: Seconds after which to auto-clear
+        """
+        if self.timer:
+            self.timer.stop()
+
+        self.status = (message, colour)
+
+        if clear_after:
+            self.timer = self.set_timer(
+                clear_after, lambda: self._update_status("○ Ready", "dim")
+            )
+
+    # Public methods
+    async def authenticate(self) -> None:
+        """Authenticate with the server."""
+        user_name = self.user_name or settings.user
+        if not user_name:
+            raise MatchboxClientSettingsException("User name is unset.")
+
+        self.user_name = user_name
+        self.user_id = _handler.login(user_name=user_name)
+
+    async def load_samples(self) -> None:
+        """Load evaluation samples from the server."""
+        needed = max(0, self.sample_limit - self.queue.total_count)
+
+        if needed <= 0:
+            return
+
+        self._update_status("⚡ Fetching", "yellow")
+        logger.info(
+            "Fetching %s samples to reach limit of %s",
+            needed,
+            self.sample_limit,
+        )
+
+        new_samples_dict = None
+        try:
+            new_samples_dict = get_samples(
+                n=needed,
+                resolution=self.resolution,
+                user_id=self.user_id,
+                dag=self.dag,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Failed to fetch samples: {type(e).__name__}: {e}")
+
+        if new_samples_dict:
+            self.queue.add_items(list(new_samples_dict.values()))
+
+        if self.queue.total_count == 0:
+            await self._handle_no_samples()
+        else:
+            self._update_status("✓ Ready", "green")
+
+    # Action methods (public interface)
     async def action_skip(self) -> None:
         """Skip current entity (moves to back of queue)."""
         if self.queue.total_count > 1:
             self.queue.skip_current()
-            self.refresh_display()
+            self._load_current_item()
         else:
             await self.action_submit()
             if self.queue.total_count == 0:
@@ -304,7 +359,7 @@ class EntityResolutionApp(App):
         # Check if all columns are assigned
         is_painted = len(current.assignments) == len(current.display_columns)
         if not is_painted:
-            self.update_status("⚠ Incomplete", "yellow", clear_after=3.0)
+            self._update_status("⚠ Incomplete", "yellow", clear_after=3.0)
             return
 
         try:
@@ -313,14 +368,14 @@ class EntityResolutionApp(App):
             judgement = create_judgement(current, self.user_id)
             _handler.send_eval_judgement(judgement)
         except Exception as exc:
-            self.update_status("⚠ Send failed", "red", clear_after=4.0)
+            self._update_status("⚠ Send failed", "red", clear_after=4.0)
             logger.exception(f"Failed to submit: {exc}")
             return
 
         self.queue.remove_current()
-        await self._fetch_more_samples()
-        self.refresh_display()
-        self.update_status("✓ Sent", "green", clear_after=2.0)
+        await self.load_samples()
+        self._load_current_item()
+        self._update_status("✓ Sent", "green", clear_after=2.0)
 
     async def action_clear(self) -> None:
         """Clear current entity's group assignments."""
@@ -333,8 +388,6 @@ class EntityResolutionApp(App):
             table = self.query_one(ComparisonDisplayTable)
             table.refresh()
 
-            self._refresh_status()
-
     async def action_show_help(self) -> None:
         """Show the help modal."""
         self.push_screen(HelpModal())
@@ -346,85 +399,3 @@ class EntityResolutionApp(App):
     async def action_quit(self) -> None:
         """Quit the application."""
         self.exit()
-
-    async def _fetch_more_samples(self) -> None:
-        """Fetch new samples to backfill queue."""
-        current_count = self.queue.total_count
-        desired_count = self.sample_limit
-        needed = max(0, desired_count - current_count)
-
-        if needed <= 0:
-            return
-
-        self.update_status("⚡ Fetching", "yellow")
-        logger.info(
-            "Backfilling queue: need %s samples to reach limit of %s",
-            needed,
-            desired_count,
-        )
-
-        remaining = needed
-        total_added = 0
-
-        while remaining > 0:
-            new_samples_dict = await self._fetch_additional_samples(remaining)
-            if not new_samples_dict:
-                break
-
-            new_items = list(new_samples_dict.values())
-            added = self.queue.add_items(new_items)
-            total_added += added
-
-            if added == 0:
-                # Backend returned only duplicates
-                break
-
-            remaining = max(0, desired_count - self.queue.total_count)
-
-        if total_added == 0 and self.queue.total_count == 0:
-            self.has_no_samples = True
-            self.update_status("◯ No data", "yellow")
-            await self.action_show_no_samples()
-        else:
-            self.update_status("✓ Ready", "green")
-
-    async def _fetch_additional_samples(
-        self, count: int
-    ) -> dict[int, EvaluationItem] | None:
-        """Fetch additional samples using the loaded DAG."""
-        try:
-            return get_samples(
-                n=count,
-                resolution=self.resolution,
-                user_id=self.user_id,
-                dag=self.dag,
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"Failed to fetch samples: {type(e).__name__}: {e}")
-            return None
-
-    def update_status(
-        self,
-        message: str,
-        colour: str = "dim",
-        clear_after: float | None = None,
-    ) -> None:
-        """Update status message with optional auto-clear.
-
-        Args:
-            message: Status message to display
-            colour: Colour for the message
-            clear_after: Seconds after which to auto-clear
-        """
-        if self._status_timer:
-            self._status_timer.stop()
-
-        self.status_message = message
-        self.status_colour = colour
-
-        self.query_one("#status-right", Label).update(self._build_status_right())
-
-        if clear_after:
-            self._status_timer = self.set_timer(
-                clear_after, lambda: self.update_status("○ Ready", "dim")
-            )

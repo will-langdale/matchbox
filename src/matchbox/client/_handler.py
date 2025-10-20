@@ -520,17 +520,7 @@ def compare_models(
     resolutions: list[ModelResolutionPath],
 ) -> ModelComparison:
     """Get a model comparison for a set of model resolutions."""
-    qualified_resolution = [
-        ModelResolutionPath(
-            collection=resolution.collection,
-            run=resolution.run,
-            name=resolution.name,
-        )
-        for resolution in resolutions
-    ]
-    res = CLIENT.post(
-        "/eval/compare", json=[r.model_dump() for r in qualified_resolution]
-    )
+    res = CLIENT.post("/eval/compare", json=[r.model_dump() for r in resolutions])
     scores = {resolution: tuple(pr) for resolution, pr in res.json().items()}
     return scores
 

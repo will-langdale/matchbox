@@ -1,6 +1,5 @@
-"""Module implementing client-side evaluation features."""
+"""Module implementing CLI evaluation app."""
 
 from matchbox.client.cli.eval.app import EntityResolutionApp
-from matchbox.client.eval import EvalData, compare_models, get_samples
 
-__all__ = ["EvalData", "compare_models", "get_samples", "EntityResolutionApp"]
+__all__ = ["EntityResolutionApp"]
