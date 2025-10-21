@@ -8,7 +8,6 @@ from sqlalchemy import create_engine
 
 from matchbox.client.cli.eval.app import EntityResolutionApp
 from matchbox.client.dags import DAG
-from matchbox.client.sources import RelationalDBLocation
 
 
 def eval(
@@ -66,14 +65,8 @@ def eval(
     # Create engine from connection string (with password)
     warehouse_engine = create_engine(warehouse)
 
-    # Create RelationalDBLocation for this warehouse
-    warehouse_location = RelationalDBLocation(
-        name="evaluation_warehouse", client=warehouse_engine
-    )
-
     # Load DAG from server with warehouse location attached to all sources
-    dag = DAG(name=collection)
-    dag = dag.load_pending(location=warehouse_location)
+    dag: DAG = DAG(name=collection).load_pending().set_client(warehouse_engine)
 
     # Get resolution name from --resolution or DAG's final_step
     model = dag.get_model(resolution) or dag.final_step
@@ -81,7 +74,7 @@ def eval(
     try:
         # Create app with loaded DAG (not warehouse string)
         app = EntityResolutionApp(
-            resolution=model.resolution_path,
+            resolution=model.resolution_path.name,
             user=user,
             dag=dag,
         )

@@ -9,7 +9,7 @@ from sqlalchemy.exc import OperationalError
 from matchbox.client import _handler
 from matchbox.client.dags import DAG
 from matchbox.client.results import Results
-from matchbox.common.dtos import ModelResolutionPath, SourceConfig
+from matchbox.common.dtos import ModelResolutionName, ModelResolutionPath, SourceConfig
 from matchbox.common.eval import Judgement, ModelComparison, precision_recall
 from matchbox.common.exceptions import MatchboxSourceTableError
 
@@ -107,15 +107,35 @@ def create_evaluation_item(
 
 def get_samples(
     n: int,
-    resolution: ModelResolutionPath,
-    user_id: int,
     dag: DAG,
+    user_id: int,
+    resolution: ModelResolutionName | None = None,
 ) -> dict[int, EvaluationItem]:
-    """Retrieve samples enriched with source data, as EvaluationItems."""
+    """Retrieve samples enriched with source data as EvaluationItems.
+
+    Args:
+        n: Number of clusters to sample
+        dag: DAG for which to retrieve samples
+        user_id: ID of the user requesting the samples
+        resolution: The optional resolution from which to sample. If not provided,
+            the final step in the DAG is used
+
+    Returns:
+        Dictionary of cluster ID to EvaluationItems describing the cluster
+
+    Raises:
+        MatchboxSourceTableError: If a source cannot be queried from a location using
+            provided or default clients.
+    """
+    if resolution:
+        resolution_path: ModelResolutionPath = dag.get_model(resolution).resolution_path
+    else:
+        resolution_path: ModelResolutionPath = dag.final_step.resolution_path
+
     samples: pl.DataFrame = cast(
         pl.DataFrame,
         pl.from_arrow(
-            _handler.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
+            _handler.sample_for_eval(n=n, resolution=resolution_path, user_id=user_id)
         ),
     )
 

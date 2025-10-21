@@ -14,7 +14,7 @@ from matchbox.client.dags import DAG
 from matchbox.client.models import Model
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
-from matchbox.client.sources import RelationalDBLocation, Source
+from matchbox.client.sources import Source
 from matchbox.common.arrow import SCHEMA_QUERY, table_to_buffer
 from matchbox.common.dtos import (
     BackendResourceType,
@@ -261,9 +261,9 @@ def test_dag_draw(sqlite_warehouse: Engine):
     # Check that tree has correct formatting with tree characters
     tree_chars = ["└──", "├──", "│"]
     has_tree_chars = any(char in tree_str for char in tree_chars)
-    assert (
-        has_tree_chars
-    ), "Tree representation doesn't use expected formatting characters"
+    assert has_tree_chars, (
+        "Tree representation doesn't use expected formatting characters"
+    )
 
     # Test 2: Drawing with timestamps (status indicators)
     # Set d_foo as processing and foo_bar as completed
@@ -292,9 +292,9 @@ def test_dag_draw(sqlite_warehouse: Engine):
     # Test 3: Check that node names are still present with status indicators
     for node in node_names:
         node_present = any(node in line for line in status_lines)
-        assert (
-            node_present
-        ), f"Node {node} not found in the tree representation with status indicators"
+        assert node_present, (
+            f"Node {node} not found in the tree representation with status indicators"
+        )
 
     # Test 4: Drawing with skipped nodes
     skipped_nodes = [foo.name, d_foo.name]
@@ -509,10 +509,7 @@ def test_extract_lookup(
     )
 
     # Case 3: Retrieve from reconstituted DAG
-    # This assigns the wrong location to `bar`, but the warehouse is not queried
-    # Worth noting that currently this makes location filters awkward to use
-    # on reconstituted DAGs, as you need to manually assign locations to them
-    reconstituted_dag = DAG("companies").load_default(location=foo.source.location)
+    reconstituted_dag = DAG("companies").load_default()
     assert reconstituted_dag.extract_lookup() == foo_bar_mapping
 
 
@@ -667,15 +664,11 @@ def test_from_resolution():
 
     for testkit in [crn_testkit, duns_testkit]:
         t1_dag.add_resolution(
-            name=testkit.name,
-            resolution=testkit.source.to_resolution(),
-            location=testkit.source.location,
+            name=testkit.name, resolution=testkit.source.to_resolution()
         )
     for testkit in [deduper_model_testkit, linker_model_testkit]:
         t1_dag.add_resolution(
-            name=testkit.name,
-            resolution=testkit.model.to_resolution(),
-            location=crn_testkit.source.location,
+            name=testkit.name, resolution=testkit.model.to_resolution()
         )
 
     # Verify reconstruction matches original
@@ -692,7 +685,6 @@ def test_from_resolution():
         t2_dag.add_resolution(
             name=linker_model_testkit.name,
             resolution=linker_model_testkit.model.to_resolution(),
-            location=crn_testkit.source.location,
         )
 
 
@@ -808,11 +800,8 @@ def test_dag_uses_existing_collection(
     assert dag.run == expected_run_id
 
 
-def test_dag_load_run(
-    matchbox_api: MockRouter,
-    sqlite_warehouse: Engine,
-):
-    """Can load default or pending run with sources and optionally models."""
+def test_dag_load_default_run(matchbox_api: MockRouter):
+    """Can load default run with sources and optionally models."""
     # Create test data
     test_dag = TestkitDAG().dag
 
@@ -881,8 +870,7 @@ def test_dag_load_run(
 
     # Load default run
     default_dag = DAG(name=test_dag.name)
-    location = RelationalDBLocation(name="db", client=sqlite_warehouse)
-    default_dag = default_dag.load_default(location=location)
+    default_dag = default_dag.load_default()
 
     # Verify reconstruction matches original
     assert default_dag.name == test_dag.name
@@ -892,8 +880,7 @@ def test_dag_load_run(
 
     # Load pending run
     pending_dag = DAG(name=test_dag.name)
-    location = RelationalDBLocation(name="db", client=sqlite_warehouse)
-    pending_dag = pending_dag.load_pending(location=location)
+    pending_dag = pending_dag.load_pending()
 
     # Verify reconstruction matches original
     assert pending_dag.name == test_dag.name
@@ -913,7 +900,26 @@ def test_dag_load_run(
     )
 
     with pytest.raises(MatchboxCollectionNotFoundError):
-        DAG(name=test_dag.name).load_default(location=location)
+        DAG(name=test_dag.name).load_default()
+
+
+def test_dag_set_client(sqlite_warehouse: Engine):
+    """Client can be set for all sources at once."""
+    # Create factory data
+    foo_params = source_factory(name="foo").into_dag()
+    bar_params = source_factory(name="bar").into_dag()
+
+    # Create new DAG
+    dag = DAG(name="dag")
+    dag.source(**foo_params)
+    dag.source(**bar_params)
+
+    # Setting client re-assigns all clients
+    assert dag.get_source("foo").location.client != sqlite_warehouse
+    assert dag.get_source("bar").location.client != sqlite_warehouse
+    dag.set_client(sqlite_warehouse)
+    assert dag.get_source("foo").location.client == sqlite_warehouse
+    assert dag.get_source("bar").location.client == sqlite_warehouse
 
 
 def test_dag_set_default_ok(matchbox_api: MockRouter):

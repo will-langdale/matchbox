@@ -5,8 +5,8 @@ from sqlalchemy import Engine, text
 from matchbox.client import _handler
 from matchbox.client.cli.eval import EntityResolutionApp
 from matchbox.client.dags import DAG
+from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.models.dedupers import NaiveDeduper
-from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.factories.sources import (
     FeatureConfig,
     SourceTestkitParameters,
@@ -78,8 +78,8 @@ class TestE2EModelEvaluation:
         response = matchbox_client.delete("/database", params={"certain": "true"})
         assert response.status_code == 200, "Failed to clear matchbox database"
 
-        # === SHARED CONFIGURATION ===
-        dw_loc = RelationalDBLocation(name="postgres", client=postgres_warehouse)
+        # Create DAG
+        dw_loc = RelationalDBLocation(name="postgres").set_client(postgres_warehouse)
 
         # === DAG 1: Created by User 1 (Strict Deduplication) ===
         dag1 = DAG("companies1").new_run()
@@ -167,17 +167,14 @@ class TestE2EModelEvaluation:
 
         app startup → user painting → submission → model evaluation.
         """
-        # Create warehouse location
-        warehouse_location = RelationalDBLocation(
-            name="test_warehouse", client=self.warehouse_engine
-        )
-
         # Load DAG from server with warehouse location
-        dag = DAG(str(self.dag1.name)).load_pending(location=warehouse_location)
+        dag: DAG = (
+            DAG(str(self.dag1.name)).load_pending().set_client(self.warehouse_engine)
+        )
 
         # Pass loaded DAG to app
         app = EntityResolutionApp(
-            resolution=dag.final_step.resolution_path,
+            resolution=dag.final_step.resolution_path.name,
             num_samples=5,
             user="alice",
             dag=dag,
@@ -218,9 +215,9 @@ class TestE2EModelEvaluation:
                 for item in app.queue.items
                 if len(item.assignments) == len(item.display_columns)
             ]
-            assert (
-                len(painted_items) >= 1
-            ), "Should have painted items ready for submission"
+            assert len(painted_items) >= 1, (
+                "Should have painted items ready for submission"
+            )
 
             # Phase 3: Submit judgements to backend
             initial_judgements, _ = _handler.download_eval_data()
@@ -235,9 +232,9 @@ class TestE2EModelEvaluation:
             final_judgements, _ = _handler.download_eval_data()
             final_count = len(final_judgements)
 
-            assert (
-                final_count > initial_count
-            ), "Should have more judgements after submission"
+            assert final_count > initial_count, (
+                "Should have more judgements after submission"
+            )
 
         # Phase 4: Test evaluation infrastructure with submitted judgements
         final_judgements, expansion = _handler.download_eval_data()
@@ -255,8 +252,8 @@ class TestE2EModelEvaluation:
             str(dag.final_step.resolution_path),
             str(self.dag2.final_step.resolution_path),
         }
-        assert expected_keys.issubset(
-            comparison.keys()
-        ), "Comparison should include both models"
+        assert expected_keys.issubset(comparison.keys()), (
+            "Comparison should include both models"
+        )
         for key in expected_keys:
             assert len(comparison[key]) == 2, "Each model should have precision/recall"

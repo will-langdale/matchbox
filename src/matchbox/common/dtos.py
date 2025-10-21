@@ -668,13 +668,13 @@ class Resolution(BaseModel):
     def validate_resolution_type_matches_config(self):
         """Ensure resolution_type matches the config type."""
         if self.resolution_type == ResolutionType.SOURCE:
-            assert isinstance(
-                self.config, SourceConfig
-            ), "Config must be SourceConfig when resolution_type is 'source'"
+            assert isinstance(self.config, SourceConfig), (
+                "Config must be SourceConfig when resolution_type is 'source'"
+            )
         else:
-            assert isinstance(
-                self.config, ModelConfig
-            ), "Config must be ModelConfig when resolution_type is 'model'"
+            assert isinstance(self.config, ModelConfig), (
+                "Config must be ModelConfig when resolution_type is 'model'"
+            )
         return self
 
     @model_validator(mode="after")

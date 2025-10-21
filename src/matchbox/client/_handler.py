@@ -11,6 +11,7 @@ import httpx
 import polars as pl
 from pyarrow import Table
 from pyarrow.parquet import read_table
+from pydantic import ValidationError
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -120,7 +121,12 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
             raise RuntimeError(f"Unexpected 400 error: {res.content}")
 
     if res.status_code == 404:
-        error = NotFoundError.model_validate(res.json())
+        try:
+            error = NotFoundError.model_validate(res.json())
+        # Validation will fail if endpoint does not exist
+        except ValidationError as e:
+            raise RuntimeError(f"Error with request {res._request}: {res}") from e
+
         match error.entity:
             case BackendResourceType.COLLECTION:
                 raise MatchboxCollectionNotFoundError(error.details)

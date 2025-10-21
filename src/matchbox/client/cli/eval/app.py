@@ -18,7 +18,7 @@ from matchbox.client.cli.eval.widgets.styling import get_display_text
 from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
 from matchbox.client.dags import DAG
 from matchbox.client.eval import EvaluationItem, create_judgement, get_samples
-from matchbox.common.dtos import ModelResolutionPath
+from matchbox.common.dtos import ModelResolutionName, ModelResolutionPath
 from matchbox.common.exceptions import MatchboxClientSettingsException
 
 logger = logging.getLogger(__name__)
@@ -89,18 +89,18 @@ class EntityResolutionApp(App):
     assignments: reactive[dict[int, str]] = reactive({}, init=False)
     status: reactive[tuple[str, str]] = reactive(("○ Ready", "dim"))
 
-    sample_limit: int = 5
-    resolution: ModelResolutionPath = ""
-    user_id: int | None = None
+    sample_limit: int
+    resolution: ModelResolutionPath
+    user_id: int
     user_name: str
-    dag: DAG | None = None
+    dag: DAG
 
     queue: EvaluationQueue
     timer: Timer | None = None
 
     def __init__(
         self,
-        resolution: ModelResolutionPath,
+        resolution: ModelResolutionName,
         user: str,
         num_samples: int = 5,
         dag: DAG | None = None,
@@ -116,10 +116,10 @@ class EntityResolutionApp(App):
         super().__init__()
 
         self.queue = EvaluationQueue()
-        self.resolution = resolution
         self.sample_limit = num_samples
-        self.user_name = user or ""
+        self.user_name = user
         self.dag = dag
+        self.resolution = dag.get_model(resolution).resolution_path
 
     # Lifecycle methods
     def compose(self) -> ComposeResult:
@@ -322,7 +322,7 @@ class EntityResolutionApp(App):
         try:
             new_samples_dict = get_samples(
                 n=needed,
-                resolution=self.resolution,
+                resolution=self.resolution.name,
                 user_id=self.user_id,
                 dag=self.dag,
             )

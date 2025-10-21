@@ -11,7 +11,6 @@ from sqlalchemy import Engine
 from matchbox.client.dags import DAG
 from matchbox.client.eval import get_samples
 from matchbox.client.models.linkers import DeterministicLinker
-from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, table_to_buffer
 from matchbox.common.dtos import Collection, Run
 from matchbox.common.exceptions import MatchboxSourceTableError
@@ -59,12 +58,13 @@ def test_get_samples(
     foo = dag.source(**foo_testkit.into_dag())
     bar = dag.source(**bar_testkit.into_dag())
     baz = dag.source(**baz_testkit.into_dag())
-    foo.query().linker(
+    foo_bar = foo.query().linker(
         bar.query(),
         name="linker1",
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.key=r.key"},
-    ).query(foo, bar).linker(
+    )
+    foo_bar_baz = foo_bar.query(foo, bar).linker(
         baz.query(),
         name="linker2",
         model_class=DeterministicLinker,
@@ -82,6 +82,8 @@ def test_get_samples(
             "foo": foo_testkit.source.to_resolution(),
             "bar": bar_testkit.source.to_resolution(),
             "baz": baz_testkit.source.to_resolution(),
+            "linker1": foo_bar.to_resolution(),
+            "linker2": foo_bar_baz.to_resolution(),
         },
     )
 
@@ -121,15 +123,15 @@ def test_get_samples(
     # Create a fresh DAG and load it with warehouse location
     # (can't reuse the existing dag as it already has sources added)
 
-    loaded_dag = DAG(name=str(dag.name))
-    warehouse_location = RelationalDBLocation(name="db", client=sqlite_warehouse)
-    loaded_dag.load_pending(location=warehouse_location)
+    loaded_dag: DAG = (
+        DAG(name=str(dag.name)).load_pending().set_client(sqlite_warehouse)
+    )
 
     # Check results - test with samples that include all three sources
     # All three sources (foo, bar, baz) are in loaded_dag with the warehouse location
     samples_all = get_samples(
         n=10,
-        resolution=dag.final_step.resolution_path,
+        resolution=dag.final_step.resolution_path.name,
         user_id=user_id,
         dag=loaded_dag,
     )
@@ -159,7 +161,7 @@ def test_get_samples(
 
     samples = get_samples(
         n=10,
-        resolution=dag.final_step.resolution_path,
+        resolution=dag.final_step.resolution_path.name,
         user_id=user_id,
         dag=loaded_dag,
     )
@@ -184,7 +186,7 @@ def test_get_samples(
         }
     )
 
-    # samples now contains EvaluationItems, access .dataframe
+    # EvaluationItems.dataframe contains the data
     assert_frame_equal(
         samples[10].dataframe,
         expected_sample_10,
@@ -212,7 +214,7 @@ def test_get_samples(
 
     no_samples = get_samples(
         n=10,
-        resolution=dag.final_step.resolution_path,
+        resolution=dag.final_step.resolution_path.name,
         user_id=user_id,
         dag=loaded_dag,
     )
@@ -220,9 +222,9 @@ def test_get_samples(
 
     # What happens if source cannot be queried using client?
     # Create new DAG with wrong warehouse (in-memory, no tables)
-    bad_dag = DAG(name=str(dag.name))
-    bad_location = RelationalDBLocation(name="db", client=sqlite_in_memory_warehouse)
-    bad_dag.load_pending(location=bad_location)
+    bad_dag: DAG = (
+        DAG(name=str(dag.name)).load_pending().set_client(sqlite_in_memory_warehouse)
+    )
 
     matchbox_api.get("/eval/samples").mock(
         return_value=Response(200, content=table_to_buffer(samples_no_baz).read())
@@ -231,7 +233,7 @@ def test_get_samples(
     with pytest.raises(MatchboxSourceTableError, match="Could not query source"):
         get_samples(
             n=10,
-            resolution=dag.final_step.resolution_path,
+            resolution=dag.final_step.resolution_path.name,
             user_id=user_id,
             dag=bad_dag,
         )

@@ -8,7 +8,6 @@ from sqlalchemy import Engine
 
 from matchbox.client.cli.eval.app import EntityResolutionApp, EvaluationQueue
 from matchbox.client.dags import DAG
-from matchbox.client.sources import RelationalDBLocation
 from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.factories.scenarios import setup_scenario
 from matchbox.server.base import MatchboxDBAdapter
@@ -137,17 +136,14 @@ class TestScenarioIntegration:
     async def test_app_runs_with_real_scenario(self) -> None:
         """Test that app runs successfully with real scenario data."""
         with self.scenario(self.backend, "dedupe") as dag:
-            model = list(dag.models.values())[0] if dag.models else "test"
+            model_name: str = "naive_test_crn"
 
-            warehouse_location = RelationalDBLocation(
-                name="test_warehouse", client=self.warehouse_engine
-            )
-            loaded_dag = DAG(str(dag.dag.name)).load_pending(
-                location=warehouse_location
+            loaded_dag: DAG = (
+                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
             )
 
             app = EntityResolutionApp(
-                resolution=model.resolution_path,
+                resolution=model_name,
                 num_samples=1,
                 user="test_user",
                 dag=loaded_dag,
@@ -168,15 +164,12 @@ class TestScenarioIntegration:
         with self.scenario(self.backend, "dedupe") as dag:
             model_name: str = "naive_test_crn"
 
-            warehouse_location = RelationalDBLocation(
-                name="test_warehouse", client=self.warehouse_engine
-            )
-            loaded_dag = DAG(str(dag.dag.name)).load_pending(
-                location=warehouse_location
+            loaded_dag: DAG = (
+                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
             )
 
             app = EntityResolutionApp(
-                resolution=dag.models[model_name].model.resolution_path,
+                resolution=model_name,
                 num_samples=5,
                 user="test_user",
                 dag=loaded_dag,
@@ -199,15 +192,12 @@ class TestScenarioIntegration:
         with self.scenario(self.backend, "dedupe") as dag:
             model_name: str = "naive_test_crn"
 
-            warehouse_location = RelationalDBLocation(
-                name="test_warehouse", client=self.warehouse_engine
-            )
-            loaded_dag = DAG(str(dag.dag.name)).load_pending(
-                location=warehouse_location
+            loaded_dag: DAG = (
+                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
             )
 
             app = EntityResolutionApp(
-                resolution=dag.models[model_name].model.resolution_path,
+                resolution=model_name,
                 num_samples=1,
                 user="test_user",
                 dag=loaded_dag,
@@ -215,9 +205,6 @@ class TestScenarioIntegration:
 
             async with app.run_test() as pilot:
                 await pilot.pause()
-
-                if app.queue.total_count == 0:
-                    pytest.skip("No samples available for this test")
 
                 # Press 'a' to select group
                 await pilot.press("a")
@@ -239,15 +226,12 @@ class TestScenarioIntegration:
         with self.scenario(self.backend, "dedupe") as dag:
             model_name: str = "naive_test_crn"
 
-            warehouse_location = RelationalDBLocation(
-                name="test_warehouse", client=self.warehouse_engine
-            )
-            loaded_dag = DAG(str(dag.dag.name)).load_pending(
-                location=warehouse_location
+            loaded_dag: DAG = (
+                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
             )
 
             app = EntityResolutionApp(
-                resolution=dag.models[model_name].model.resolution_path,
+                resolution=model_name,
                 num_samples=1,
                 user="test_user",
                 dag=loaded_dag,
@@ -255,9 +239,6 @@ class TestScenarioIntegration:
 
             async with app.run_test() as pilot:
                 await pilot.pause()
-
-                if app.queue.total_count == 0:
-                    pytest.skip("No samples available for this test")
 
                 # Make some assignments
                 await pilot.press("a")
@@ -283,15 +264,12 @@ class TestScenarioIntegration:
         with self.scenario(self.backend, "dedupe") as dag:
             model_name: str = "naive_test_crn"
 
-            warehouse_location = RelationalDBLocation(
-                name="test_warehouse", client=self.warehouse_engine
-            )
-            loaded_dag = DAG(str(dag.dag.name)).load_pending(
-                location=warehouse_location
+            loaded_dag: DAG = (
+                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
             )
 
             app = EntityResolutionApp(
-                resolution=dag.models[model_name].model.resolution_path,
+                resolution=model_name,
                 num_samples=3,
                 user="test_user",
                 dag=loaded_dag,
@@ -317,15 +295,12 @@ class TestScenarioIntegration:
         with self.scenario(self.backend, "dedupe") as dag:
             model_name: str = "naive_test_crn"
 
-            warehouse_location = RelationalDBLocation(
-                name="test_warehouse", client=self.warehouse_engine
-            )
-            loaded_dag = DAG(str(dag.dag.name)).load_pending(
-                location=warehouse_location
+            loaded_dag: DAG = (
+                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
             )
 
             app = EntityResolutionApp(
-                resolution=dag.models[model_name].model.resolution_path,
+                resolution=model_name,
                 num_samples=1,
                 user="test_user",
                 dag=loaded_dag,
@@ -333,9 +308,6 @@ class TestScenarioIntegration:
 
             async with app.run_test() as pilot:
                 await pilot.pause()
-
-                if app.queue.total_count == 0:
-                    pytest.skip("No samples available for this test")
 
                 initial_count = app.queue.total_count
 
@@ -355,15 +327,12 @@ class TestScenarioIntegration:
         with self.scenario(self.backend, "dedupe") as dag:
             model_name: str = "naive_test_crn"
 
-            warehouse_location = RelationalDBLocation(
-                name="test_warehouse", client=self.warehouse_engine
-            )
-            loaded_dag = DAG(str(dag.dag.name)).load_pending(
-                location=warehouse_location
+            loaded_dag: DAG = (
+                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
             )
 
             app = EntityResolutionApp(
-                resolution=dag.models[model_name].model.resolution_path,
+                resolution=model_name,
                 num_samples=2,
                 user="test_user",
                 dag=loaded_dag,
@@ -371,9 +340,6 @@ class TestScenarioIntegration:
 
             async with app.run_test() as pilot:
                 await pilot.pause()
-
-                if app.queue.total_count == 0:
-                    pytest.skip("No samples available for this test")
 
                 current = app.queue.current
                 assert current is not None
@@ -402,17 +368,14 @@ class TestScenarioIntegration:
     async def test_help_modal_opens_and_closes(self) -> None:
         """Test that help modal can be opened and closed."""
         with self.scenario(self.backend, "dedupe") as dag:
-            model = list(dag.models.values())[0] if dag.models else "test"
+            model_name: str = "naive_test_crn"
 
-            warehouse_location = RelationalDBLocation(
-                name="test_warehouse", client=self.warehouse_engine
-            )
-            loaded_dag = DAG(str(dag.dag.name)).load_pending(
-                location=warehouse_location
+            loaded_dag: DAG = (
+                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
             )
 
             app = EntityResolutionApp(
-                resolution=model.resolution_path,
+                resolution=model_name,
                 num_samples=1,
                 user="test_user",
                 dag=loaded_dag,
@@ -436,15 +399,12 @@ class TestScenarioIntegration:
         with self.scenario(self.backend, "dedupe") as dag:
             model_name: str = "naive_test_crn"
 
-            warehouse_location = RelationalDBLocation(
-                name="test_warehouse", client=self.warehouse_engine
-            )
-            loaded_dag = DAG(str(dag.dag.name)).load_pending(
-                location=warehouse_location
+            loaded_dag: DAG = (
+                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
             )
 
             app = EntityResolutionApp(
-                resolution=dag.models[model_name].model.resolution_path,
+                resolution=model_name,
                 num_samples=1,
                 user="test_user",
                 dag=loaded_dag,
@@ -452,9 +412,6 @@ class TestScenarioIntegration:
 
             async with app.run_test() as pilot:
                 await pilot.pause()
-
-                if app.queue.total_count == 0:
-                    pytest.skip("No samples available for this test")
 
                 # Status should be a tuple
                 assert isinstance(app.status, tuple)
