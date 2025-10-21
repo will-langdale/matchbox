@@ -5,6 +5,7 @@ from sqlalchemy import Engine, text
 from matchbox.client import _handler
 from matchbox.client.cli.eval import EntityResolutionApp
 from matchbox.client.dags import DAG
+from matchbox.client.eval import compare_models
 from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.common.factories.sources import (
@@ -236,13 +237,8 @@ class TestE2EModelEvaluation:
                 "Should have more judgements after submission"
             )
 
-        # Phase 4: Test evaluation infrastructure with submitted judgements
-        final_judgements, expansion = _handler.download_eval_data()
-        assert len(final_judgements) > 0, "Should have judgements to evaluate with"
-        assert len(expansion) > 0, "Should have cluster expansion data"
-
-        # Phase 5: Compare the two deduper models
-        comparison = _handler.compare_models(
+        # Phase 4: Compare the two deduper models
+        comparison = compare_models(
             [
                 dag.final_step.resolution_path,
                 self.dag2.final_step.resolution_path,

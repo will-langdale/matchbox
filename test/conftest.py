@@ -10,7 +10,6 @@ from rich.progress import Progress
 pytest_plugins = [
     "test.fixtures.db",
     "test.fixtures.client",
-    "test.fixtures.eval",
 ]
 
 TEST_ROOT = Path(__file__).resolve().parent

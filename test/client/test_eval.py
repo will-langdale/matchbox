@@ -71,8 +71,6 @@ def test_get_samples(
         model_settings={"comparisons": "l.key=r.key"},
     )
 
-    # Mock API endpoints for load_pending
-
     # Mock the collection and run endpoint that load_pending() calls
     collection_data = Collection(runs=[dag.run])
     run_data = Run(
@@ -87,6 +85,7 @@ def test_get_samples(
         },
     )
 
+    # Mock API endpoints for load_pending
     matchbox_api.get(f"/collections/{dag.name}").mock(
         return_value=Response(200, content=collection_data.model_dump_json())
     )

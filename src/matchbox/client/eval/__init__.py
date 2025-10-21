@@ -1,6 +1,6 @@
 """Public evaluation helpers for Matchbox clients."""
 
-from matchbox.client.eval.samples import (  # noqa: F401
+from matchbox.client.eval.samples import (
     EvalData,
     EvaluationItem,
     ModelComparison,

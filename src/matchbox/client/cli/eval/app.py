@@ -206,6 +206,18 @@ class EntityResolutionApp(App):
         """Load current queue item into the display."""
         current = self.queue.current
         if current:
+            # Check if cluster has too many columns
+            if len(current.display_columns) > 10:
+                logger.warning(
+                    f"Cluster {current.cluster_id} has {len(current.display_columns)} "
+                    "columns. Skipping cluster as only columns 1-10 can be assigned "
+                    "via keyboard shortcuts."
+                )
+                self._update_status("⚠ Cluster skipped", "red", clear_after=3.0)
+                self.queue.remove_current()
+                self._load_current_item()
+                return
+
             self.assignments = {}
             self.current_group = ""
 

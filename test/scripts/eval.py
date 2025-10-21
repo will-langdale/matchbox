@@ -38,7 +38,7 @@ class DevelopmentSettings(BaseSettings):
         extra="ignore",
         env_prefix="MB__DEV__",
         env_nested_delimiter="__",
-        env_file=Path("environments/development.env"),
+        env_file=Path(".env"),
         env_file_encoding="utf-8",
     )
 
@@ -50,9 +50,6 @@ def scenario_setup(scenario_name: str):
     # Create temporary SQLite database
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         tmp_path = Path(tmp.name)
-
-    # Store original client settings
-    original_warehouse = getattr(settings, "default_warehouse", None)
 
     try:
         warehouse_engine = create_engine(f"sqlite:///{tmp_path}")
@@ -124,12 +121,6 @@ def scenario_setup(scenario_name: str):
             }
 
     finally:
-        # Restore original client settings
-        if original_warehouse is not None:
-            settings.default_warehouse = original_warehouse
-        elif hasattr(settings, "default_warehouse"):
-            delattr(settings, "default_warehouse")
-
         # Clean up
         try:
             backend.clear(certain=True)
