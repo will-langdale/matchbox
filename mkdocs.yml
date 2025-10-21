@@ -25,7 +25,7 @@ nav:
   - Client:
     - Overview: api/client/index.md
     - DAGs: api/client/dags.md
-    - Sources: api/client/locations.md
+    - Locations: api/client/locations.md
     - Sources: api/client/sources.md
     - Queries: api/client/queries.md
     - Models: api/client/models.md
