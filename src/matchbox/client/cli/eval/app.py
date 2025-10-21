@@ -94,6 +94,7 @@ class EntityResolutionApp(App):
     user_id: int
     user_name: str
     dag: DAG
+    show_help: bool
 
     queue: EvaluationQueue
     timer: Timer | None = None
@@ -104,6 +105,7 @@ class EntityResolutionApp(App):
         user: str,
         num_samples: int = 5,
         dag: DAG | None = None,
+        show_help: bool = False,
     ) -> None:
         """Initialise the entity resolution app.
 
@@ -112,6 +114,7 @@ class EntityResolutionApp(App):
             num_samples: Number of clusters to sample for evaluation
             user: Username for authentication (overrides settings)
             dag: Pre-loaded DAG with warehouse location attached
+            show_help: Whether to show help on start
         """
         super().__init__()
 
@@ -120,6 +123,7 @@ class EntityResolutionApp(App):
         self.user_name = user
         self.dag = dag
         self.resolution = dag.get_model(resolution).resolution_path
+        self.show_help = show_help
 
     # Lifecycle methods
     def compose(self) -> ComposeResult:
@@ -152,6 +156,9 @@ class EntityResolutionApp(App):
             return
 
         self._load_current_item()
+
+        if self.show_help:
+            self.call_after_refresh(self.action_show_help)
 
     async def on_key(self, event: events.Key) -> None:
         """Handle keyboard shortcuts for group assignment.

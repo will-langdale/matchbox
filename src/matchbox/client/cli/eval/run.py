@@ -77,6 +77,7 @@ def eval(
             resolution=model.resolution_path.name,
             user=user,
             dag=dag,
+            show_help=True,
         )
         app.run()
     except KeyboardInterrupt:
