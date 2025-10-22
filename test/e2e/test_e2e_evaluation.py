@@ -164,80 +164,53 @@ class TestE2EModelEvaluation:
 
     @pytest.mark.asyncio
     async def test_evaluation_workflow(self):
-        """Test complete end-to-end evaluation workflow.
+        """Test end-to-end data pipeline: DAG → samples → judgement → model comparison.
 
-        app startup → user painting → submission → model evaluation.
+        This test focuses on the full data flow through the system with real warehouse
+        data, multiple DAGs, and model comparison. UI interaction details are tested
+        separately in unit/integration tests.
         """
         # Load DAG from server with warehouse location
         dag: DAG = (
             DAG(str(self.dag1.name)).load_pending().set_client(self.warehouse_engine)
         )
 
-        # Pass loaded DAG to app
+        # Create app and verify it can load samples from real data
         app = EntityResolutionApp(
             resolution=dag.final_step.resolution_path.name,
-            num_samples=5,
+            num_samples=2,
             user="alice",
             dag=dag,
         )
 
-        # Test the complete user workflow with Textual UI
         async with app.run_test() as pilot:
             await pilot.pause()
 
-            # Authenticate the app
+            # Verify app authenticated and loaded samples from real warehouse data
             await app.authenticate()
-
-            # Phase 1: App should be authenticated and have samples
-            assert app.user_name == "alice"
             assert app.user_id is not None
 
-            # Let the app fetch samples as a user would experience
             if not app.queue.items:
                 await app.load_samples()
 
-            # Should now have samples to work with
-            assert len(app.queue.items) > 0, "App should have loaded samples"
+            assert len(app.queue.items) > 0, "Should load samples from warehouse"
 
-            # Phase 2: Simulate user painting clusters (as user would do)
-            initial_items = list(app.queue.items)
-            painted_count = 0
+            # Submit one judgement to verify data flow
+            item = app.queue.items[0]
+            for i in range(len(item.display_columns)):
+                item.assignments[i] = "a"  # Assign all to same cluster
 
-            for item in initial_items[:2]:  # Paint first 2 items like a user would
-                # Paint each display column to different groups
-                for i, _ in enumerate(item.display_columns):
-                    group = "a" if i % 2 == 0 else "b"  # Alternate assignments
-                    item.assignments[i] = group
-                painted_count += 1
-
-            # Verify we have painted items
-            painted_items = [
-                item
-                for item in app.queue.items
-                if len(item.assignments) == len(item.display_columns)
-            ]
-            assert len(painted_items) >= 1, (
-                "Should have painted items ready for submission"
-            )
-
-            # Phase 3: Submit judgements to backend
             initial_judgements, _ = _handler.download_eval_data()
             initial_count = len(initial_judgements)
 
-            # Submit painted items one at a time using the app's method
-            for item in painted_items:
-                if len(item.assignments) == len(item.display_columns):
-                    await app.action_submit()
+            await app.action_submit()
 
-            # Verify judgements were submitted
             final_judgements, _ = _handler.download_eval_data()
-            final_count = len(final_judgements)
-
-            assert final_count > initial_count, (
-                "Should have more judgements after submission"
+            assert len(final_judgements) == initial_count + 1, (
+                "Judgement should flow through to backend"
             )
 
-        # Phase 4: Compare the two deduper models
+        # Test model comparison functionality with both DAGs
         comparison = compare_models(
             [
                 dag.final_step.resolution_path,

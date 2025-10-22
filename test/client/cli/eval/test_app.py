@@ -133,134 +133,22 @@ class TestScenarioIntegration:
         self.scenario = partial(setup_scenario, warehouse=sqlite_warehouse)
 
     @pytest.mark.asyncio
-    async def test_app_runs_with_real_scenario(self) -> None:
-        """Test that app runs successfully with real scenario data."""
-        with self.scenario(self.backend, "dedupe") as dag:
-            model_name: str = "naive_test_crn"
+    async def test_complete_evaluation_workflow(self) -> None:
+        """Test complete evaluation workflow: start, load, label, clear, skip, submit.
 
-            loaded_dag: DAG = (
-                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
-            )
+        This comprehensive test covers the main user journey through the evaluation app:
 
-            app = EntityResolutionApp(
-                resolution=model_name,
-                num_samples=1,
-                user="test_user",
-                dag=loaded_dag,
-            )
+        - App initialisation and sample loading
+        - Keyboard-driven assignment workflow (letter → digit)
+        - Clearing assignments
+        - Skipping items in the queue
+        - Submitting incomplete assignments (warning)
+        - Completing and submitting assignments (saves judgement)
+        - Status updates and help modal
 
-            async with app.run_test() as pilot:
-                await pilot.pause()
-
-                # Basic checks
-                assert app.is_running
-                assert app.user_name == "test_user"
-                assert app.user_id is not None
-                assert pilot.app.query("Footer")
-
-    @pytest.mark.asyncio
-    async def test_sample_loading_with_real_data(self) -> None:
-        """Test that samples load from real scenario."""
-        with self.scenario(self.backend, "dedupe") as dag:
-            model_name: str = "naive_test_crn"
-
-            loaded_dag: DAG = (
-                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
-            )
-
-            app = EntityResolutionApp(
-                resolution=model_name,
-                num_samples=5,
-                user="test_user",
-                dag=loaded_dag,
-            )
-
-            async with app.run_test() as pilot:
-                await pilot.pause()
-
-                # Samples should be loaded
-                assert app.queue.total_count >= 0
-
-                if app.queue.total_count > 0:
-                    # Should have a current item
-                    assert app.queue.current is not None
-                    assert app.queue.current.cluster_id is not None
-
-    @pytest.mark.asyncio
-    async def test_keyboard_workflow_letter_then_digit(self) -> None:
-        """Test the typical keyboard workflow."""
-        with self.scenario(self.backend, "dedupe") as dag:
-            model_name: str = "naive_test_crn"
-
-            loaded_dag: DAG = (
-                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
-            )
-
-            app = EntityResolutionApp(
-                resolution=model_name,
-                num_samples=1,
-                user="test_user",
-                dag=loaded_dag,
-            )
-
-            async with app.run_test() as pilot:
-                await pilot.pause()
-
-                # Press 'a' to select group
-                await pilot.press("a")
-                await pilot.pause()
-                assert app.current_group == "a"
-
-                # Press '1' to assign first column
-                await pilot.press("1")
-                await pilot.pause()
-
-                current = app.queue.current
-                assert current is not None
-                assert 0 in current.assignments
-                assert current.assignments[0] == "a"
-
-    @pytest.mark.asyncio
-    async def test_clear_action_resets_assignments(self) -> None:
-        """Test that clear action resets all assignments."""
-        with self.scenario(self.backend, "dedupe") as dag:
-            model_name: str = "naive_test_crn"
-
-            loaded_dag: DAG = (
-                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
-            )
-
-            app = EntityResolutionApp(
-                resolution=model_name,
-                num_samples=1,
-                user="test_user",
-                dag=loaded_dag,
-            )
-
-            async with app.run_test() as pilot:
-                await pilot.pause()
-
-                # Make some assignments
-                await pilot.press("a")
-                await pilot.press("1")
-                await pilot.press("b")
-                await pilot.press("2")
-                await pilot.pause()
-
-                current = app.queue.current
-                assert current is not None
-                assert len(current.assignments) > 0
-
-                # Clear them
-                await pilot.press("escape")
-                await pilot.pause()
-
-                assert len(current.assignments) == 0
-                assert app.current_group == ""
-
-    @pytest.mark.asyncio
-    async def test_skip_workflow(self) -> None:
-        """Test skipping moves item to back of queue."""
+        Additional edge cases (e.g., clusters too large for screen) should be
+        separate tests as they may require different setup or scenarios.
+        """
         with self.scenario(self.backend, "dedupe") as dag:
             model_name: str = "naive_test_crn"
 
@@ -278,150 +166,79 @@ class TestScenarioIntegration:
             async with app.run_test() as pilot:
                 await pilot.pause()
 
-                first_item = app.queue.current
+                # 1. Verify app initialisation and sample loading
+                assert app.is_running
+                assert app.user_name == "test_user"
+                assert app.user_id is not None
+                assert pilot.app.query("Footer")
+                assert app.queue.total_count > 0
+                assert app.queue.current is not None
+                assert app.queue.current.cluster_id is not None
 
-                # Skip current item
+                # 2. Test keyboard workflow: letter then digit
+                await pilot.press("a")
+                await pilot.pause()
+                assert app.current_group == "a"
+
+                await pilot.press("1")
+                await pilot.pause()
+                current = app.queue.current
+                assert current is not None
+                assert 0 in current.assignments
+                assert current.assignments[0] == "a"
+
+                # 3. Test making additional assignments
+                await pilot.press("b")
+                await pilot.press("2")
+                await pilot.pause()
+                assert len(current.assignments) > 1
+
+                # 4. Test status updates reactively
+                assert isinstance(app.status, tuple)
+                assert len(app.status) == 2
+
+                # 5. Test clearing assignments
+                await pilot.press("escape")
+                await pilot.pause()
+                assert len(current.assignments) == 0
+                assert app.current_group == ""
+
+                # 6. Test skip workflow
+                first_item = app.queue.current
                 await pilot.press("right")
                 await pilot.pause()
-
-                # Should have moved to next item
                 assert app.queue.current is not first_item
-                # First item should be at the back
                 assert app.queue.items[-1] is first_item
 
-    @pytest.mark.asyncio
-    async def test_submit_workflow_incomplete_shows_warning(self) -> None:
-        """Test that submitting incomplete assignment shows warning."""
-        with self.scenario(self.backend, "dedupe") as dag:
-            model_name: str = "naive_test_crn"
-
-            loaded_dag: DAG = (
-                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
-            )
-
-            app = EntityResolutionApp(
-                resolution=model_name,
-                num_samples=1,
-                user="test_user",
-                dag=loaded_dag,
-            )
-
-            async with app.run_test() as pilot:
-                await pilot.pause()
-
+                # 7. Test submitting incomplete assignment shows warning
                 initial_count = app.queue.total_count
-
-                # Try to submit without completing assignments
                 await pilot.press("space")
                 await pilot.pause()
-
-                # Should still have same item (not submitted)
                 assert app.queue.total_count == initial_count
-                # Should show incomplete warning in status
                 status_message = app.status[0].lower()
                 assert "incomplete" in status_message
 
-    @pytest.mark.asyncio
-    async def test_submit_workflow_complete_sends_judgement(self) -> None:
-        """Test that submitting complete assignment sends judgement."""
-        with self.scenario(self.backend, "dedupe") as dag:
-            model_name: str = "naive_test_crn"
-
-            loaded_dag: DAG = (
-                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
-            )
-
-            app = EntityResolutionApp(
-                resolution=model_name,
-                num_samples=2,
-                user="test_user",
-                dag=loaded_dag,
-            )
-
-            async with app.run_test() as pilot:
-                await pilot.pause()
-
+                # 8. Test completing and submitting assignment sends judgement
                 current = app.queue.current
                 assert current is not None
-
-                # Complete all assignments
                 num_columns = len(current.display_columns)
                 for i in range(num_columns):
                     await pilot.press("a")
-                    await pilot.press(str((i % 9) + 1))  # Cycle through 1-9
+                    await pilot.press(str((i % 9) + 1))
                     await pilot.pause()
 
                 initial_judgements, _ = self.backend.get_judgements()
-                initial_count = len(initial_judgements)
+                initial_judgement_count = len(initial_judgements)
 
-                # Submit
                 await pilot.press("space")
                 await pilot.pause()
 
-                # Verify judgement was sent
                 final_judgements, _ = self.backend.get_judgements()
-                final_count = len(final_judgements)
+                final_judgement_count = len(final_judgements)
+                assert final_judgement_count == initial_judgement_count + 1
 
-                assert final_count == initial_count + 1
-
-    @pytest.mark.asyncio
-    async def test_help_modal_opens_and_closes(self) -> None:
-        """Test that help modal can be opened and closed."""
-        with self.scenario(self.backend, "dedupe") as dag:
-            model_name: str = "naive_test_crn"
-
-            loaded_dag: DAG = (
-                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
-            )
-
-            app = EntityResolutionApp(
-                resolution=model_name,
-                num_samples=1,
-                user="test_user",
-                dag=loaded_dag,
-            )
-
-            async with app.run_test() as pilot:
-                await pilot.pause()
-
+                # 9. Test help modal
                 initial_stack_size = len(pilot.app.screen_stack)
-
-                # Open help modal
                 await pilot.press("f1")
                 await pilot.pause()
-
-                # Modal should be shown
                 assert len(pilot.app.screen_stack) > initial_stack_size
-
-    @pytest.mark.asyncio
-    async def test_status_updates_reactively(self) -> None:
-        """Test that status updates when assignments change."""
-        with self.scenario(self.backend, "dedupe") as dag:
-            model_name: str = "naive_test_crn"
-
-            loaded_dag: DAG = (
-                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
-            )
-
-            app = EntityResolutionApp(
-                resolution=model_name,
-                num_samples=1,
-                user="test_user",
-                dag=loaded_dag,
-            )
-
-            async with app.run_test() as pilot:
-                await pilot.pause()
-
-                # Status should be a tuple
-                assert isinstance(app.status, tuple)
-                assert len(app.status) == 2
-
-                # Make an assignment
-                await pilot.press("a")
-                await pilot.press("1")
-                await pilot.pause()
-
-                # Status should still be a valid tuple
-                assert isinstance(app.status, tuple)
-                assert len(app.status) == 2
