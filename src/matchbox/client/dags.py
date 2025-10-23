@@ -110,6 +110,8 @@ class DAG:
 
     def source(self, *args, **kwargs) -> Source:
         """Create Source and add it to the DAG."""
+        if not kwargs["location"]:
+            raise ValueError("You need to add a location when creating a new source.")
         source = Source(*args, **kwargs, dag=self)
         self._add_step(source)
 
