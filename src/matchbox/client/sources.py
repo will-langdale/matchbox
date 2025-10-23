@@ -99,7 +99,11 @@ class Source:
                 If False, you must provide SourceField instances for key_field and
                 index_fields.
         """
-        location.validate_extract_transform(extract_transform)
+        # Only validate if client is present
+        # A client MUST be present if initialising source for the first time
+        # (e.g. dag.source)
+        if location.client:
+            location.validate_extract_transform(extract_transform)
 
         self.last_run: datetime | None = None
         self.location = location
