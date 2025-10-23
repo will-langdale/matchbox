@@ -105,9 +105,6 @@ class Source:
                 perform query validation. It should be False when loading sources from
                 the server. Default True.
         """
-        # Only validate if client is present
-        # A client MUST be present if initialising source for the first time
-        # (e.g. dag.source)
         if validate_etl:
             location.validate_extract_transform(extract_transform)
 
