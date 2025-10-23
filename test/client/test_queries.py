@@ -8,7 +8,7 @@ from respx import MockRouter
 from sqlalchemy import Engine
 from sqlglot.errors import ParseError
 
-from matchbox.client.queries import Query, clean
+from matchbox.client.queries import Query, _clean
 from matchbox.common.arrow import (
     SCHEMA_QUERY,
     SCHEMA_QUERY_WITH_LEAVES,
@@ -557,7 +557,7 @@ def test_clean_basic_functionality(
         }
     )
 
-    result = clean(test_data, cleaning_dict)
+    result = _clean(test_data, cleaning_dict)
     assert len(result) == 3
     assert set(result.columns) == set(expected_columns)
 
@@ -575,7 +575,7 @@ def test_clean_none_returns_original():
         }
     )
 
-    result = clean(test_data, None)
+    result = _clean(test_data, None)
     assert set(result.columns) == {"id", "foo_name", "foo_status"}
 
     result_sorted = result.select(sorted(result.columns))
@@ -642,7 +642,7 @@ def test_clean_special_columns_handling(
 
     test_data = pl.DataFrame({**base_data, **extra_columns})
     cleaning_dict = {"processed_value": "value * 2"}
-    result = clean(test_data, cleaning_dict, key_columns=key_columns)
+    result = _clean(test_data, cleaning_dict, key_columns=key_columns)
 
     assert set(result.columns) == set(expected_columns)
     assert result["processed_value"].to_list() == [20, 40, 60]
@@ -664,7 +664,7 @@ def test_clean_multiple_column_references():
         "high_earner": "salary > 55000",
     }
 
-    result = clean(test_data, cleaning_dict)
+    result = _clean(test_data, cleaning_dict)
 
     # Only id and the columns in cleaning_dict are returned
     assert set(result.columns) == {"id", "name", "high_earner"}
@@ -689,7 +689,7 @@ def test_clean_complex_sql_expressions():
         "category_upper": "upper(category)",
     }
 
-    result = clean(test_data, cleaning_dict)
+    result = _clean(test_data, cleaning_dict)
 
     # Only id and the columns in cleaning_dict are returned
     assert set(result.columns) == {"id", "total", "expensive", "category_upper"}
@@ -708,7 +708,7 @@ def test_clean_empty_cleaning_dict():
         }
     )
 
-    result = clean(test_data, {})
+    result = _clean(test_data, {})
 
     # Only id is returned when cleaning_dict is empty
     assert set(result.columns) == {"id"}
@@ -727,7 +727,7 @@ def test_clean_empty_cleaning_dict_with_keys():
         }
     )
 
-    result = clean(test_data, {}, key_columns=["foo_key", "bar_key"])
+    result = _clean(test_data, {}, key_columns=["foo_key", "bar_key"])
 
     # Only id and key columns are returned when cleaning_dict is empty
     assert set(result.columns) == {"id", "foo_key", "bar_key"}
@@ -750,7 +750,7 @@ def test_clean_invalid_sql():
     }
 
     with pytest.raises(ParseError):
-        clean(test_data, cleaning_dict)
+        _clean(test_data, cleaning_dict)
 
 
 def test_clean_multi_source_keys():
@@ -769,7 +769,7 @@ def test_clean_multi_source_keys():
         "combined": "foo_name || ': ' || bar_value",
     }
 
-    result = clean(test_data, cleaning_dict, key_columns=["foo_key", "bar_key"])
+    result = _clean(test_data, cleaning_dict, key_columns=["foo_key", "bar_key"])
 
     # Should include id, both keys, and the cleaned column
     assert set(result.columns) == {"id", "foo_key", "bar_key", "combined"}

@@ -218,7 +218,7 @@ class Query:
             self.raw_data = raw_data
 
         self.data = _convert_df(
-            clean(
+            _clean(
                 data=raw_data,
                 cleaning_dict=self.config.cleaning,
                 key_columns=[source.qualified_key for source in self.sources],
@@ -248,7 +248,7 @@ class Query:
             raise RuntimeError("No raw data is stored in this query.")
 
         self.data = _convert_df(
-            data=clean(
+            data=_clean(
                 data=self.raw_data,
                 cleaning_dict=cleaning,
                 key_columns=[source.qualified_key for source in self.sources],
@@ -295,7 +295,7 @@ class Query:
         )
 
 
-def clean(
+def _clean(
     data: pl.DataFrame,
     cleaning_dict: dict[str, str] | None,
     key_columns: list[str] | None = None,
