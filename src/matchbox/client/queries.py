@@ -222,9 +222,7 @@ class Query:
                 data=raw_data,
                 cleaning_dict=self.config.cleaning,
                 key_columns=[source.qualified_key for source in self.sources],
-            )
-            if self.config.cleaning
-            else raw_data,
+            ),
             return_type=return_type,
         )
         self.last_run = datetime.now()
@@ -254,9 +252,7 @@ class Query:
                 data=self.raw_data,
                 cleaning_dict=cleaning,
                 key_columns=[source.qualified_key for source in self.sources],
-            )
-            if cleaning
-            else self.raw_data,
+            ),
             return_type=return_type,
         )
 
