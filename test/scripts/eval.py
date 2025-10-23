@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Script to run Textual eval app with scenario data via CLI."""
+"""Script to run Textual evaluation app with scenario data via CLI."""
 
 import logging
 import tempfile
@@ -8,39 +8,28 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine
 
 from matchbox.client._settings import settings
 from matchbox.client.cli.eval import run
 from matchbox.common.factories import models as _  # noqa:F401
 from matchbox.common.factories.scenarios import SCENARIO_REGISTRY, setup_scenario
-from matchbox.server.base import MatchboxDatastoreSettings
-from matchbox.server.postgresql import MatchboxPostgres
+from matchbox.server.base import (
+    MatchboxDBAdapter,
+    MatchboxServerSettings,
+    get_backend_settings,
+    settings_to_backend,
+)
 
 # Set up logger for this script
 logger = logging.getLogger(__name__)
 
 
-class DevelopmentSettings(BaseSettings):
-    """Duplicate of the same settings in pytest fixtures.
-
-    Can't import from fixtures, and moving to core Matchbox makes no sense.
-    """
-
-    api_port: int = 8000
-    datastore_console_port: int = 9003
-    datastore_port: int = 9002
-    warehouse_port: int = 7654
-    postgres_backend_port: int = 9876
-
-    model_config = SettingsConfigDict(
-        extra="ignore",
-        env_prefix="MB__DEV__",
-        env_nested_delimiter="__",
-        env_file=Path(".env"),
-        env_file_encoding="utf-8",
-    )
+def _get_backend() -> MatchboxDBAdapter:
+    """Instantiates a backend class based on the contents of .env."""
+    SettingsClass = get_backend_settings(MatchboxServerSettings().backend_type)
+    settings = SettingsClass()
+    return settings_to_backend(settings)
 
 
 @contextmanager
@@ -57,34 +46,7 @@ def scenario_setup(scenario_name: str):
         # Configure client to use our SQLite warehouse
         settings.default_warehouse = str(warehouse_engine.url)
 
-        dev_settings = DevelopmentSettings()
-
-        datastore_settings = MatchboxDatastoreSettings(
-            host="localhost",
-            port=dev_settings.datastore_port,
-            access_key_id="access_key_id",
-            secret_access_key="secret_access_key",
-            default_region="eu-west-2",
-            cache_bucket_name="cache",
-        )
-
-        from matchbox.server.postgresql import MatchboxPostgresSettings
-
-        postgres_settings = MatchboxPostgresSettings(
-            batch_size=250_000,
-            postgres={
-                "host": "localhost",
-                "port": dev_settings.postgres_backend_port,
-                "user": "matchbox_user",
-                "password": "matchbox_password",
-                "database": "matchbox",
-                "db_schema": "mb",
-                "alembic_config": "src/matchbox/server/postgresql/alembic.ini",
-            },
-            datastore=datastore_settings,
-        )
-
-        backend = MatchboxPostgres(settings=postgres_settings)
+        backend = _get_backend()
         backend.clear(certain=True)
 
         logger.info(f"Setting up {scenario_name} scenario...")
@@ -96,7 +58,7 @@ def scenario_setup(scenario_name: str):
             n_entities=10,
             seed=42,
         ) as dag:
-            logger.info("Scenario ready! Starting Textual eval app via CLI...")
+            logger.info("Scenario ready! Starting Textual evaluate app via CLI...")
 
             # Select the appropriate resolution for each scenario
             match scenario_name:
@@ -117,6 +79,7 @@ def scenario_setup(scenario_name: str):
             yield {
                 "collection": resolution.resolution_path.collection,
                 "resolution": resolution.resolution_path.name,
+                "pending": True,
                 "warehouse": str(warehouse_engine.url),
             }
 
@@ -147,7 +110,7 @@ def main(
         ),
     ] = None,
 ):
-    """Run the scenario-based eval app via CLI."""
+    """Run the scenario-based evaluation app via CLI."""
     # Set up basic logging for this script
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
@@ -172,9 +135,10 @@ def main(
         with scenario_setup(scenario) as cli_params:
             # Call CLI evaluation command directly
             try:
-                run.eval(
+                run.evaluate(
                     collection=cli_params["collection"],
                     resolution=cli_params["resolution"],
+                    pending=cli_params["pending"],
                     warehouse=cli_params["warehouse"],
                     user=None,
                     log_file=log_file if log_file and log_file.strip() else None,

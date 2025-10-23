@@ -10,7 +10,7 @@ from matchbox.client.cli.eval.app import EntityResolutionApp
 from matchbox.client.dags import DAG
 
 
-def eval(
+def evaluate(
     collection: Annotated[
         str, typer.Option("--collection", "-c", help="Collection name (required)")
     ],
@@ -22,6 +22,14 @@ def eval(
             help="Resolution name (defaults to collection's final_step)",
         ),
     ] = None,
+    pending: Annotated[
+        bool,
+        typer.Option(
+            "--pending",
+            "-p",
+            help="Whether to evaluate the pending DAG, instead of the default",
+        ),
+    ] = False,
     user: Annotated[
         str | None,
         typer.Option(
@@ -65,11 +73,17 @@ def eval(
     # Create engine from connection string (with password)
     warehouse_engine = create_engine(warehouse)
 
-    # Load DAG from server with warehouse location attached to all sources
-    dag: DAG = DAG(name=collection).load_pending().set_client(warehouse_engine)
+    # Load DAG from server
+    if pending:
+        dag: DAG = DAG(name=collection).load_pending()
+    else:
+        dag: DAG = DAG(name=collection).load_default()
+
+    # Attach warehouse to all objects
+    dag: DAG = dag.set_client(warehouse_engine)
 
     # Get resolution name from --resolution or DAG's final_step
-    model = dag.get_model(resolution) or dag.final_step
+    model = dag.get_model(resolution) if resolution is not None else dag.final_step
 
     try:
         # Create app with loaded DAG (not warehouse string)

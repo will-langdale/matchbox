@@ -86,7 +86,6 @@ class EntityResolutionApp(App):
 
     # Reactive variables that trigger UI updates
     current_group: reactive[str] = reactive("")
-    assignments: reactive[dict[int, str]] = reactive({}, init=False)
     status: reactive[tuple[str, str]] = reactive(("○ Ready", "dim"))
 
     sample_limit: int
@@ -176,14 +175,11 @@ class EntityResolutionApp(App):
             col_num = 10 if key == "0" else int(key)
             current = self.queue.current
             if current and col_num <= len(current.display_columns):
-                new_assignments = self.assignments.copy()
-                new_assignments[col_num - 1] = self.current_group
-                self.assignments = new_assignments
-
                 current.assignments[col_num - 1] = self.current_group
 
                 table = self.query_one(ComparisonDisplayTable)
                 table.refresh()
+                self._update_status_labels()
 
             event.stop()
             return
@@ -191,10 +187,6 @@ class EntityResolutionApp(App):
     # Reactive watchers
     def watch_status(self, new_value: tuple[str, str]) -> None:
         """React to status changes."""
-        self._update_status_labels()
-
-    def watch_assignments(self, new_value: dict[int, str]) -> None:
-        """React to assignment changes."""
         self._update_status_labels()
 
     def watch_current_group(self, new_value: str) -> None:
@@ -218,7 +210,6 @@ class EntityResolutionApp(App):
                 self._load_current_item()
                 return
 
-            self.assignments = {}
             self.current_group = ""
 
             table = self.query_one(ComparisonDisplayTable)
@@ -397,14 +388,13 @@ class EntityResolutionApp(App):
 
     async def action_clear(self) -> None:
         """Clear current entity's group assignments."""
-        current = self.queue.current
-        if current:
+        if current := self.queue.current:
             current.assignments.clear()
-            self.assignments = {}
             self.current_group = ""
 
             table = self.query_one(ComparisonDisplayTable)
             table.refresh()
+            self._update_status_labels()
 
     async def action_show_help(self) -> None:
         """Show the help modal."""

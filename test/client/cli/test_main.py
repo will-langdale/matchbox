@@ -21,6 +21,16 @@ class TestMainCLI:
         # With a single command, Typer shows that command's help directly
         assert "interactive entity resolution" in result.output.lower()
 
+    def test_health_start_help(self) -> None:
+        """Test that eval help works."""
+        result = self.runner.invoke(app, ["health", "--help"])
+        assert result.exit_code == 0
+
+        # Strip ANSI codes for reliable text matching
+        clean_output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+
+        assert "checks the health" in clean_output.lower()
+
     def test_eval_start_help(self) -> None:
         """Test that eval help works."""
         result = self.runner.invoke(app, ["eval", "--help"])

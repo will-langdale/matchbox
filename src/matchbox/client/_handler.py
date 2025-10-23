@@ -41,6 +41,7 @@ from matchbox.common.dtos import (
     Match,
     ModelResolutionPath,
     NotFoundError,
+    OKMessage,
     Resolution,
     ResolutionPath,
     ResolutionType,
@@ -182,7 +183,14 @@ CLIENT = create_client(settings=settings)
 
 
 @http_retry
+def healthcheck() -> OKMessage:
+    """Checks the health of the Matchbox server."""
+    return OKMessage.model_validate(CLIENT.get("/health").json())
+
+
+@http_retry
 def login(user_name: str) -> int:
+    """Log into Matchbox and return the user ID."""
     logger.debug(f"Log in attempt for {user_name}")
     response = CLIENT.post(
         "/login", json=LoginAttempt(user_name=user_name).model_dump()
