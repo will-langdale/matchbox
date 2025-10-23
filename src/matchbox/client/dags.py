@@ -127,7 +127,7 @@ class DAG:
         name: ResolutionName,
         resolution: Resolution,
     ) -> None:
-        """Convert a resolution to a Source or Model and add to DAG."""
+        """Convert a resolution from the server to a Source or Model and add to DAG."""
         if resolution.resolution_type == ResolutionType.SOURCE:
             self.source(
                 location=Location.from_config(resolution.config.location_config),
@@ -137,6 +137,7 @@ class DAG:
                 index_fields=resolution.config.index_fields,
                 description=resolution.description,
                 infer_types=False,
+                validate_etl=False,
             )
         elif resolution.resolution_type == ResolutionType.MODEL:
             self.model(
