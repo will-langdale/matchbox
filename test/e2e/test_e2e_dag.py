@@ -168,24 +168,26 @@ class TestE2EPipelineBuilder:
         # Dedupe steps
         dedupe_a = source_a.query(
             cleaning={
-                "company_name": self._clean_company_name(source_a.f("company_name"))
+                "company_name": self._clean_company_name(source_a.f("company_name")),
+                "registration_id": source_a.f("registration_id"),
             },
         ).deduper(
             name="dedupe_source_a",
             description="Deduplicate source A",
             model_class=NaiveDeduper,
-            model_settings={"unique_fields": [source_a.f("registration_id")]},
+            model_settings={"unique_fields": ["registration_id"]},
         )
 
         dedupe_b = source_b.query(
             cleaning={
                 "company_name": self._clean_company_name(source_b.f("company_name")),
+                "registration_id": source_b.f("registration_id"),
             }
         ).deduper(
             name="dedupe_source_b",
             description="Deduplicate source B",
             model_class=NaiveDeduper,
-            model_settings={"unique_fields": [source_b.f("registration_id")]},
+            model_settings={"unique_fields": ["registration_id"]},
         )
 
         # Link deduplicated sources A and B
