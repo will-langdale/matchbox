@@ -41,6 +41,7 @@ from matchbox.common.dtos import (
     Match,
     ModelResolutionPath,
     NotFoundError,
+    OKMessage,
     Resolution,
     ResolutionPath,
     ResolutionType,
@@ -182,7 +183,14 @@ CLIENT = create_client(settings=settings)
 
 
 @http_retry
+def healthcheck() -> OKMessage:
+    """Checks the health of the Matchbox server."""
+    return OKMessage.model_validate(CLIENT.get("/health").json())
+
+
+@http_retry
 def login(user_name: str) -> int:
+    """Log into Matchbox and return the user ID."""
     logger.debug(f"Log in attempt for {user_name}")
     response = CLIENT.post(
         "/login", json=LoginAttempt(user_name=user_name).model_dump()
@@ -526,17 +534,7 @@ def compare_models(
     resolutions: list[ModelResolutionPath],
 ) -> ModelComparison:
     """Get a model comparison for a set of model resolutions."""
-    qualified_resolution = [
-        ModelResolutionPath(
-            collection=resolution.collection,
-            run=resolution.run,
-            name=resolution,
-        )
-        for resolution in resolutions
-    ]
-    res = CLIENT.post(
-        "/eval/compare", json=[r.model_dump() for r in qualified_resolution]
-    )
+    res = CLIENT.post("/eval/compare", json=[r.model_dump() for r in resolutions])
     scores = {resolution: tuple(pr) for resolution, pr in res.json().items()}
     return scores
 

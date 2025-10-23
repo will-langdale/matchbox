@@ -846,7 +846,7 @@ def test_dag_load_default_run(matchbox_api: MockRouter):
             200,
             json=Collection(
                 name=test_dag.name,
-                runs=[1],
+                runs=[1, 2],
                 default_run=1,
             ).model_dump(),
         )
@@ -860,15 +860,33 @@ def test_dag_load_default_run(matchbox_api: MockRouter):
         )
     )
 
+    # Mock getting pending run
+    matchbox_api.get(f"/collections/{test_dag.name}/runs/2").mock(
+        return_value=Response(
+            200,
+            json=run.model_dump(),
+        )
+    )
+
     # Load default run
-    fresh_dag = DAG(name=test_dag.name)
-    fresh_dag = fresh_dag.load_default()
+    default_dag = DAG(name=test_dag.name)
+    default_dag = default_dag.load_default()
 
     # Verify reconstruction matches original
-    assert fresh_dag.name == test_dag.name
-    assert fresh_dag.run == 1
-    assert set(fresh_dag.nodes.keys()) == set(test_dag.nodes.keys())
-    assert fresh_dag.graph == test_dag.graph
+    assert default_dag.name == test_dag.name
+    assert default_dag.run == 1
+    assert set(default_dag.nodes.keys()) == set(test_dag.nodes.keys())
+    assert default_dag.graph == test_dag.graph
+
+    # Load pending run
+    pending_dag = DAG(name=test_dag.name)
+    pending_dag = pending_dag.load_pending()
+
+    # Verify reconstruction matches original
+    assert pending_dag.name == test_dag.name
+    assert pending_dag.run == 2
+    assert set(pending_dag.nodes.keys()) == set(test_dag.nodes.keys())
+    assert pending_dag.graph == test_dag.graph
 
     # If the collection is not available, errors
     matchbox_api.get(f"/collections/{test_dag.name}/runs/1").mock(

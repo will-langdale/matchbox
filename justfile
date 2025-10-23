@@ -2,8 +2,6 @@
 mod test 'test/justfile'
 # PostgreSQL migration
 mod migrate 'src/matchbox/server/postgresql/justfile'
-# Evaluation app
-mod eval 'src/matchbox/client/eval/justfile'
 
 # Build and run all containers
 build *DOCKER_ARGS:
@@ -31,3 +29,7 @@ scan:
     bash -c "docker run -v "$(pwd):/repo" -i \
         --rm trufflesecurity/trufflehog:latest git \
         file:///repo  --since-commit HEAD --fail"
+
+# Run evaluation app with scenario data
+eval scenario="" log="":
+    uv run python test/scripts/eval.py {{scenario}} --log "{{log}}"

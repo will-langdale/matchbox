@@ -13,12 +13,14 @@ from matchbox.client.models import Model
 from matchbox.client.queries import Query
 from matchbox.client.sources import Source
 from matchbox.common.dtos import (
+    Collection,
     CollectionName,
     ModelResolutionName,
     Resolution,
     ResolutionName,
     ResolutionPath,
     ResolutionType,
+    Run,
     RunID,
     SourceResolutionName,
 )
@@ -309,12 +311,14 @@ class DAG:
 
         return self
 
-    def load_default(self) -> Self:
-        """Attach to default run in this collection, loading all DAG nodes."""
-        collection = _handler.get_collection(self.name)
+    def _load_run(self, run_id: RunID) -> Self:
+        """Attach the specified run ID to the current DAG.
 
-        run = _handler.get_run(collection=self.name, run_id=collection.default_run)
-        self.run = collection.default_run
+        Args:
+            run_id: The ID of the run to attach
+        """
+        run: Run = _handler.get_run(collection=self.name, run_id=run_id)
+        self.run: RunID = run_id
 
         def _len_dependencies(res_item: tuple[ResolutionName, Resolution]) -> int:
             return len(res_item[1].config.dependencies)
@@ -327,6 +331,31 @@ class DAG:
             self.add_resolution(name=name, resolution=resolution)
 
         return self
+
+    def load_default(self) -> Self:
+        """Attach to default run in this collection, loading all DAG nodes."""
+        collection: Collection = _handler.get_collection(self.name)
+
+        if not collection.default_run:
+            raise RuntimeError("No default run set.")
+
+        return self._load_run(collection.default_run)
+
+    def load_pending(self) -> Self:
+        """Attach to the pending run in this collection, loading all DAG nodes.
+
+        Pending is defined as the last non-default run.
+        """
+        collection: Collection = _handler.get_collection(self.name)
+
+        pending_runs: list[RunID] = [
+            run_id for run_id in collection.runs if run_id != collection.default_run
+        ]
+
+        if not pending_runs:
+            raise RuntimeError("No pending runs available.")
+
+        return self._load_run(pending_runs[0])
 
     def run_and_sync(
         self,
