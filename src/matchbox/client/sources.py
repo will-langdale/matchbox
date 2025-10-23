@@ -55,6 +55,7 @@ class Source:
         index_fields: list[str],
         description: str | None = None,
         infer_types: bool = True,
+        validate_etl: bool = True,
     ) -> None: ...
 
     @overload
@@ -68,6 +69,7 @@ class Source:
         index_fields: list[SourceField],
         description: str | None = None,
         infer_types: bool = False,
+        validate_etl: bool = True,
     ) -> None: ...
 
     def __init__(
@@ -80,6 +82,7 @@ class Source:
         index_fields: list[str] | list[SourceField],
         description: str | None = None,
         infer_types: bool = False,
+        validate_etl: bool = True,
     ):
         """Initialise source.
 
@@ -98,11 +101,14 @@ class Source:
             infer_types: Whether to infer data types for the fields from the source.
                 If False, you must provide SourceField instances for key_field and
                 index_fields.
+            validate_etl: Whether to skip query validation. If True, it will
+                perform query validation. It should be False when loading sources from
+                the server. Default True.
         """
         # Only validate if client is present
         # A client MUST be present if initialising source for the first time
         # (e.g. dag.source)
-        if location.client:
+        if validate_etl:
             location.validate_extract_transform(extract_transform)
 
         self.last_run: datetime | None = None

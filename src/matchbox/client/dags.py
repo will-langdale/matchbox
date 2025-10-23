@@ -110,8 +110,6 @@ class DAG:
 
     def source(self, *args, **kwargs) -> Source:
         """Create Source and add it to the DAG."""
-        if not kwargs["location"]:
-            raise ValueError("You need to add a location when creating a new source.")
         source = Source(*args, **kwargs, dag=self)
         self._add_step(source)
 
@@ -129,7 +127,7 @@ class DAG:
         name: ResolutionName,
         resolution: Resolution,
     ) -> None:
-        """Convert a resolution to a Source or Model and add to DAG."""
+        """Convert a resolution from the server to a Source or Model and add to DAG."""
         if resolution.resolution_type == ResolutionType.SOURCE:
             self.source(
                 location=Location.from_config(resolution.config.location_config),
@@ -139,6 +137,7 @@ class DAG:
                 index_fields=resolution.config.index_fields,
                 description=resolution.description,
                 infer_types=False,
+                validate_etl=False,
             )
         elif resolution.resolution_type == ResolutionType.MODEL:
             self.model(
