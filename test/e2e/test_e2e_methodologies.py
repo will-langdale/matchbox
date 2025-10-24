@@ -5,7 +5,6 @@ from typing import Any
 
 import polars as pl
 import pytest
-from httpx import Client
 from sqlalchemy import Engine
 
 # Import configurator functions from methodology tests
@@ -39,14 +38,12 @@ class TestE2EMethodologyIntegration:
     @pytest.fixture(autouse=True)
     def setup(
         self,
-        matchbox_client: Client,
         matchbox_postgres: MatchboxDBAdapter,
         sqlite_warehouse: Engine,
     ) -> None:
         """Set up scenario system for tests."""
         self.backend = matchbox_postgres
         self.warehouse = sqlite_warehouse
-        self.matchbox_client = matchbox_client
 
     def _clean_field(self, column: str) -> str:
         """Generate basic cleaning SQL."""

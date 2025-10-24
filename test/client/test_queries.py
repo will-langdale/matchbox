@@ -105,8 +105,8 @@ def test_query_multiple_runs(sqlite_warehouse: Engine, matchbox_api: MockRouter)
 
     cleaned1_expected = pl.DataFrame(
         [
-            {"id": 1, "col1": " A ", "foo_key": "0"},
-            {"id": 2, "col1": " B ", "foo_key": "1"},
+            {"id": 1, "col1": " A "},
+            {"id": 2, "col1": " B "},
         ]
     )
     cleaned1 = query.run(full_rerun=True, cache_raw=True)
@@ -118,8 +118,8 @@ def test_query_multiple_runs(sqlite_warehouse: Engine, matchbox_api: MockRouter)
     )
     cleaned2_expected = pl.DataFrame(
         [
-            {"id": 1, "col1": "A", "foo_key": "0"},
-            {"id": 2, "col1": "B", "foo_key": "1"},
+            {"id": 1, "col1": "A"},
+            {"id": 2, "col1": "B"},
         ]
     )
     cleaned2 = query.clean(cleaning=new_cleaning)
@@ -300,7 +300,7 @@ def test_queries_clean(matchbox_api: MockRouter, sqlite_warehouse: Engine):
 
     assert len(result) == 2
     assert result["new_val"].to_list() == ["a", "b"]
-    assert set(result.columns) == {"id", "foo_key", "new_val"}
+    assert set(result.columns) == {"id", "new_val"}
 
 
 @pytest.mark.parametrize(
