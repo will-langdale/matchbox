@@ -199,6 +199,34 @@ def test_dag_disconnected(
         dag.run_and_sync()
 
 
+def test_dag_final_steps(sqlite_warehouse: Engine):
+    """Test final_steps property returns all apex nodes."""
+    dag = TestkitDAG().dag
+
+    # Empty DAG has no final steps
+    assert dag.final_steps == []
+
+    # Single apex
+    foo_tkit = source_factory(name="foo", engine=sqlite_warehouse)
+    foo = dag.source(**foo_tkit.into_dag())
+    assert dag.final_steps == [foo]
+
+    # Multiple apexes (disconnected)
+    bar_tkit = source_factory(name="bar", engine=sqlite_warehouse)
+    bar = dag.source(**bar_tkit.into_dag())
+    assert set(dag.final_steps) == {foo, bar}
+
+    # After linking, single apex again
+    foo.query().linker(
+        bar.query(),
+        name="foo_bar",
+        model_class=DeterministicLinker,
+        model_settings={"comparisons": "l.field=r.field"},
+    )
+    assert len(dag.final_steps) == 1
+    assert dag.final_steps[0].name == "foo_bar"
+
+
 def test_dag_draw(sqlite_warehouse: Engine):
     """Test that the draw method produces a correct string representation of the DAG."""
     # Set up a simple DAG
@@ -239,9 +267,12 @@ def test_dag_draw(sqlite_warehouse: Engine):
 
     # Verify the structure
     lines = tree_str.strip().split("\n")
+    head_lines, tree_lines = lines[:3], lines[3:]
+    assert "Collection" in head_lines[0]
+    assert "Run" in head_lines[1]
 
     # The root node should be first
-    assert lines[0] == "foo_bar_baz"
+    assert tree_lines[0] == "foo_bar_baz"
 
     # Check that all nodes are present
     node_names = [
@@ -255,7 +286,7 @@ def test_dag_draw(sqlite_warehouse: Engine):
 
     for node in node_names:
         # Either the node name is at the start of a line or after the tree characters
-        node_present = any(line.endswith(node) for line in lines)
+        node_present = any(line.endswith(node) for line in tree_lines)
         assert node_present, f"Node {node} not found in the tree representation"
 
     # Check that tree has correct formatting with tree characters
@@ -273,7 +304,7 @@ def test_dag_draw(sqlite_warehouse: Engine):
 
     # Draw the DAG with status indicators
     tree_str_with_status = dag.draw(start_time=start_time, doing=doing)
-    status_lines = tree_str_with_status.strip().split("\n")
+    status_lines = tree_str_with_status.strip().split("\n")[3:]
 
     # Verify status indicators are present
     status_indicators = ["✅", "🔄", "⏸️"]
@@ -301,7 +332,7 @@ def test_dag_draw(sqlite_warehouse: Engine):
     tree_str_with_skipped = dag.draw(
         start_time=start_time, doing=doing, skipped=skipped_nodes
     )
-    skipped_lines = tree_str_with_skipped.strip().split("\n")
+    skipped_lines = tree_str_with_skipped.strip().split("\n")[3:]
 
     # Check that skipped nodes have the skipped indicator
     for line in skipped_lines:
@@ -317,6 +348,27 @@ def test_dag_draw(sqlite_warehouse: Engine):
     assert all(
         indicator in tree_str_all_statuses for indicator in ["✅", "🔄", "⏸️", "⏭️"]
     )
+
+    # Test 5: Empty DAG
+    empty_dag = TestkitDAG().dag
+    assert empty_dag.draw() == "Empty DAG"
+
+    # Test 6: __str__ method
+    assert str(dag) == dag.draw()
+
+    # Test 7: Multiple disconnected components
+    disconnected_dag = TestkitDAG().dag
+    qux_tkit = source_factory(name="qux", engine=sqlite_warehouse)
+    quux_tkit = source_factory(name="quux", engine=sqlite_warehouse)
+    _ = disconnected_dag.source(**qux_tkit.into_dag())
+    _ = disconnected_dag.source(**quux_tkit.into_dag())
+
+    tree_str = disconnected_dag.draw()
+    # Both apex nodes should be present
+    assert "qux" in tree_str
+    assert "quux" in tree_str
+    # Should have blank line between components
+    assert "\n\n" in tree_str
 
 
 # Lookups
@@ -860,14 +912,6 @@ def test_dag_load_default_run(matchbox_api: MockRouter):
         )
     )
 
-    # Mock getting pending run
-    matchbox_api.get(f"/collections/{test_dag.name}/runs/2").mock(
-        return_value=Response(
-            200,
-            json=run.model_dump(),
-        )
-    )
-
     # Load default run
     default_dag = DAG(name=test_dag.name)
     default_dag = default_dag.load_default()
@@ -878,7 +922,14 @@ def test_dag_load_default_run(matchbox_api: MockRouter):
     assert set(default_dag.nodes.keys()) == set(test_dag.nodes.keys())
     assert default_dag.graph == test_dag.graph
 
-    # Load pending run
+    # Mock getting pending run
+    matchbox_api.get(f"/collections/{test_dag.name}/runs/2").mock(
+        return_value=Response(
+            200,
+            json=run.model_dump(),
+        )
+    )
+
     pending_dag = DAG(name=test_dag.name)
     pending_dag = pending_dag.load_pending()
 
@@ -901,6 +952,82 @@ def test_dag_load_default_run(matchbox_api: MockRouter):
 
     with pytest.raises(MatchboxCollectionNotFoundError):
         DAG(name=test_dag.name).load_default()
+
+
+def test_dag_load_run_complex_dependencies(matchbox_api: MockRouter):
+    """Test that _load_run handles nodes with complex dependencies.
+
+    In particular, tests for DAGS where nodes have the same dependency count but
+    inter-dependencies between them.
+    """
+    test_dag = TestkitDAG().dag
+
+    linked_testkit = linked_sources_factory(dag=test_dag)
+    crn_testkit = linked_testkit.sources["crn"]
+    duns_testkit = linked_testkit.sources["duns"]
+
+    # model_inner depends on 2 sources (count=2)
+    model_inner_testkit = model_factory(
+        name="model_inner",
+        left_testkit=crn_testkit,
+        right_testkit=duns_testkit,
+        true_entities=linked_testkit.true_entities,
+        dag=test_dag,
+    )
+
+    # model_outer ALSO depends on 2 things: model_inner + a source (count=2)
+    # Same count as model_inner, but MUST be loaded AFTER model_inner
+    model_outer_testkit = model_factory(
+        name="model_outer",
+        left_testkit=model_inner_testkit,  # depends on model_inner!
+        right_testkit=crn_testkit,
+        true_entities=linked_testkit.true_entities,
+        dag=test_dag,
+    )
+
+    # Add to original DAG
+    test_dag.source(**crn_testkit.into_dag())
+    test_dag.source(**duns_testkit.into_dag())
+    test_dag.model(**model_inner_testkit.into_dag())
+    test_dag.model(**model_outer_testkit.into_dag())
+
+    # Create resolutions with model_outer FIRST in dict
+    resolutions: dict[ResolutionName, Resolution] = {
+        model_outer_testkit.name: model_outer_testkit.model.to_resolution(),  # 2 deps
+        crn_testkit.name: crn_testkit.source.to_resolution(),  # 0 deps
+        duns_testkit.name: duns_testkit.source.to_resolution(),  # 0 deps
+        model_inner_testkit.name: model_inner_testkit.model.to_resolution(),  # 2 deps
+    }
+
+    run = Run(run_id=1, resolutions=resolutions)
+
+    # Mock API
+    matchbox_api.get(f"/collections/{test_dag.name}").mock(
+        return_value=Response(
+            200,
+            json=Collection(
+                name=test_dag.name,
+                runs=[1],
+                default_run=1,
+            ).model_dump(),
+        )
+    )
+
+    matchbox_api.get(f"/collections/{test_dag.name}/runs/1").mock(
+        return_value=Response(
+            200,
+            json=run.model_dump(),
+        )
+    )
+
+    # Load the run
+    loaded_dag = DAG(name=test_dag.name)
+    loaded_dag = loaded_dag.load_default()
+
+    # Verify all nodes were loaded correctly
+    assert loaded_dag.run == 1
+    assert set(loaded_dag.nodes.keys()) == set(test_dag.nodes.keys())
+    assert loaded_dag.graph == test_dag.graph
 
 
 def test_dag_set_client(sqlite_warehouse: Engine):
