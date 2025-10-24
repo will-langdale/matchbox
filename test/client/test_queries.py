@@ -105,8 +105,8 @@ def test_query_multiple_runs(sqlite_warehouse: Engine, matchbox_api: MockRouter)
 
     cleaned1_expected = pl.DataFrame(
         [
-            {"id": 1, "col1": " A ", "foo_key": "0"},
-            {"id": 2, "col1": " B ", "foo_key": "1"},
+            {"id": 1, "col1": " A "},
+            {"id": 2, "col1": " B "},
         ]
     )
     cleaned1 = query.run(full_rerun=True, cache_raw=True)
@@ -118,8 +118,8 @@ def test_query_multiple_runs(sqlite_warehouse: Engine, matchbox_api: MockRouter)
     )
     cleaned2_expected = pl.DataFrame(
         [
-            {"id": 1, "col1": "A", "foo_key": "0"},
-            {"id": 2, "col1": "B", "foo_key": "1"},
+            {"id": 1, "col1": "A"},
+            {"id": 2, "col1": "B"},
         ]
     )
     cleaned2 = query.clean(cleaning=new_cleaning)
@@ -300,7 +300,7 @@ def test_queries_clean(matchbox_api: MockRouter, sqlite_warehouse: Engine):
 
     assert len(result) == 2
     assert result["new_val"].to_list() == ["a", "b"]
-    assert set(result.columns) == {"id", "foo_key", "new_val"}
+    assert set(result.columns) == {"id", "new_val"}
 
 
 @pytest.mark.parametrize(
@@ -566,86 +566,38 @@ def test_clean_basic_functionality(
 
 
 def test_clean_none_returns_original():
-    """Test that None cleaning_dict returns original data."""
+    """Test that None cleaning_dict returns original data unchanged."""
     test_data = pl.DataFrame(
         {
             "id": [1, 2, 3],
-            "foo_name": ["A", "B", "C"],
-            "foo_status": ["active", "inactive", "active"],
+            "name": ["John", "Jane", "Bob"],
+            "age": [25, 30, 35],
+            "city": ["London", "Hull", "Stratford-upon-Avon"],
         }
     )
 
-    result = _clean(test_data, None)
-    assert set(result.columns) == {"id", "foo_name", "foo_status"}
+    result = _clean(test_data, cleaning_dict=None)
 
-    result_sorted = result.select(sorted(result.columns))
-    test_data_sorted = test_data.select(sorted(test_data.columns))
-    assert result_sorted.equals(test_data_sorted)
+    assert_frame_equal(result, test_data)
 
 
-@pytest.mark.parametrize(
-    ("extra_columns", "key_columns", "expected_columns"),
-    [
-        pytest.param(
-            {
-                "leaf_id": ["a", "b", "c"],
-                "foo_key": ["x", "y", "z"],
-                "bar_key": ["p", "q", "r"],
-                "status": ["active", "inactive", "pending"],
-            },
-            ["foo_key", "bar_key"],
-            ["id", "leaf_id", "foo_key", "bar_key", "processed_value"],
-            id="both_special_columns_multi_keys",
-        ),
-        pytest.param(
-            {
-                "leaf_id": ["a", "b", "c"],
-                "foo_key": ["x", "y", "z"],
-            },
-            ["foo_key"],
-            ["id", "leaf_id", "foo_key", "processed_value"],
-            id="leaf_id_and_single_key",
-        ),
-        pytest.param(
-            {
-                "foo_key": ["x", "y", "z"],
-                "bar_key": ["p", "q", "r"],
-            },
-            ["foo_key", "bar_key"],
-            ["id", "foo_key", "bar_key", "processed_value"],
-            id="multiple_keys_no_leaf_id",
-        ),
-        pytest.param(
-            {"foo_key": ["x", "y", "z"]},
-            ["foo_key"],
-            ["id", "foo_key", "processed_value"],
-            id="single_key_only",
-        ),
-        pytest.param(
-            {"leaf_id": ["a", "b", "c"]},
-            None,
-            ["id", "leaf_id", "processed_value"],
-            id="only_leaf_id_no_keys",
-        ),
-    ],
-)
-def test_clean_special_columns_handling(
-    extra_columns: dict[str, list],
-    key_columns: list[str] | None,
-    expected_columns: list[str],
-):
-    """Test that leaf_id and key columns are automatically passed through."""
-    base_data = {
-        "id": [1, 2, 3],
-        "value": [10, 20, 30],
-    }
+def test_clean_column_passthrough():
+    """Test that id is always included plus columns referenced in cleaning_dict."""
+    test_data = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "name": ["John", "Jane", "Bob"],
+            "age": [25, 30, 35],
+            "city": ["London", "Hull", "Stratford-upon-Avon"],
+        }
+    )
 
-    test_data = pl.DataFrame({**base_data, **extra_columns})
-    cleaning_dict = {"processed_value": "value * 2"}
-    result = _clean(test_data, cleaning_dict, key_columns=key_columns)
+    cleaning_dict = {"full_name": "name"}
+    result = _clean(test_data, cleaning_dict)
 
-    assert set(result.columns) == set(expected_columns)
-    assert result["processed_value"].to_list() == [20, 40, 60]
+    assert set(result.columns) == {"id", "full_name"}
+    assert result["id"].to_list() == [1, 2, 3]
+    assert result["full_name"].to_list() == ["John", "Jane", "Bob"]
 
 
 def test_clean_multiple_column_references():
@@ -660,13 +612,12 @@ def test_clean_multiple_column_references():
     )
 
     cleaning_dict = {
-        "name": "first || ' ' || last",  # References both 'first' and 'last'
+        "name": "first || ' ' || last",
         "high_earner": "salary > 55000",
     }
 
     result = _clean(test_data, cleaning_dict)
 
-    # Only id and the columns in cleaning_dict are returned
     assert set(result.columns) == {"id", "name", "high_earner"}
     assert result["name"].to_list() == ["John Doe", "Jane Smith", "Bob Johnson"]
     assert result["high_earner"].to_list() == [False, True, False]
@@ -691,7 +642,6 @@ def test_clean_complex_sql_expressions():
 
     result = _clean(test_data, cleaning_dict)
 
-    # Only id and the columns in cleaning_dict are returned
     assert set(result.columns) == {"id", "total", "expensive", "category_upper"}
     assert result["total"].to_list() == [21.0, 20.0, 47.25]
     assert result["expensive"].to_list() == [False, True, True]
@@ -699,7 +649,7 @@ def test_clean_complex_sql_expressions():
 
 
 def test_clean_empty_cleaning_dict():
-    """Test with empty cleaning dict."""
+    """Test with empty cleaning dict returns only id."""
     test_data = pl.DataFrame(
         {
             "id": [1, 2, 3],
@@ -713,27 +663,6 @@ def test_clean_empty_cleaning_dict():
     # Only id is returned when cleaning_dict is empty
     assert set(result.columns) == {"id"}
     assert result["id"].to_list() == [1, 2, 3]
-
-
-def test_clean_empty_cleaning_dict_with_keys():
-    """Test with empty cleaning dict but key columns specified."""
-    test_data = pl.DataFrame(
-        {
-            "id": [1, 2, 3],
-            "foo_key": ["x", "y", "z"],
-            "bar_key": ["p", "q", "r"],
-            "name": ["A", "B", "C"],
-            "value": [10, 20, 30],
-        }
-    )
-
-    result = _clean(test_data, {}, key_columns=["foo_key", "bar_key"])
-
-    # Only id and key columns are returned when cleaning_dict is empty
-    assert set(result.columns) == {"id", "foo_key", "bar_key"}
-    assert result["id"].to_list() == [1, 2, 3]
-    assert result["foo_key"].to_list() == ["x", "y", "z"]
-    assert result["bar_key"].to_list() == ["p", "q", "r"]
 
 
 def test_clean_invalid_sql():
@@ -753,8 +682,29 @@ def test_clean_invalid_sql():
         _clean(test_data, cleaning_dict)
 
 
-def test_clean_multi_source_keys():
-    """Test that multiple key columns from different sources are passed through."""
+def test_clean_leaf_id_passed_through():
+    """Test that leaf_id is automatically passed through if present."""
+    test_data = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "leaf_id": ["a", "b", "c"],
+            "value": [10, 20, 30],
+            "status": ["active", "inactive", "pending"],
+        }
+    )
+
+    cleaning_dict = {"processed_value": "value * 2"}
+
+    result = _clean(test_data, cleaning_dict)
+
+    assert set(result.columns) == {"id", "leaf_id", "processed_value"}
+    assert result["id"].to_list() == [1, 2, 3]
+    assert result["leaf_id"].to_list() == ["a", "b", "c"]
+    assert result["processed_value"].to_list() == [20, 40, 60]
+
+
+def test_clean_multi_source_data():
+    """Test cleaning with data from multiple sources."""
     test_data = pl.DataFrame(
         {
             "id": [1, 1, 2, 2],
@@ -769,10 +719,10 @@ def test_clean_multi_source_keys():
         "combined": "foo_name || ': ' || bar_value",
     }
 
-    result = _clean(test_data, cleaning_dict, key_columns=["foo_key", "bar_key"])
+    result = _clean(test_data, cleaning_dict)
 
-    # Should include id, both keys, and the cleaned column
-    assert set(result.columns) == {"id", "foo_key", "bar_key", "combined"}
+    # id is always included, plus the cleaned column
+    assert set(result.columns) == {"id", "combined"}
     assert result["combined"].to_list() == [
         "Alice: 10",
         "Alice: 20",

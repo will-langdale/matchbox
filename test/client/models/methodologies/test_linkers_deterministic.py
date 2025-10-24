@@ -41,7 +41,7 @@ LinkerConfigurator = Callable[[SourceTestkit, SourceTestkit], dict[str, Any]]
 def configure_deterministic_linker(
     left_testkit: SourceTestkit, right_testkit: SourceTestkit
 ) -> dict[str, Any]:
-    """Configure settings for DeterministicLinker.
+    """Configure settings for DeterministicLinker using only shared fields.
 
     Args:
         left_testkit: Left SourceTestkit from linked_sources_factory
@@ -51,25 +51,25 @@ def configure_deterministic_linker(
         A dictionary with validated settings for DeterministicLinker
     """
     # Extract field names excluding key and id
-    left_fields = [
+    left_fields = {
         c.name
         for c in left_testkit.source_config.index_fields
         if c.name not in ("key", "id")
-    ]
-    right_fields = [
+    }
+    right_fields = {
         c.name
         for c in right_testkit.source_config.index_fields
         if c.name not in ("key", "id")
-    ]
+    }
+    shared_fields: list[str] = sorted(left_fields & right_fields)
+
+    if not shared_fields:
+        raise ValueError("Must have at least one shared field")
 
     # Build comparison strings
-    # Doing this redundantly to check OR logic works
     comparisons: list[str] = []
-
-    for l_field, r_field in zip(left_fields, right_fields, strict=True):
-        comparisons.append(f"l.{l_field} = r.{r_field}")
-
-    comparisons.append(" and ".join(comparisons))
+    for field in shared_fields:
+        comparisons.append(f"l.{field} = r.{field}")
 
     settings_dict = {
         "left_id": "id",
@@ -86,7 +86,7 @@ def configure_deterministic_linker(
 def configure_weighted_deterministic_linker(
     left_testkit: SourceTestkit, right_testkit: SourceTestkit
 ) -> dict[str, Any]:
-    """Configure settings for WeightedDeterministicLinker.
+    """Configure settings for WeightedDeterministicLinker using only shared fields.
 
     Args:
         left_testkit: Left source object from linked_sources_factory
@@ -96,22 +96,26 @@ def configure_weighted_deterministic_linker(
         A dictionary with validated settings for WeightedDeterministicLinker
     """
     # Extract field names excluding key and id
-    left_fields = [
+    left_fields = {
         c.name
         for c in left_testkit.source_config.index_fields
         if c.name not in ("key", "id")
-    ]
-    right_fields = [
+    }
+    right_fields = {
         c.name
         for c in right_testkit.source_config.index_fields
         if c.name not in ("key", "id")
-    ]
+    }
+    shared_fields: list[str] = sorted(left_fields & right_fields)
+
+    if not shared_fields:
+        raise ValueError("Must have at least one shared field")
 
     # Build weighted comparisons with equal weights
     weighted_comparisons = []
-    for l_field, r_field in zip(left_fields, right_fields, strict=True):
+    for field in shared_fields:
         weighted_comparisons.append(
-            {"comparison": f"l.{l_field} = r.{r_field}", "weight": 1}
+            {"comparison": f"l.{field} = r.{field}", "weight": 1}
         )
 
     # Create settings dictionary
@@ -131,7 +135,7 @@ def configure_weighted_deterministic_linker(
 def configure_splink_linker(
     left_testkit: SourceTestkit, right_testkit: SourceTestkit
 ) -> dict[str, Any]:
-    """Configure settings for SplinkLinker.
+    """Configure settings for SplinkLinker using only shared fields.
 
     Args:
         left_testkit: Left source object from linked_sources_factory
@@ -141,28 +145,29 @@ def configure_splink_linker(
         A dictionary with validated settings for SplinkLinker
     """
     # Extract field names excluding key and id
-    left_fields = [
+    left_fields = {
         c.name
         for c in left_testkit.source_config.index_fields
         if c.name not in ("key", "id")
-    ]
-    right_fields = [
+    }
+    right_fields = {
         c.name
         for c in right_testkit.source_config.index_fields
         if c.name not in ("key", "id")
-    ]
+    }
+    shared_fields: list[str] = sorted(left_fields & right_fields)
+
+    if not shared_fields:
+        raise ValueError("Must have at least one shared field")
 
     deterministic_matching_rules: list[str] = []
     blocking_rules_to_generate_predictions: list[BlockingRuleCreator] = []
     comparisons: list[ComparisonCreator] = []
 
-    for l_field, r_field in zip(left_fields, right_fields, strict=True):
-        # Splink requires exact name matches
-        assert l_field == r_field
-
-        deterministic_matching_rules.append(f"l.{l_field} = r.{r_field}")
-        blocking_rules_to_generate_predictions.append(brl.block_on(l_field))
-        comparisons.append(cl.ExactMatch(l_field).configure(m_probabilities=[1, 0]))
+    for field in shared_fields:
+        deterministic_matching_rules.append(f"l.{field} = r.{field}")
+        blocking_rules_to_generate_predictions.append(brl.block_on(field))
+        comparisons.append(cl.ExactMatch(field).configure(m_probabilities=[1, 0]))
 
     linker_training_functions = [
         {
