@@ -221,7 +221,6 @@ class Query:
             _clean(
                 data=raw_data,
                 cleaning_dict=self.config.cleaning,
-                key_columns=[source.qualified_key for source in self.sources],
             ),
             return_type=return_type,
         )
@@ -251,7 +250,6 @@ class Query:
             data=_clean(
                 data=self.raw_data,
                 cleaning_dict=cleaning,
-                key_columns=[source.qualified_key for source in self.sources],
             ),
             return_type=return_type,
         )
