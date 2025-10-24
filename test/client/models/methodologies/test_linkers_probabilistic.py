@@ -46,32 +46,33 @@ def configure_weighted_probabilistic(
     Returns:
         A dictionary with validated settings for WeightedDeterministicLinker
     """
-
     # Extract field names excluding key and id
-    left_fields = [
+    left_fields = {
         c.name
         for c in left_testkit.source_config.index_fields
         if c.name not in ("key", "id")
-    ]
-    right_fields = [
+    }
+    right_fields = {
         c.name
         for c in right_testkit.source_config.index_fields
         if c.name not in ("key", "id")
-    ]
+    }
+    shared_fields: list[str] = sorted(left_fields & right_fields)
+
+    if not shared_fields:
+        raise ValueError("Must have at least one shared field")
 
     # Generate geometric series of weights
-    weights = [1 * (0.5**i) for i in range(len(left_fields))]
+    weights = [1 * (0.5**i) for i in range(len(shared_fields))]
     total_weight = sum(weights)
 
-    # Normalize weights to sum to 1
-    normalized_weights = [w / total_weight for w in weights]
+    # Normalise weights to sum to 1
+    normalised_weights = [w / total_weight for w in weights]
 
     weighted_comparisons = []
-    for l_field, r_field, weight in zip(
-        left_fields, right_fields, normalized_weights, strict=False
-    ):
+    for field, weight in zip(shared_fields, normalised_weights, strict=True):
         weighted_comparisons.append(
-            {"comparison": f"l.{l_field} = r.{r_field}", "weight": weight}
+            {"comparison": f"l.{field} = r.{field}", "weight": weight}
         )
 
     settings_dict = {
@@ -99,29 +100,25 @@ def configure_splink_probabilistic(
     Returns:
         A dictionary with validated settings for SplinkLinker
     """
-
     # Extract field names excluding key and id
-    left_fields = [
+    left_fields = {
         c.name
         for c in left_testkit.source_config.index_fields
         if c.name not in ("key", "id")
-    ]
-    right_fields = [
+    }
+    right_fields = {
         c.name
         for c in right_testkit.source_config.index_fields
         if c.name not in ("key", "id")
-    ]
+    }
+    shared_fields: list[str] = sorted(left_fields & right_fields)
 
     # Create comparison functions based on field type
     comparisons = []
     blocking_rules = []
     deterministic_matching_rules = []
 
-    for l_field, r_field in zip(left_fields, right_fields, strict=True):
-        # Splink requires exact name matches
-        assert l_field == r_field
-
-        field = l_field  # Use common field name after checking they match
+    for field in shared_fields:
         field_type = next(
             (
                 c.type

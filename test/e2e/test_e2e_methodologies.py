@@ -1,209 +1,93 @@
-"""Integration tests for all methodology classes using real DAG execution.
+"""Integration tests for all methodology classes."""
 
-These tests verify that each methodology (deduper/linker) actually works when integrated
-with the full Query/DAG system, not just in isolation with mocked dependencies.
-"""
+from collections.abc import Callable
+from typing import Any
 
 import polars as pl
 import pytest
 from httpx import Client
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine
 
 # Import configurator functions from methodology tests
-from test.client.models.methodologies.test_dedupers_deterministic import (
-    DEDUPERS,
-)
+from test.client.models.methodologies.test_dedupers_deterministic import DEDUPERS
 from test.client.models.methodologies.test_linkers_deterministic import (
     configure_deterministic_linker,
     configure_splink_linker,
     configure_weighted_deterministic_linker,
 )
 
-from matchbox.client.dags import DAG
-from matchbox.client.locations import RelationalDBLocation
-from matchbox.client.models.linkers import (
-    DeterministicLinker,
-    SplinkLinker,
+from matchbox.client.models.dedupers.base import Deduper
+from matchbox.client.models.linkers.base import Linker
+from matchbox.client.models.linkers.deterministic import DeterministicLinker
+from matchbox.client.models.linkers.splinklinker import SplinkLinker
+from matchbox.client.models.linkers.weighteddeterministic import (
     WeightedDeterministicLinker,
 )
-from matchbox.common.factories.sources import (
-    FeatureConfig,
-    SourceTestkitParameters,
-    SuffixRule,
-    linked_sources_factory,
-)
+from matchbox.common.factories.scenarios import setup_scenario
+from matchbox.common.factories.sources import SourceTestkit
+from matchbox.server.base import MatchboxDBAdapter
+
+# Type aliases for configurator functions
+DeduperConfigurator = Callable[[SourceTestkit], dict[str, Any]]
+LinkerConfigurator = Callable[[SourceTestkit, SourceTestkit], dict[str, Any]]
 
 
 @pytest.mark.docker
 class TestE2EMethodologyIntegration:
     """Integration tests for all methodology classes with real pipeline execution."""
 
-    def _clean_company_name(self, column: str) -> str:
-        """Generate cleaning SQL for a company name column.
-
-        Removes company suffixes (Ltd, Limited) and normalises whitespace.
-        """
-        return f"""
-            trim(
-                regexp_replace(
-                    regexp_replace(
-                        {column},
-                        ' (Ltd|Limited)$',
-                        '',
-                        'g'
-                    ),
-                    '\\s+',
-                    ' ',
-                    'g'
-                )
-            )
-        """
-
-    @pytest.fixture(autouse=True, scope="function")
-    def setup_environment(
+    @pytest.fixture(autouse=True)
+    def setup(
         self,
         matchbox_client: Client,
-        postgres_warehouse: Engine,
-    ):
-        """Set up warehouse and database using fixtures.
+        matchbox_postgres: MatchboxDBAdapter,
+        sqlite_warehouse: Engine,
+    ) -> None:
+        """Set up scenario system for tests."""
+        self.backend = matchbox_postgres
+        self.warehouse = sqlite_warehouse
+        self.matchbox_client = matchbox_client
 
-        This fixture is shared across all tests in the class, amortising the
-        expensive setup cost across multiple methodology tests.
-        """
-        n_true_entities = 10
-        self.warehouse_engine = postgres_warehouse
-
-        # Create feature configurations
-        features = {
-            "company_name": FeatureConfig(
-                name="company_name",
-                base_generator="company",
-            ),
-            "registration_id": FeatureConfig(
-                name="registration_id",
-                base_generator="bothify",
-                parameters=(("text", "REG-###-???"),),
-            ),
-        }
-
-        # Create two sources for testing
-        source_parameters = (
-            SourceTestkitParameters(
-                name="source_a",
-                engine=postgres_warehouse,
-                features=(
-                    features["company_name"].add_variations(
-                        SuffixRule(suffix=" Ltd"),
-                        SuffixRule(suffix=" Limited"),
-                    ),
-                    features["registration_id"],
-                ),
-                n_true_entities=n_true_entities,
-                repetition=0,  # No duplicates in source A
-            ),
-            SourceTestkitParameters(
-                name="source_b",
-                engine=postgres_warehouse,
-                features=(
-                    features["company_name"],
-                    features["registration_id"],
-                ),
-                n_true_entities=n_true_entities // 2,  # Half overlap for linking tests
-                repetition=1,  # Duplicates in source B for deduplication tests
-            ),
-        )
-
-        # Create linked sources testkit with ground truth
-        self.linked_testkit = linked_sources_factory(
-            source_parameters=source_parameters,
-            seed=42,
-        )
-
-        # Write tables to warehouse
-        for source_testkit in self.linked_testkit.sources.values():
-            source_testkit.write_to_location()
-
-        # Clear matchbox database before test
-        response = matchbox_client.delete("/database", params={"certain": "true"})
-        assert response.status_code == 200, "Failed to clear matchbox database"
-
-        yield
-
-        # Teardown - clean up warehouse tables
-        with postgres_warehouse.connect() as conn:
-            for source_name in self.linked_testkit.sources:
-                conn.execute(text(f"DROP TABLE IF EXISTS {source_name};"))
-            conn.commit()
-
-        # Clear matchbox database after test
-        response = matchbox_client.delete("/database", params={"certain": "true"})
-        assert response.status_code == 200, "Failed to clear matchbox database"
-
-    # === DEDUPER TESTS ===
+    def _clean_field(self, column: str) -> str:
+        """Generate basic cleaning SQL."""
+        return f"trim({column})"
 
     @pytest.mark.parametrize(("Deduper", "configure_deduper"), DEDUPERS)
-    def test_deduper_integration(self, Deduper, configure_deduper):
-        """Test that dedupers work end-to-end with real Query execution.
+    def test_deduper_integration(
+        self, Deduper: type[Deduper], configure_deduper: DeduperConfigurator
+    ) -> None:
+        """Test that dedupers work end-to-end."""
+        with setup_scenario(self.backend, "index", self.warehouse) as dag_testkit:
+            # Get the DAG from the testkit
+            dag = dag_testkit.dag
 
-        This verifies that the methodology can:
-        - Accept data from real Query objects (not mocks)
-        - Process the actual data schemas produced by the warehouse
-        - Integrate correctly with DAG execution flow
-        - Produce valid results that match ground truth
-        """
-        # Setup DAG and location
-        dw_loc = RelationalDBLocation(name="dbname").set_client(self.warehouse_engine)
-        dag = DAG("deduper_integration_test").new_run()
+            # Get a source that has duplicates (CRN has repetition in the scenario)
+            source_testkit = dag_testkit.sources.get("crn")
+            source = dag.get_source("crn")
 
-        # Get the testkit for source B (which has duplicates)
-        source_b_testkit = self.linked_testkit.sources["source_b"]
+            # Create settings and deduper
+            settings = configure_deduper(source_testkit)
 
-        # Create source using fluent API (like real users would)
-        source_b = dag.source(
-            location=dw_loc,
-            name="source_b",
-            extract_transform="""
-                select
-                    key::text as id,
-                    company_name,
-                    registration_id
-                from
-                    source_b;
-            """,
-            infer_types=True,
-            key_field="id",
-            index_fields=["company_name", "registration_id"],
-        )
+            dedupe_result = source.query(
+                cleaning={
+                    "company_name": self._clean_field(source.f("company_name")),
+                    "crn": source.f("crn"),
+                },
+            ).deduper(
+                name=f"test_{Deduper.__name__}",
+                description=f"Integration test for {Deduper.__name__}",
+                model_class=Deduper,
+                model_settings=settings,
+            )
 
-        # Get settings from configurator
-        settings = configure_deduper(source_b_testkit)
+            # Get results
+            results = dedupe_result.run()
 
-        # Create deduper using fluent API
-        dedupe_result = source_b.query(
-            cleaning={
-                "company_name": self._clean_company_name(source_b.f("company_name")),
-                "registration_id": source_b.f("registration_id"),
-            },
-        ).deduper(
-            name=f"test_{Deduper.__name__}",
-            description=f"Integration test for {Deduper.__name__}",
-            model_class=Deduper,
-            model_settings=settings,
-        )
-
-        # Execute the DAG
-        dag.run_and_sync()
-
-        # Get results - just verify it runs and produces output
-        results = dedupe_result.run()
-
-        # Basic integration checks
-        assert results is not None, f"{Deduper.__name__} returned None"
-        assert results.probabilities is not None
-        assert isinstance(results.probabilities, pl.DataFrame)
-        assert len(results.probabilities) >= 0
-
-    # === LINKER TESTS ===
+            # Basic integration checks
+            assert results is not None, f"{Deduper.__name__} returned None"
+            assert results.probabilities is not None
+            assert isinstance(results.probabilities, pl.DataFrame)
+            assert len(results.probabilities) >= 0
 
     @pytest.mark.parametrize(
         ("Linker", "configure_linker"),
@@ -225,88 +109,46 @@ class TestE2EMethodologyIntegration:
             ),
         ],
     )
-    def test_linker_integration(self, Linker, configure_linker):
-        """Test that linkers work end-to-end with real Query execution.
+    def test_linker_integration(
+        self, Linker: type[Linker], configure_linker: LinkerConfigurator
+    ) -> None:
+        """Test that linkers work end-to-end."""
+        with setup_scenario(self.backend, "index", self.warehouse) as dag_testkit:
+            # Get the DAG from the testkit
+            dag = dag_testkit.dag
 
-        This verifies that the methodology can:
-        - Accept data from real Query objects on both left and right
-        - Handle the actual data schemas and types from the warehouse
-        - Execute successfully through the DAG
-        - Produce results without crashing
-        """
-        # Setup DAG and location
-        dw_loc = RelationalDBLocation(name="dbname").set_client(self.warehouse_engine)
-        dag = DAG("linker_integration_test").new_run()
+            # Get two sources that can be linked
+            crn_testkit = dag_testkit.sources.get("crn")
+            duns_testkit = dag_testkit.sources.get("duns")
+            crn_source = dag.get_source("crn")
+            duns_source = dag.get_source("duns")
 
-        # Get testkits for both sources
-        source_a_testkit = self.linked_testkit.sources["source_a"]
-        source_b_testkit = self.linked_testkit.sources["source_b"]
+            # Create settings and linker
+            settings = configure_linker(crn_testkit, duns_testkit)
 
-        # Create sources using fluent API
-        source_a = dag.source(
-            location=dw_loc,
-            name="source_a",
-            extract_transform="""
-                select
-                    key::text as id,
-                    company_name,
-                    registration_id
-                from
-                    source_a;
-            """,
-            infer_types=True,
-            key_field="id",
-            index_fields=["company_name", "registration_id"],
-        )
-
-        source_b = dag.source(
-            location=dw_loc,
-            name="source_b",
-            extract_transform="""
-                select
-                    key::text as id,
-                    company_name,
-                    registration_id
-                from
-                    source_b;
-            """,
-            infer_types=True,
-            key_field="id",
-            index_fields=["company_name", "registration_id"],
-        )
-
-        # Get settings from configurator
-        settings = configure_linker(source_a_testkit, source_b_testkit)
-
-        # Create linker using fluent API - link sources directly
-        link_result = source_a.query(
-            cleaning={
-                "company_name": self._clean_company_name(source_a.f("company_name")),
-                "registration_id": source_a.f("registration_id"),
-            },
-        ).linker(
-            source_b.query(
+            link_result = crn_source.query(
                 cleaning={
-                    "company_name": self._clean_company_name(
-                        source_b.f("company_name")
-                    ),
-                    "registration_id": source_b.f("registration_id"),
+                    "company_name": self._clean_field(crn_source.f("company_name")),
                 },
-            ),
-            name=f"test_{Linker.__name__}",
-            description=f"Integration test for {Linker.__name__}",
-            model_class=Linker,
-            model_settings=settings,
-        )
+            ).linker(
+                duns_source.query(
+                    cleaning={
+                        "company_name": self._clean_field(
+                            duns_source.f("company_name")
+                        ),
+                    },
+                ),
+                name=f"test_{Linker.__name__}",
+                description=f"Integration test for {Linker.__name__}",
+                model_class=Linker,
+                model_settings=settings,
+            )
 
-        # Execute the DAG
-        dag.run_and_sync()
+            # Get results
+            results = link_result.run()
 
-        # Get results - just verify it runs and produces output
-        results = link_result.run()
-
-        # Basic integration checks
-        assert results is not None, f"{Linker.__name__} returned None"
-        assert results.probabilities is not None
-        assert isinstance(results.probabilities, pl.DataFrame)
-        assert len(results.probabilities) >= 0
+            # Basic integration checks
+            assert results is not None, f"{Linker.__name__} returned None"
+            assert results.probabilities is not None
+            assert isinstance(results.probabilities, pl.DataFrame)
+            assert len(results.probabilities) >= 0
