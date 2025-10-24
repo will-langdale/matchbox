@@ -17,7 +17,7 @@ from matchbox.common.db import (
 from matchbox.common.dtos import (
     DataTypes,
     Resolution,
-    ResolutionPath,
+    ResolutionName,
     ResolutionType,
     SourceConfig,
     SourceField,
@@ -159,7 +159,7 @@ class Source:
         )
 
     @property
-    def dependencies(self) -> list[ResolutionPath]:
+    def dependencies(self) -> list[ResolutionName]:
         """Returns all resolution paths this source needs.
 
         Provided to match the interface of Model objects.

@@ -83,9 +83,9 @@ class DAG:
                 self._check_dag(step.right_query.dag)
 
             for resolution in step.dependencies:
-                if resolution.name not in self.nodes:
-                    raise ValueError(f"Step {resolution.name} not added to DAG")
-            self.graph[step.name] = [parent.name for parent in step.parents]
+                if resolution not in self.nodes:
+                    raise ValueError(f"Step {resolution} not added to DAG")
+            self.graph[step.name] = [parent for parent in step.parents]
         else:
             self.graph[step.name] = []
 

@@ -19,7 +19,7 @@ from matchbox.common.dtos import (
     ModelResolutionPath,
     ModelType,
     Resolution,
-    ResolutionPath,
+    ResolutionName,
     ResolutionType,
 )
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
@@ -140,12 +140,12 @@ class Model:
         )
 
     @property
-    def dependencies(self) -> list[ResolutionPath]:
+    def dependencies(self) -> list[ResolutionName]:
         """Returns all resolution paths this model needs as implied by the queries."""
         return self.config.dependencies
 
     @property
-    def parents(self) -> list[ResolutionPath]:
+    def parents(self) -> list[ResolutionName]:
         """Returns all resolution paths directly input to this model."""
         if self.right_query:
             return [
