@@ -46,12 +46,37 @@ class DAG:
         if self != dag:
             raise ValueError("Cannot mix DAGs")
 
+    def reset_downstream_runs(self, step_name: ResolutionName):
+        """Mark step and downstream steps as not-run."""
+        self.nodes[step_name].last_run = None
+
+        descendants: set[str] = set()
+
+        def dfs(node):
+            for child, parents in self.graph.items():
+                if node in parents:
+                    descendants.add(child)
+                    dfs(child)
+
+        dfs(self.nodes[step_name])
+
+        for d in descendants:
+            self.nodes[d].last_run = None
+
     def _add_step(self, step: Source | Model) -> None:
         """Validate and add sources and models to DAG."""
         self._check_dag(step.dag)
 
         if step.name in self.nodes:
-            raise ValueError(f"Name '{step.name}' is already taken in the DAG")
+            if not isinstance(self.nodes[step.name], type(step)):
+                raise ValueError("Cannot re-assign name to node of different type.")
+            if isinstance(step, Model):
+                if step.config.sources != self.nodes[step.name].config.sources:
+                    raise ValueError(
+                        "Cannot re-assign name to model matching different sources."
+                    )
+            self.reset_downstream_runs(step.name)
+
         if isinstance(step, Model):
             self._check_dag(step.left_query.dag)
             if step.right_query:

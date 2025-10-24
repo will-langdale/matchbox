@@ -5,15 +5,12 @@ from matchbox.common.dtos import (
     CollectionName,
     Match,
     ModelResolutionName,
-    ModelType,
     QueryConfig,
     ResolutionName,
     ResolutionPath,
     SourceResolutionName,
 )
 from matchbox.common.exceptions import MatchboxNameError
-from matchbox.common.factories.models import model_factory
-from matchbox.common.factories.sources import source_factory
 
 
 def test_validate_names():
@@ -91,72 +88,3 @@ def test_validate_query_paths():
                 collection="companies", run=1, name="model"
             ),
         )
-
-
-def test_query_swappable():
-    """Queries can be extended but not reduced."""
-    # Can add sources (and models), but not remove them
-    one_source = QueryConfig(
-        source_resolutions=(
-            ResolutionPath(collection="companies", run=1, name="source"),
-        ),
-    )
-
-    two_sources = QueryConfig(
-        source_resolutions=(
-            ResolutionPath(collection="companies", run=1, name="source"),
-            ResolutionPath(collection="companies", run=1, name="source2"),
-        ),
-        model_resolution=ResolutionPath(collection="companies", run=1, name="model"),
-    )
-
-    assert one_source.swappable_for(two_sources)
-    assert not two_sources.swappable_for(one_source)
-
-    # Can add cleaning outputs, but not remove them
-    two_fields = QueryConfig(
-        source_resolutions=(
-            ResolutionPath(collection="companies", run=1, name="source"),
-        ),
-        cleaning={"a": "a", "b": "b"},
-    )
-
-    one_field = QueryConfig(
-        source_resolutions=(
-            ResolutionPath(collection="companies", run=1, name="source"),
-        ),
-        cleaning={"a": "different_a"},
-    )
-
-    assert one_field.swappable_for(two_fields)
-    assert not two_fields.swappable_for(one_field)
-
-    # If a query has cleaning, and one does not, they can't be swapped. Sorry.
-    no_cleaning = QueryConfig(
-        source_resolutions=(
-            ResolutionPath(collection="companies", run=1, name="source"),
-        )
-    )
-
-    assert not no_cleaning.swappable_for(one_field)
-    assert not one_field.swappable_for(no_cleaning)
-
-
-def test_source_swappable():
-    """Sources can be extended but not reduced"""
-    all_fields_config = source_factory().source.config
-    some_fields_config = all_fields_config.model_copy(
-        update={"index_fields": list(all_fields_config.index_fields)[1:]}
-    )
-
-    assert some_fields_config.swappable_for(all_fields_config)
-    assert not all_fields_config.swappable_for(some_fields_config)
-
-
-def test_model_swappable():
-    """Models can be extended but not reduced"""
-    link_config = model_factory(model_type=ModelType.LINKER).model.config
-    dedupe_config = link_config.model_copy(update={"right_query": None})
-
-    assert dedupe_config.swappable_for(link_config)
-    assert not link_config.swappable_for(dedupe_config)

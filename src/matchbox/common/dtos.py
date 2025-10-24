@@ -463,17 +463,6 @@ class SourceConfig(BaseModel):
             return self.qualify_field(name, fields)
         return [self.qualify_field(name, field_name) for field_name in fields]
 
-    def swappable_for(self, other_config: Self) -> bool:
-        """Whether config can be exchanged with another without breaking a DAG.
-
-        A source can be swapped if the same keys are available in the replacement.
-        """
-        if set(self.index_fields) > set(other_config.index_fields):
-            return False
-        if self.key_field != other_config.key_field:
-            return False
-        return True
-
 
 class QueryCombineType(StrEnum):
     """Enumeration of ways to combine multiple rows having the same matchbox ID."""
@@ -562,25 +551,6 @@ class QueryConfig(BaseModel):
             return self.model_resolution
         return self.source_resolutions[0]
 
-    def swappable_for(self, other_config: Self) -> bool:
-        """Whether config can be exchanged with another without breaking a DAG.
-
-        A query is swappable with another if both bring in the same sources,
-        and make the same fields available. If one query defines cleaning, both must.
-        """
-        if set(self.source_resolutions) > set(other_config.source_resolutions):
-            return False
-
-        if self.cleaning:
-            if not other_config.cleaning:
-                return False
-            if set(self.cleaning.keys()) > set(other_config.cleaning.keys()):
-                return False
-        else:
-            if other_config.cleaning:
-                return False
-        return True
-
 
 class ModelType(StrEnum):
     """Enumeration of supported model types."""
@@ -639,33 +609,22 @@ class ModelConfig(BaseModel):
         return value
 
     @property
+    def sources(self) -> list[SourceResolutionPath]:
+        """Return all source resolution paths that this model matches."""
+        sources = list(self.left_query.source_resolutions)
+        if self.right_query:
+            sources.extend(self.right_query.source_resolutions)
+
+        return sources
+
+    @property
     def dependencies(self) -> list[ResolutionPath]:
-        """Return all resolution names that this model needs."""
+        """Return all resolution paths that this model needs."""
         deps = list(self.left_query.dependencies)
         if self.right_query:
             deps.extend(self.right_query.dependencies)
 
         return deps
-
-    def swappable_for(self, other_config: Self) -> bool:
-        """Whether config can be exchanged with another without breaking a DAG.
-
-        This is true if the left queries are swappable, and if a right query is
-        swappable if present. Note that you can swap a deduper for a linker without
-        breaking downstream DAG nodes.
-        """
-        # Left queries must be compatible
-        if not self.left_query.swappable_for(other_config.left_query):
-            return False
-
-        # If present in self, right query must be compatible
-        if self.right_query:
-            if not other_config.right_query:
-                return False
-            if not self.right_query.swappable_for(other_config.right_query):
-                return False
-
-        return True
 
 
 class Match(BaseModel):

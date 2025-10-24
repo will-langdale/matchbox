@@ -24,9 +24,7 @@ from matchbox.common.dtos import (
     SourceResolutionName,
     SourceResolutionPath,
 )
-from matchbox.common.exceptions import (
-    MatchboxResolutionNotFoundError,
-)
+from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.hash import HashMethod, hash_rows
 from matchbox.common.logging import logger
 
@@ -371,24 +369,16 @@ class Source:
 
     def sync(self) -> None:
         """Send the source config and hashes to the server."""
+        self.dag.reset_downstream_runs(self.name)
         resolution = self.to_resolution()
         try:
             existing_resolution = _handler.get_resolution(path=self.resolution_path)
         except MatchboxResolutionNotFoundError:
             existing_resolution = None
-        # Check if config matches
         if existing_resolution:
-            if existing_resolution.config != self.config:
-                raise ValueError(
-                    f"Resolution {self.resolution_path} already exists with different "
-                    "configuration. Please delete the existing resolution "
-                    "or use a different name. "
-                )
-            else:
-                log_prefix = f"Resolution {self.resolution_path}"
-                logger.warning("Already exists. Passing.", prefix=log_prefix)
-        else:
-            _handler.create_resolution(resolution=resolution, path=self.resolution_path)
+            self.dag.delete(name=self.name)
+
+        _handler.create_resolution(resolution=resolution, path=self.resolution_path)
 
         if self.hashes:
             _handler.set_data(
