@@ -404,6 +404,14 @@ class SourceConfig(BaseModel):
         """
         return []
 
+    @property
+    def parents(self) -> list[ResolutionName]:
+        """Returns all resolution names directly input to this config.
+
+        Provided for symmetry with ModelConfig.
+        """
+        return []
+
     def prefix(self, name: str) -> str:
         """Get the prefix for the source.
 
@@ -584,15 +592,6 @@ class ModelConfig(BaseModel):
         return value
 
     @property
-    def sources(self) -> list[SourceResolutionName]:
-        """Return all source resolutions that this model matches."""
-        sources = list(self.left_query.source_resolutions)
-        if self.right_query:
-            sources.extend(self.right_query.source_resolutions)
-
-        return sources
-
-    @property
     def dependencies(self) -> list[ResolutionName]:
         """Return all resolutions that this model needs."""
         deps = list(self.left_query.dependencies)
@@ -600,6 +599,16 @@ class ModelConfig(BaseModel):
             deps.extend(self.right_query.dependencies)
 
         return deps
+
+    @property
+    def parents(self) -> list[ResolutionName]:
+        """Returns all resolution names directly input to this config."""
+        if self.right_query:
+            return [
+                self.left_query.point_of_truth,
+                self.right_query.point_of_truth,
+            ]
+        return [self.left_query.point_of_truth]
 
 
 class Match(BaseModel):

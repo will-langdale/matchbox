@@ -19,7 +19,6 @@ from matchbox.common.dtos import (
     ModelResolutionPath,
     ModelType,
     Resolution,
-    ResolutionName,
     ResolutionType,
 )
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
@@ -139,21 +138,6 @@ class Model:
             right_query=self.right_query.config if self.right_query else None,
         )
 
-    @property
-    def dependencies(self) -> list[ResolutionName]:
-        """Returns all resolution paths this model needs as implied by the queries."""
-        return self.config.dependencies
-
-    @property
-    def parents(self) -> list[ResolutionName]:
-        """Returns all resolution paths directly input to this model."""
-        if self.right_query:
-            return [
-                self.left_query.config.point_of_truth,
-                self.right_query.config.point_of_truth,
-            ]
-        return [self.left_query.config.point_of_truth]
-
     def to_resolution(self) -> Resolution:
         """Convert to Resolution for API calls."""
         return Resolution(
@@ -261,7 +245,7 @@ class Model:
 
     def sync(self) -> None:
         """Send the model config, truth and results to the server."""
-        self.dag.reset_downstream_runs(self.name)
+        self.dag.set_downstream_to_rerun(self.name)
         resolution = self.to_resolution()
         try:
             existing_resolution = _handler.get_resolution(path=self.resolution_path)

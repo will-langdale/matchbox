@@ -17,7 +17,6 @@ from matchbox.common.db import (
 from matchbox.common.dtos import (
     DataTypes,
     Resolution,
-    ResolutionName,
     ResolutionType,
     SourceConfig,
     SourceField,
@@ -157,14 +156,6 @@ class Source:
             key_field=self.key_field,
             index_fields=self.index_fields,
         )
-
-    @property
-    def dependencies(self) -> list[ResolutionName]:
-        """Returns all resolution paths this source needs.
-
-        Provided to match the interface of Model objects.
-        """
-        return self.config.dependencies
 
     def to_resolution(self) -> Resolution:
         """Convert to Resolution for API calls."""
@@ -369,7 +360,7 @@ class Source:
 
     def sync(self) -> None:
         """Send the source config and hashes to the server."""
-        self.dag.reset_downstream_runs(self.name)
+        self.dag.set_downstream_to_rerun(self.name)
         resolution = self.to_resolution()
         try:
             existing_resolution = _handler.get_resolution(path=self.resolution_path)
