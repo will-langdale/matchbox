@@ -22,8 +22,7 @@ class Results:
 
     * The probabilities of each pair being a match
     * (Optional) The clusters of connected components at each threshold
-    * (Optional) The input data to the model that generated the probabilities
-
+    * (Optional) The leaf_id mapping to trace results back to source clusters
 
     Allows users to easily interrogate the outputs of models, explore decisions on
     choosing thresholds for clustering, and upload the results to Matchbox.
@@ -94,72 +93,6 @@ class Results:
                 results=self.probabilities, dtype=pl.Int64, hash_func=im.index
             )
         return self._clusters
-
-    def _merge_with_source_data(
-        self,
-        base_df: pl.DataFrame,
-        base_df_cols: list[str],
-        left_data: pl.DataFrame,
-        left_key: str,
-        right_data: pl.DataFrame,
-        right_key: str,
-        left_merge_col: str,
-        right_merge_col: str,
-    ) -> pl.DataFrame:
-        """Helper method to merge results with source data frames."""
-        return (
-            base_df.select(base_df_cols)
-            .join(
-                left_data,
-                how="left",
-                left_on=left_merge_col,
-                right_on=left_key,
-            )
-            .join(
-                right_data,
-                how="left",
-                left_on=right_merge_col,
-                right_on=right_key,
-            )
-        )
-
-    def inspect_probabilities(
-        self,
-        left_data: pl.DataFrame,
-        left_key: str,
-        right_data: pl.DataFrame,
-        right_key: str,
-    ) -> pl.DataFrame:
-        """Enriches the probability results with the source data."""
-        return self._merge_with_source_data(
-            base_df=self.probabilities,
-            base_df_cols=["left_id", "right_id", "probability"],
-            left_data=left_data,
-            left_key=left_key,
-            right_data=right_data,
-            right_key=right_key,
-            left_merge_col="left_id",
-            right_merge_col="right_id",
-        )
-
-    def inspect_clusters(
-        self,
-        left_data: pl.DataFrame,
-        left_key: str,
-        right_data: pl.DataFrame,
-        right_key: str,
-    ) -> pl.DataFrame:
-        """Enriches the cluster results with the source data."""
-        return self._merge_with_source_data(
-            base_df=self.clusters,
-            base_df_cols=["parent", "child", "probability"],
-            left_data=left_data,
-            left_key=left_key,
-            right_data=right_data,
-            right_key=right_key,
-            left_merge_col="child",
-            right_merge_col="child",
-        )
 
     def root_leaf(self):
         """Returns all roots and leaves implied by these results."""

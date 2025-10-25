@@ -219,7 +219,6 @@ class Query:
             _clean(
                 data=raw_data,
                 cleaning_dict=self.config.cleaning,
-                key_columns=[source.qualified_key for source in self.sources],
             ),
             return_type=return_type,
         )
@@ -249,7 +248,6 @@ class Query:
             data=_clean(
                 data=self.raw_data,
                 cleaning_dict=cleaning,
-                key_columns=[source.qualified_key for source in self.sources],
             ),
             return_type=return_type,
         )
@@ -296,13 +294,11 @@ class Query:
 def _clean(
     data: pl.DataFrame,
     cleaning_dict: dict[str, str] | None,
-    key_columns: list[str] | None = None,
 ) -> pl.DataFrame:
     """Clean data using DuckDB with the provided cleaning SQL.
 
     * ID is passed through automatically
     * If present, leaf_id is passed through automatically
-    * Key columns (specified in key_columns) are passed through automatically
     * Columns not mentioned in the cleaning_dict are dropped
     * Each key in cleaning_dict is an alias for a SQL expression
 
@@ -312,8 +308,6 @@ def _clean(
             The SQL expressions can reference columns in the data using their names.
             If None, no cleaning is applied and the original data is returned.
             `SourceConfig.f()` can be used to help reference qualified fields.
-        key_columns: List of key column names to pass through automatically.
-            These are typically qualified key columns like "foo_key", "bar_key".
 
     Returns:
         Cleaned polars dataframe
@@ -337,24 +331,21 @@ def _clean(
         # Result columns: id, full_name
         ```
 
-        Special columns (leaf_id, key) handling:
+        Special columns (leaf_id) handling:
 
         ```python
         data = pl.DataFrame(
             {
                 "id": [1, 2, 3],
                 "leaf_id": ["a", "b", "c"],
-                "foo_key": ["x", "y", "z"],
-                "bar_key": ["p", "q", "r"],
                 "value": [10, 20, 30],
                 "status": ["active", "inactive", "pending"],
             }
         )
         cleaning_dict = {"processed_value": "value * 2"}
-        key_columns = ["foo_key", "bar_key"]
-        result = clean(data, cleaning_dict, key_columns)
-        # Result columns: id, leaf_id, foo_key, bar_key, processed_value
-        # 'id', 'leaf_id', and key columns always included automatically
+        result = clean(data, cleaning_dict)
+        # Result columns: id, leaf_id, processed_value
+        # 'id' and 'leaf_id' always included automatically
         ```
     """
     if cleaning_dict is None:
@@ -375,12 +366,6 @@ def _clean(
     # Add leaf_id if it exists
     if "leaf_id" in data.columns:
         to_select.append(_add_column("leaf_id"))
-
-    # Add key columns if specified
-    if key_columns:
-        for key_col in key_columns:
-            if key_col in data.columns:
-                to_select.append(_add_column(key_col))
 
     # Parse and add each SQL expression from cleaning_dict
     for alias, sql in cleaning_dict.items():

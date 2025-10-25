@@ -2,7 +2,6 @@
 
 import datetime
 import json
-from collections import defaultdict
 from typing import Any, Self
 
 from pyarrow import Table as ArrowTable
@@ -43,6 +42,7 @@ class DAG:
         self.graph: dict[ResolutionName, list[ResolutionName]] = {}
 
     def _check_dag(self, dag: Self):
+        """Check that the given DAG is the same as this one."""
         if self != dag:
             raise ValueError("Cannot mix DAGs")
 
@@ -119,6 +119,26 @@ class DAG:
         self._run = run_id
 
     @property
+    def final_steps(self) -> list[Source | Model]:
+        """Returns all apex nodes in the DAG.
+
+        Returns:
+            List of all apex nodes (nodes with no incoming edges).
+            Returns empty list if DAG is empty.
+        """
+        if not self.nodes:
+            return []
+
+        # Find all nodes that appear as dependencies
+        all_dependencies = set()
+        for deps in self.graph.values():
+            all_dependencies.update(deps)
+
+        # Apex nodes are those that don't appear as anyone's dependency
+        apex_node_names = [node for node in self.graph if node not in all_dependencies]
+        return [self.nodes[name] for name in apex_node_names]
+
+    @property
     def final_step(self) -> Source | Model:
         """Returns the root node in the DAG.
 
@@ -126,23 +146,16 @@ class DAG:
             The root node in the DAG
 
         Raises:
-            ValueError: If the DAG does not have a final step
+            ValueError: If the DAG does not have exactly one final step
         """
-        if not self.nodes:
-            raise ValueError("The DAG is empty.")
+        steps = self.final_steps
 
-        inverse_graph = defaultdict(list)
-        for node in self.graph:
-            for neighbor in self.graph[node]:
-                inverse_graph[neighbor].append(node)
-
-        apex_nodes = {node for node in self.graph if node not in inverse_graph}
-        if len(apex_nodes) > 1:
-            raise ValueError("Some models or sources are disconnected")
-        elif not apex_nodes:
+        if len(steps) == 0:
             raise ValueError("No root node found, DAG might contain cycles")
+        elif len(steps) > 1:
+            raise ValueError("Some models or sources are disconnected")
         else:
-            return self.nodes[apex_nodes.pop()]
+            return steps[0]
 
     def source(self, *args, **kwargs) -> Source:
         """Create Source and add it to the DAG."""
@@ -264,7 +277,14 @@ class DAG:
         Returns:
             String representation of the DAG with status indicators.
         """
-        root_name = self.final_step.name
+        # Handle empty DAG
+        if not self.nodes:
+            return "Empty DAG"
+
+        apex_nodes = self.final_steps
+        if not apex_nodes:
+            return "No apex nodes found (possible cycle in DAG)"
+
         skipped = skipped or []
 
         def _get_node_status(name: str) -> str:
@@ -276,20 +296,19 @@ class DAG:
             elif (
                 (node := self.nodes.get(name))
                 and node.last_run
+                and start_time
                 and node.last_run > start_time
             ):
                 return "✅"
             else:
                 return "⏸️"
 
-        # Add status indicator if start_time is provided
-        if start_time is not None:
-            status = _get_node_status(root_name)
-            result = [f"{status} {root_name}"]
-        else:
-            result = [root_name]
+        # Header with collection and run info
+        head_collection: str = f"Collection: {self.name}"
+        head_run: str = f"└── Run: {self._run or '⛓️‍💥 Disconnected'}"
 
-        visited = set([root_name])
+        result: list[str] = [head_collection, head_run, ""]
+        visited = set()
 
         def format_children(node: str, prefix=""):
             """Recursively format the children of a node."""
@@ -318,9 +337,29 @@ class DAG:
                     result.append(f"{prefix}├── {child_display}")
                     format_children(child, prefix + "│   ")
 
-        format_children(root_name)
+        # Draw each apex node
+        for i, apex_node in enumerate(apex_nodes):
+            root_name = apex_node.name
+
+            if i > 0:
+                result.append("")  # Blank line between disconnected components
+
+            visited.add(root_name)
+
+            # Add status indicator if start_time is provided
+            if start_time is not None:
+                status = _get_node_status(root_name)
+                result.append(f"{status} {root_name}")
+            else:
+                result.append(root_name)
+
+            format_children(root_name)
 
         return "\n".join(result)
+
+    def __str__(self) -> str:
+        """Return string representation of the DAG."""
+        return self.draw()
 
     def new_run(self) -> Self:
         """Start a new run."""
@@ -351,21 +390,45 @@ class DAG:
     def _load_run(self, run_id: RunID) -> Self:
         """Attach the specified run ID to the current DAG.
 
+        Topologically sorts using Kahn's algorithm.
+
         Args:
             run_id: The ID of the run to attach
         """
         run: Run = _handler.get_run(collection=self.name, run_id=run_id)
         self.run: RunID = run_id
 
-        def _len_dependencies(res_item: tuple[ResolutionName, Resolution]) -> int:
-            return len(res_item[1].config.dependencies)
+        resolutions: dict[ResolutionName, Resolution] = run.resolutions
 
-        sorted_resolutions: tuple[ResolutionName, Resolution] = sorted(
-            run.resolutions.items(), key=_len_dependencies
-        )
+        # Build dependency graph and track added
+        added: set[ResolutionName] = set()
+        deps_graph: dict[ResolutionName, set[ResolutionName]] = {
+            name: {dep.name for dep in res.config.dependencies}
+            for name, res in resolutions.items()
+        }
 
-        for name, resolution in sorted_resolutions:
-            self.add_resolution(name=name, resolution=resolution)
+        # Kahn's algorithm: iteratively add resolutions whose dependencies are satisfied
+        while len(added) < len(resolutions):
+            # Find resolutions that can be added (all dependencies satisfied)
+            ready = [
+                name
+                for name in resolutions
+                if name not in added and deps_graph[name].issubset(added)
+            ]
+
+            if not ready:
+                # No progress possible - circular dependency or missing dependency
+                missing = set(resolutions.keys()) - added
+                raise RuntimeError(
+                    f"Cannot resolve dependencies. Remaining resolutions: {missing}. "
+                    "This may indicate circular dependencies or references to "
+                    "non-existent resolutions."
+                )
+
+            # Add all ready resolutions (order within this batch doesn't matter)
+            for name in ready:
+                self.add_resolution(name=name, resolution=resolutions[name])
+                added.add(name)
 
         return self
 

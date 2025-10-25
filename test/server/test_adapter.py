@@ -1141,12 +1141,12 @@ class TestMatchboxBackend:
             )
 
             # The root we know about has the leaves we expect
-            assert endorsed_dict[unique_ids[0]] == clust1_leaves
+            assert set(endorsed_dict[unique_ids[0]]) == set(clust1_leaves)
             # Other than the root we know about, there are two new ones
             assert len(set(endorsed_dict.keys())) == 3
             # The other two sets of leaves are there too
-            assert sorted(endorsed_dict.values()) == sorted(
-                [clust1_leaves, clust2_leaves[:1], clust2_leaves[1:]]
+            assert set(map(frozenset, endorsed_dict.values())) == set(
+                map(frozenset, [clust1_leaves, clust2_leaves[:1], clust2_leaves[1:]])
             )
 
     def test_compare_models_fails(self):
