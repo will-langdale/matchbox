@@ -22,6 +22,7 @@ from matchbox.common.dtos import (
     ResolutionType,
 )
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
+from matchbox.common.logging import logger
 from matchbox.common.transform import truth_float_to_int, truth_int_to_float
 
 if TYPE_CHECKING:
@@ -245,16 +246,26 @@ class Model:
 
     def sync(self) -> None:
         """Send the model config, truth and results to the server."""
-        self.dag.set_downstream_to_rerun(self.name)
         resolution = self.to_resolution()
         try:
             existing_resolution = _handler.get_resolution(path=self.resolution_path)
         except MatchboxResolutionNotFoundError:
             existing_resolution = None
+        # Check if config matches
         if existing_resolution:
-            _handler.delete_resolution(path=self.resolution_path, certain=True)
+            if existing_resolution.config != self.config:
+                raise ValueError(
+                    f"Resolution {self.resolution_path} already exists with different "
+                    "configuration. Please delete the existing resolution "
+                    "or use a different name. "
+                )
+            else:
+                log_prefix = f"Resolution {self.resolution_path}"
+                logger.warning("Already exists. Passing.", prefix=log_prefix)
+        else:
+            _handler.create_resolution(resolution=resolution, path=self.resolution_path)
 
-        _handler.create_resolution(resolution=resolution, path=self.resolution_path)
+        _handler.set_truth(path=self.resolution_path, truth=self._truth)
 
         if self.results and len(self.results.probabilities):
             _handler.set_data(
