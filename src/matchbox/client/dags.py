@@ -403,7 +403,7 @@ class DAG:
         # Build dependency graph and track added
         added: set[ResolutionName] = set()
         deps_graph: dict[ResolutionName, set[ResolutionName]] = {
-            name: {dep.name for dep in res.config.dependencies}
+            name: {dep for dep in res.config.dependencies}
             for name, res in resolutions.items()
         }
 
