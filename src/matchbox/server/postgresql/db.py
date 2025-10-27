@@ -97,7 +97,13 @@ class MatchboxDatabase:
     def _connect(self):
         """Connect to the database."""
         self._engine = create_engine(
-            url=self.connection_string(), logging_name="matchbox.engine", echo=False
+            url=self.connection_string(),
+            logging_name="matchbox.engine",
+            echo=False,
+            pool_size=5,
+            max_overflow=10,
+            pool_recycle=3600,
+            pool_pre_ping=True,
         )
         self._SessionLocal = sessionmaker(
             autocommit=False, autoflush=False, bind=self._engine
@@ -115,6 +121,10 @@ class MatchboxDatabase:
         )
         self._adbc_pool = QueuePool(
             self._source_adbc_connection.adbc_clone,
+            pool_size=5,
+            max_overflow=10,
+            timeout=30,
+            recycle=3600,
         )
 
     def _disconnect_adbc(self) -> None:
