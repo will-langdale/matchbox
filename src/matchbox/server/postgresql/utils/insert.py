@@ -162,6 +162,19 @@ def insert_hashes(
 
             adbc_connection.commit()
 
+            # Copy doesn't update pg_stats, must be done manually
+            table_names = [
+                Clusters.__table__.fullname,
+                ClusterSourceKey.__table__.fullname,
+            ]
+            with adbc_connection.cursor() as cursor:
+                cursor.execute(f"ANALYZE {', '.join(table_names)}")
+
+            logger.info(
+                f"Updated pg_stats for tables: {', '.join(table_names)}",
+                prefix=log_prefix,
+            )
+
         except Exception as e:
             # Log the error and rollback
             logger.warning(f"Error, rolling back: {e}", prefix=log_prefix)
@@ -599,6 +612,22 @@ def insert_results(
             )
 
             adbc_connection.commit()
+
+            # Copy doesn't update pg_stats, must be done manually
+            table_names = [
+                Clusters.__table__.fullname,
+                Contains.__table__.fullname,
+                Probabilities.__table__.fullname,
+                Results.__table__.fullname,
+            ]
+            with adbc_connection.cursor() as cursor:
+                cursor.execute(f"ANALYZE {', '.join(table_names)}")
+
+            logger.info(
+                f"Updated pg_stats for tables: {', '.join(table_names)}",
+                prefix=log_prefix,
+            )
+
         except Exception as e:
             logger.error(
                 f"Failed to insert data, rolling back: {str(e)}", prefix=log_prefix
