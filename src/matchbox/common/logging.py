@@ -1,10 +1,7 @@
 """Logging utilities."""
 
 import importlib.metadata
-import json
 import logging
-from datetime import UTC, datetime
-from functools import cached_property
 from typing import Any, Final, Literal, Protocol
 
 from rich.console import Console
@@ -114,47 +111,3 @@ def build_progress_bar(console_: Console | None = None) -> Progress:
         TimeRemainingColumn(),
         console=console_,
     )
-
-
-class ASIMFormatter(logging.Formatter):
-    """Format logging with ASIM standard fields."""
-
-    def __init__(self, fmt=None, datefmt=None, style="%", validate=True):
-        """Initialize the ASIMFormatter including any logging plugins."""
-        super().__init__(fmt=fmt, datefmt=datefmt, style=style, validate=validate)
-        self.plugins = get_logging_plugins()
-
-    @cached_property
-    def event_severity(self) -> dict[str, str]:
-        """Event severity level lookup."""
-        return {
-            "DEBUG": "Informational",
-            "INFO": "Informational",
-            "WARNING": "Low",
-            "ERROR": "Medium",
-            "CRITICAL": "High",
-        }
-
-    def format(self, record):
-        """Convert logs to JSON including basic ASIM fields."""
-        log_time = datetime.fromtimestamp(record.created, UTC).isoformat()
-        log_entry = {
-            "EventCount": 1,
-            "EventStartTime": log_time,
-            "EventEndTime": log_time,
-            "EventType": record.name,
-            "EventSeverity": self.event_severity[record.levelname],
-            "EventOriginalSeverity": record.levelname,
-            "message": record.getMessage(),
-        }
-
-        for plugin in self.plugins:
-            try:
-                trace_id, span_id = plugin.get_trace_context()
-                if trace_id:
-                    log_entry.update({"trace_id": trace_id, "span_id": span_id})
-                log_entry.update(plugin.get_metadata())
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"Failed to get metadata from logging plugin: {e}")
-
-        return json.dumps(log_entry)
