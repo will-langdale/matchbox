@@ -21,7 +21,6 @@ from fastapi import (
 from fastapi.responses import Response
 from fastapi.security import APIKeyHeader
 
-from matchbox.common.logging import ASIMFormatter
 from matchbox.server.base import (
     MatchboxDBAdapter,
     MatchboxServerSettings,
@@ -83,9 +82,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     BACKEND = settings_to_backend(SETTINGS)
     UPLOAD_TRACKER = settings_to_upload_tracker(SETTINGS)
 
-    # Define common formatter
-    formatter = ASIMFormatter()
-
     # Configure loggers with the same handler and formatter
     loggers_to_configure = [
         "matchbox",
@@ -100,7 +96,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Configure handler
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(BACKEND.settings.log_level)
-        handler.setFormatter(formatter)
 
         logger = logging.getLogger(logger_name)
         logger.setLevel(BACKEND.settings.log_level)
