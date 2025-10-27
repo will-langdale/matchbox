@@ -291,10 +291,7 @@ def test_source_run(sqlite_warehouse: Engine, batch_size: int):
     assert "keys" in result.column_names
     assert len(result) == n_true_entities
 
-    with pytest.warns(match="already run"):
-        source.run()
-
-    source.run(full_rerun=True)
+    source.run()
 
 
 @patch("matchbox.client.sources.Source.fetch")

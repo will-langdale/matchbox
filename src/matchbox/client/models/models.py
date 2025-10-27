@@ -2,8 +2,6 @@
 
 import inspect
 import json
-import warnings
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 
 from matchbox.client import _handler
@@ -101,7 +99,6 @@ class Model:
             right_query: The query that will get the data to link on the right.
             description: Optional description of the model
         """
-        self.last_run: datetime | None = None
         self.dag = dag
         self.name = name
         self.description = description
@@ -198,30 +195,21 @@ class Model:
         result = _handler.delete_resolution(path=self.resolution_path, certain=certain)
         return result.success
 
-    def run(self, for_validation: bool = False, full_rerun: bool = False) -> Results:
+    def run(self, for_validation: bool = False) -> Results:
         """Execute the model pipeline and return results.
 
         Args:
             for_validation: Whether to download and store extra data to explore and
                     score results.
-            full_rerun: Whether to force a re-run even if the results are cached
         """
-        if self.last_run and not full_rerun:
-            warnings.warn("Model already run, skipping.", UserWarning, stacklevel=2)
-            return self.results
-
         left_df = self.left_query.run(
-            return_leaf_id=for_validation,
-            batch_size=settings.batch_size,
-            full_rerun=full_rerun,
+            return_leaf_id=for_validation, batch_size=settings.batch_size
         )
         right_df = None
 
         if self.config.type == ModelType.LINKER:
             right_df = self.right_query.run(
-                return_leaf_id=for_validation,
-                batch_size=settings.batch_size,
-                full_rerun=full_rerun,
+                return_leaf_id=for_validation, batch_size=settings.batch_size
             )
 
             self.model_instance.prepare(left_df, right_df)
@@ -241,7 +229,6 @@ class Model:
         else:
             self.results = Results(probabilities=results)
 
-        self.last_run = datetime.now()
         return self.results
 
     def sync(self) -> None:

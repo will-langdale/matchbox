@@ -88,13 +88,10 @@ def test_init_and_run_model(sqlite_warehouse: Engine, matchbox_api: MockRouter):
     )
 
     model.run()
-    # This won't actually run anything new
-    with pytest.warns(match="already run"):
-        model.run(for_validation=True)
     assert model.results.left_root_leaf is None
     assert model.results.right_root_leaf is None
 
-    model.run(for_validation=True, full_rerun=True)
+    model.run(for_validation=True)
     assert model.results.left_root_leaf is not None
     assert model.results.right_root_leaf is not None
 

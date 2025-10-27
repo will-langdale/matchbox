@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 from unittest.mock import Mock, patch
 
 import polars as pl
@@ -10,7 +9,7 @@ from polars.testing import assert_frame_equal
 from respx import MockRouter
 from sqlalchemy import Engine
 
-from matchbox.client.dags import DAG
+from matchbox.client.dags import DAG, DAGNodeExecutionStatus
 from matchbox.client.models import Model
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
@@ -345,14 +344,14 @@ def test_dag_draw(sqlite_warehouse: Engine):
         "Tree representation doesn't use expected formatting characters"
     )
 
-    # Test 2: Drawing with timestamps (status indicators)
-    # Set d_foo as processing and foo_bar as completed
-    start_time = datetime.now()
-    doing = "d_foo"
-    foo_bar.last_run = datetime.now()
+    # Test 2: Drawing with status indicators
 
-    # Draw the DAG with status indicators
-    tree_str_with_status = dag.draw(start_time=start_time, doing=doing)
+    tree_str_with_status = dag.draw(
+        status={
+            foo_bar.name: DAGNodeExecutionStatus.DOING,
+            d_foo.name: DAGNodeExecutionStatus.DONE,
+        }
+    )
     status_lines = tree_str_with_status.strip().split("\n")[3:]
 
     # Verify status indicators are present
@@ -362,9 +361,9 @@ def test_dag_draw(sqlite_warehouse: Engine):
     # Check specific statuses: foo_bar done, d_foo working, others awaiting
     for line in status_lines:
         name = line.split()[-1]
-        if name == "foo_bar":
+        if name == d_foo.name:
             assert "✅" in line
-        elif name == "d_foo":
+        elif name == foo_bar.name:
             assert "🔄" in line
         elif name in [foo.name, bar.name, baz.name]:
             assert "⏸️" in line
@@ -379,7 +378,7 @@ def test_dag_draw(sqlite_warehouse: Engine):
     # Test 4: Drawing with skipped nodes
     skipped_nodes = [foo.name, d_foo.name]
     tree_str_with_skipped = dag.draw(
-        start_time=start_time, doing=doing, skipped=skipped_nodes
+        status={node: DAGNodeExecutionStatus.SKIPPED for node in skipped_nodes}
     )
     skipped_lines = tree_str_with_skipped.strip().split("\n")[3:]
 
@@ -390,9 +389,12 @@ def test_dag_draw(sqlite_warehouse: Engine):
             assert "⏭️" in line
 
     # Test all status indicators together
-    doing = "foo_bar_baz"
     tree_str_all_statuses = dag.draw(
-        start_time=start_time, doing=doing, skipped=skipped_nodes
+        status={
+            foo_bar.name: DAGNodeExecutionStatus.DOING,
+            d_foo.name: DAGNodeExecutionStatus.DONE,
+            foo.name: DAGNodeExecutionStatus.SKIPPED,
+        }
     )
     assert all(
         indicator in tree_str_all_statuses for indicator in ["✅", "🔄", "⏸️", "⏭️"]
