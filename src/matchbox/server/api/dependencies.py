@@ -21,6 +21,7 @@ from fastapi import (
 from fastapi.responses import Response
 from fastapi.security import APIKeyHeader
 
+from matchbox.common.logging import get_formatter
 from matchbox.server.base import (
     MatchboxDBAdapter,
     MatchboxServerSettings,
@@ -96,6 +97,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Configure handler
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(BACKEND.settings.log_level)
+        handler.setFormatter(get_formatter())
 
         logger = logging.getLogger(logger_name)
         logger.setLevel(BACKEND.settings.log_level)

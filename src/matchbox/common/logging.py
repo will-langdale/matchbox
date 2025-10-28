@@ -2,7 +2,7 @@
 
 import importlib.metadata
 import logging
-from typing import Any, Final, Literal, Protocol
+from typing import Any, Final, Literal
 
 from rich.console import Console
 from rich.progress import (
@@ -14,24 +14,11 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-
-class LoggingPlugin(Protocol):
-    """Protocol for logging plugins that can be registered with Matchbox."""
-
-    def get_trace_context(self) -> tuple[str | None, str | None]:
-        """Get trace context information for logging."""
-        ...
-
-    def get_metadata(self) -> dict[str, Any]:
-        """Get additional fields for logging."""
-        ...
-
-
 _PLUGINS = None
 
 
-def get_logging_plugins():
-    """Retrieve logging plugins registered in the 'matchbox.logging' entry point."""
+def get_formatter() -> logging.Formatter:
+    """Retrieve plugin registered in 'matchbox.logging' entry point, or fallback."""
     global _PLUGINS
     if _PLUGINS is None:
         _PLUGINS = []
@@ -40,7 +27,11 @@ def get_logging_plugins():
                 _PLUGINS.append(ep.load()())
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to load logging plugin: {e}")
-    return _PLUGINS
+
+    if len(_PLUGINS):
+        return _PLUGINS[0]
+
+    return logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
 LogLevelType = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
