@@ -43,7 +43,7 @@ def _generate_cache_key(
     warehouse: Engine,
     n_entities: int = 10,
     seed: int = 42,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> str:
     """Generate a unique hash based on input parameters."""
     if scenario_type not in SCENARIO_REGISTRY:
@@ -74,7 +74,7 @@ def create_bare_scenario(
     warehouse_engine: Engine,
     n_entities: int = 10,
     seed: int = 42,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> TestkitDAG:
     """Create a bare TestkitDAG scenario."""
     dag_testkit = TestkitDAG()
@@ -104,7 +104,7 @@ def create_index_scenario(
     warehouse_engine: Engine,
     n_entities: int = 10,
     seed: int = 42,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> TestkitDAG:
     """Create an index TestkitDAG scenario."""
     # First create the bare scenario
@@ -132,7 +132,7 @@ def create_dedupe_scenario(
     warehouse_engine: Engine,
     n_entities: int = 10,
     seed: int = 42,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> TestkitDAG:
     """Create a dedupe TestkitDAG scenario."""
     # First create the index scenario
@@ -182,7 +182,7 @@ def create_probabilistic_dedupe_scenario(
     warehouse_engine: Engine,
     n_entities: int = 10,
     seed: int = 42,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> TestkitDAG:
     """Create a probabilistic dedupe TestkitDAG scenario."""
     # First create the index scenario
@@ -234,7 +234,7 @@ def create_link_scenario(
     warehouse_engine: Engine,
     n_entities: int = 10,
     seed: int = 42,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> TestkitDAG:
     """Create a link TestkitDAG scenario."""
     # First create the dedupe scenario
@@ -395,7 +395,7 @@ def create_alt_dedupe_scenario(
     warehouse_engine: Engine,
     n_entities: int = 10,
     seed: int = 42,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> TestkitDAG:
     """Create a TestkitDAG scenario with two alternative dedupers."""
     dag_testkit = TestkitDAG()
@@ -495,7 +495,7 @@ def create_convergent_scenario(
     warehouse_engine: Engine,
     n_entities: int = 10,
     seed: int = 42,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> TestkitDAG:
     """Create a convergent TestkitDAG scenario.
 

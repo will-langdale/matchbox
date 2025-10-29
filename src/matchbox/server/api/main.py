@@ -156,7 +156,7 @@ async def deletion_not_confirmed_handler(
 
 
 @app.middleware("http")
-async def add_security_headers(request: Request, call_next):
+async def add_security_headers(request: Request, call_next: object) -> Response:
     """Improve security by adding headers to all responses."""
     response: Response = await call_next(request)
     response.headers["Cache-control"] = "no-store, no-cache"
@@ -528,7 +528,7 @@ def clear_database(
 
 
 @app.get("/docs", include_in_schema=False)
-async def custom_swagger_ui_html():
+async def custom_swagger_ui_html() -> object:
     """Get locally hosted docs."""
     return get_swagger_ui_html(
         openapi_url=app.openapi_url,
@@ -541,6 +541,6 @@ async def custom_swagger_ui_html():
 
 
 @app.get(app.swagger_ui_oauth2_redirect_url, include_in_schema=False)
-async def swagger_ui_redirect():
+async def swagger_ui_redirect() -> object:
     """Helper for OAuth2."""
     return get_swagger_ui_oauth2_redirect_html()

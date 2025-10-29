@@ -2,7 +2,7 @@
 
 import importlib.metadata
 import logging
-from typing import Any, Final, Literal
+from typing import Final, Literal
 
 from rich.console import Console
 from rich.progress import (
@@ -45,7 +45,9 @@ class PrefixedLoggerAdapter(logging.LoggerAdapter):
     without modifying the underlying logger.
     """
 
-    def process(self, msg: Any, kwargs: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
+    def process(
+        self, msg: object, kwargs: dict[str, object]
+    ) -> tuple[object, dict[str, object]]:
         """Process the log message, adding a prefix if provided.
 
         Args:

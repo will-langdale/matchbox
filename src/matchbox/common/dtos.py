@@ -8,9 +8,10 @@ from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
 from json import JSONDecodeError
-from typing import Any, Self, TypeAlias
+from typing import Self, TypeAlias
 
 import polars as pl
+import pyarrow as pa
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -195,7 +196,7 @@ class BackendUploadType(StrEnum):
     RESULTS = "results"
 
     @property
-    def schema(self):
+    def schema(self) -> pa.Schema:
         """Get the schema for the upload type."""
         return {
             BackendUploadType.INDEX: SCHEMA_INDEX,
@@ -222,7 +223,7 @@ class MatchboxName(str):
 
     PATTERN = r"^[a-zA-Z0-9_.-]+$"
 
-    def __new__(cls, value: str):
+    def __new__(cls, value: str) -> Self:
         """Creates new instance of validated name."""
         if not isinstance(value, str):
             raise MatchboxNameError("Name must be a string")
@@ -236,7 +237,7 @@ class MatchboxName(str):
 
     @classmethod
     def __get_pydantic_core_schema__(
-        cls, source_type: Any, handler: GetCoreSchemaHandler
+        cls, source_type: object, handler: GetCoreSchemaHandler
     ) -> core_schema.CoreSchema:
         """Generate core schema for Pydantic compatibility."""
         return core_schema.no_info_plain_validator_function(
@@ -496,11 +497,10 @@ class QueryConfig(BaseModel):
         """Ensure that resolution settings are compatible."""
         if not self.source_resolutions:
             raise ValueError("At least one source resolution required.")
-        if len(self.source_resolutions) > 1:
-            if not self.model_resolution:
-                raise ValueError(
-                    "A model resolution must be set if querying from multiple sources"
-                )
+        if len(self.source_resolutions) > 1 and not self.model_resolution:
+            raise ValueError(
+                "A model resolution must be set if querying from multiple sources"
+            )
         return self
 
     @field_validator("cleaning")
@@ -632,7 +632,7 @@ class Match(BaseModel):
         return self
 
     @field_serializer("source_id", "target_id")
-    def serialise_ids(self, id_set: set[str]):
+    def serialise_ids(self, id_set: set[str]) -> list[str]:
         """Turn set to sorted list when serialising."""
         return sorted(id_set)
 
@@ -658,20 +658,20 @@ class Resolution(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_resolution_type_matches_config(self):
+    def validate_resolution_type_matches_config(self) -> Self:
         """Ensure resolution_type matches the config type."""
         if self.resolution_type == ResolutionType.SOURCE:
-            assert isinstance(self.config, SourceConfig), (
-                "Config must be SourceConfig when resolution_type is 'source'"
-            )
+            assert isinstance(
+                self.config, SourceConfig
+            ), "Config must be SourceConfig when resolution_type is 'source'"
         else:
-            assert isinstance(self.config, ModelConfig), (
-                "Config must be ModelConfig when resolution_type is 'model'"
-            )
+            assert isinstance(
+                self.config, ModelConfig
+            ), "Config must be ModelConfig when resolution_type is 'model'"
         return self
 
     @model_validator(mode="after")
-    def validate_truth_matches_type(self):
+    def validate_truth_matches_type(self) -> Self:
         """Ensure truth field matches resolution type requirements."""
         if self.resolution_type == ResolutionType.SOURCE and self.truth is not None:
             raise ValueError("Truth must be None for source resolutions")

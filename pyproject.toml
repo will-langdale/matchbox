@@ -112,13 +112,6 @@ select = [
     "TID",
     "BLE",
     "PLC",
-    "SIM"
-]
-extend-select = [
-    "UP",
-    "TID",
-    "BLE",
-    "PLC",
     "SIM",
     "ANN",
 ]
@@ -132,7 +125,6 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "**/{test,docs}/*" = ["D"]
-"!**/{src/matchbox,test}/client/cli/*" = ["UP", "TID", "BLE", "PLC", "SIM", "ANN"]
 
 [tool.ruff.format]
 quote-style = "double"
