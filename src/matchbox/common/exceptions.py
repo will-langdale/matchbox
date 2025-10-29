@@ -295,6 +295,14 @@ class MatchboxResolutionAlreadyExists(MatchboxException):
     """Resolution already exists."""
 
 
+class MatchboxResolutionInvalidData(MatchboxException):
+    """Resolution data does not match fingerprint."""
+
+
+class MatchboxResolutionExistingData(MatchboxException):
+    """Data was already set on resolution."""
+
+
 class MatchboxCollectionAlreadyExists(MatchboxException):
     """Collection already exists."""
 

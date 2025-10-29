@@ -205,6 +205,7 @@ def populated_postgres_db(
                 run=run,
                 name="source_a",
                 type="source",
+                fingerprint=b"abc",
                 truth=None,
             ),
             Resolutions(
@@ -212,6 +213,7 @@ def populated_postgres_db(
                 run=run,
                 name="source_b",
                 type="source",
+                fingerprint=b"abc",
                 truth=None,
             ),
             Resolutions(
@@ -219,6 +221,7 @@ def populated_postgres_db(
                 run=run,
                 name="dedupe_a",
                 type="model",
+                fingerprint=b"abc",
                 truth=80,
             ),
             Resolutions(
@@ -226,6 +229,7 @@ def populated_postgres_db(
                 run=run,
                 name="dedupe_b",
                 type="model",
+                fingerprint=b"abc",
                 truth=70,
             ),
             Resolutions(
@@ -233,6 +237,7 @@ def populated_postgres_db(
                 run=run,
                 name="linker_ab",
                 type="model",
+                fingerprint=b"abc",
                 truth=90,
             ),
         ]

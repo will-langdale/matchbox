@@ -29,6 +29,7 @@ from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxNoJudgements,
     MatchboxResolutionAlreadyExists,
+    MatchboxResolutionExistingData,
     MatchboxResolutionNotFoundError,
     MatchboxRunNotFoundError,
     MatchboxRunNotWriteable,
@@ -482,7 +483,7 @@ class TestMatchboxBackend:
                     path=source_testkit.resolution_path.model_copy(
                         update={"name": "new_source"}
                     ),
-                    resolution=source_testkit.source.to_resolution(),
+                    resolution=source_testkit.fake_run().source.to_resolution(),
                 )
 
             with pytest.raises(MatchboxRunNotWriteable):
@@ -596,7 +597,7 @@ class TestMatchboxBackend:
                 true_entities=linked.true_entities,
             )
             self.backend.create_resolution(
-                resolution=dedupe_1_testkit.model.to_resolution(),
+                resolution=dedupe_1_testkit.fake_run().model.to_resolution(),
                 path=dedupe_1_testkit.resolution_path,
             )
 
@@ -608,7 +609,7 @@ class TestMatchboxBackend:
                 true_entities=linked.true_entities,
             )
             self.backend.create_resolution(
-                resolution=dedupe_2_testkit.model.to_resolution(),
+                resolution=dedupe_2_testkit.fake_run().model.to_resolution(),
                 path=dedupe_2_testkit.resolution_path,
             )
 
@@ -623,7 +624,7 @@ class TestMatchboxBackend:
                 true_entities=linked.true_entities,
             )
             self.backend.create_resolution(
-                resolution=linker_testkit.model.to_resolution(),
+                resolution=linker_testkit.fake_run().model.to_resolution(),
                 path=linker_testkit.resolution_path,
             )
 
@@ -632,7 +633,7 @@ class TestMatchboxBackend:
             # Test can't insert duplicate
             with pytest.raises(MatchboxResolutionAlreadyExists):
                 self.backend.create_resolution(
-                    linker_testkit.model.to_resolution(),
+                    linker_testkit.fake_run().model.to_resolution(),
                     path=linker_testkit.resolution_path,
                 )
 
@@ -652,14 +653,15 @@ class TestMatchboxBackend:
             )
 
     def test_index_new_source(self):
-        """Test that indexing identical works."""
+        """Test that indexing a new source works."""
         with self.scenario(self.backend, "bare") as dag_testkit:
             crn_testkit: SourceTestkit = dag_testkit.sources.get("crn")
 
             assert self.backend.clusters.count() == 0
 
             self.backend.create_resolution(
-                crn_testkit.source.to_resolution(), path=crn_testkit.resolution_path
+                crn_testkit.fake_run().source.to_resolution(),
+                path=crn_testkit.resolution_path,
             )
             self.backend.insert_source_data(
                 crn_testkit.source.resolution_path, crn_testkit.data_hashes
@@ -669,40 +671,15 @@ class TestMatchboxBackend:
                 crn_testkit.source.resolution_path, validate=ResolutionType.SOURCE
             )
 
-            # Equality between the two is False because one lacks the Engine
-            assert (
-                crn_testkit.source_config.model_dump()
-                == crn_retrieved.config.model_dump()
-            )
+            assert crn_testkit.source_config == crn_retrieved.config
             assert self.backend.data.count() == len(crn_testkit.data_hashes)
-            # I can add it again with no consequences
-            self.backend.insert_source_data(
-                crn_testkit.source.resolution_path, crn_testkit.data_hashes
-            )
+
+            # Data can't be re-added
+            with pytest.raises(MatchboxResolutionExistingData):
+                self.backend.insert_source_data(
+                    crn_testkit.source.resolution_path, crn_testkit.data_hashes
+                )
             assert self.backend.data.count() == len(crn_testkit.data_hashes)
-            assert self.backend.source_resolutions.count() == 1
-
-    def test_index_duplicate_clusters(self):
-        """Test that indexing new data with duplicate hashes works."""
-        with self.scenario(self.backend, "bare") as dag_testkit:
-            crn_testkit: SourceTestkit = dag_testkit.sources.get("crn")
-
-            data_hashes_halved = crn_testkit.data_hashes.slice(
-                0, crn_testkit.data_hashes.num_rows // 2
-            )
-
-            assert self.backend.data.count() == 0
-            self.backend.create_resolution(
-                crn_testkit.source.to_resolution(), path=crn_testkit.resolution_path
-            )
-            self.backend.insert_source_data(
-                crn_testkit.source.resolution_path, data_hashes_halved
-            )
-            assert self.backend.data.count() == data_hashes_halved.num_rows
-            self.backend.insert_source_data(
-                crn_testkit.source.resolution_path, crn_testkit.data_hashes
-            )
-            assert self.backend.data.count() == crn_testkit.data_hashes.num_rows
             assert self.backend.source_resolutions.count() == 1
 
     def test_index_same_resolution(self):
@@ -722,11 +699,15 @@ class TestMatchboxBackend:
                 },
             )
 
-            crn_resolution_1 = crn_testkit.source.to_resolution().model_copy(
-                update={"config": crn_source_config_1}
+            crn_resolution_1 = (
+                crn_testkit.fake_run()
+                .source.to_resolution()
+                .model_copy(update={"config": crn_source_config_1})
             )
-            crn_resolution_2 = crn_testkit.source.to_resolution().model_copy(
-                update={"config": crn_source_config_2}
+            crn_resolution_2 = (
+                crn_testkit.fake_run()
+                .source.to_resolution()
+                .model_copy(update={"config": crn_source_config_2})
             )
 
             self.backend.create_resolution(
@@ -747,16 +728,21 @@ class TestMatchboxBackend:
     def test_index_different_resolution_same_hashes(self):
         """Test that indexing data with the same hashes but different sources works."""
         with self.scenario(self.backend, "bare") as dag_testkit:
-            crn_testkit: SourceTestkit = dag_testkit.sources.get("crn")
+            # Prepare original source
+            crn_testkit: SourceTestkit = dag_testkit.sources.get("crn").fake_run()
+            # Create new source with same hashes
             duns_testkit: SourceTestkit = dag_testkit.sources.get("duns")
+            duns_testkit.data_hashes = crn_testkit.data_hashes
+            duns_testkit.fake_run()
 
+            # Add original source
             self.backend.create_resolution(
                 crn_testkit.source.to_resolution(), path=crn_testkit.resolution_path
             )
             self.backend.insert_source_data(
                 crn_testkit.source.resolution_path, crn_testkit.data_hashes
             )
-            # Different source, same data
+            # Add different source, with same hashes
             self.backend.create_resolution(
                 duns_testkit.source.to_resolution(), path=duns_testkit.resolution_path
             )
@@ -802,24 +788,12 @@ class TestMatchboxBackend:
             self.backend.validate_ids(ids=pre_results["left_id"].to_pylist())
             self.backend.validate_ids(ids=pre_results["right_id"].to_pylist())
 
-            # Wrangle in polars
-            pre_results_pl = pl.from_arrow(pre_results)
-
-            # Remove a single row from the results
-            target_row = pre_results_pl.row(0, named=True)
-
-            results_truncated = pre_results_pl.filter(
-                ~(
-                    (pl.col("left_id") == target_row["left_id"])
-                    & (pl.col("right_id") == target_row["right_id"])
+            # Cannot set new results
+            with pytest.raises(MatchboxResolutionExistingData):
+                self.backend.insert_model_data(
+                    path=naive_crn_testkit.resolution_path,
+                    results=naive_crn_testkit.probabilities,
                 )
-            )
-
-            # Set new results
-            self.backend.insert_model_data(
-                path=naive_crn_testkit.resolution_path,
-                results=results_truncated.to_arrow(),
-            )
 
             # Retrieve again
             post_results = self.backend.get_model_data(
@@ -827,8 +801,7 @@ class TestMatchboxBackend:
             )
 
             # Check difference
-            assert len(pre_results) != len(post_results)
-            assert len(post_results) == len(pre_results) - 1
+            assert pre_results == post_results
 
     def test_model_results_probabilistic(self):
         """Test that a probabilistic model's results data can be set and retrieved."""
@@ -865,41 +838,13 @@ class TestMatchboxBackend:
             self.backend.validate_ids(ids=pre_results["left_id"].to_pylist())
             self.backend.validate_ids(ids=pre_results["right_id"].to_pylist())
 
-            # Wrangle in polars
-            pre_results_pl = pl.from_arrow(pre_results)
-
-            # Remove a single row from the results
-            target_row = pre_results_pl.row(0, named=True)
-
-            results_truncated = pre_results_pl.filter(
-                ~(
-                    (pl.col("left_id") == target_row["left_id"])
-                    & (pl.col("right_id") == target_row["right_id"])
-                )
-            )
-
-            # Set new results
-            self.backend.insert_model_data(
-                path=prob_crn_testkit.resolution_path,
-                results=results_truncated.to_arrow(),
-            )
-
-            # Retrieve again
-            post_results = self.backend.get_model_data(
-                path=prob_crn_testkit.resolution_path
-            )
-
-            # Check difference
-            assert len(pre_results) != len(post_results)
-            assert len(post_results) == len(pre_results) - 1
-
     def test_model_results_shared_clusters(self):
         """Test that model results data can be inserted when clusters are shared."""
         with self.scenario(self.backend, "convergent") as dag_testkit:
             for model_testkit in dag_testkit.models.values():
                 self.backend.create_resolution(
                     path=model_testkit.resolution_path,
-                    resolution=model_testkit.model.to_resolution(),
+                    resolution=model_testkit.fake_run().model.to_resolution(),
                 )
                 self.backend.insert_model_data(
                     path=model_testkit.resolution_path,

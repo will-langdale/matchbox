@@ -6,7 +6,7 @@ from collections import Counter
 from collections.abc import Hashable
 from functools import cache
 from textwrap import dedent
-from typing import Any, TypeVar
+from typing import Any, Self, TypeVar
 
 import numpy as np
 import polars as pl
@@ -23,6 +23,7 @@ from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.models.models import Model
 from matchbox.client.queries import Query
+from matchbox.client.results import Results
 from matchbox.common.arrow import SCHEMA_RESULTS
 from matchbox.common.dtos import (
     ModelResolutionName,
@@ -627,6 +628,12 @@ class ModelTestkit(BaseModel):
         )
         self._entities = entities
         self._threshold = value
+
+    def fake_run(self) -> Self:
+        """Set model results without running model."""
+        self.model.results = Results(probabilities=self.probabilities)
+
+        return self
 
     def into_dag(self) -> dict:
         """Turn model into kwargs for `dag.model()`, detaching from original DAG."""

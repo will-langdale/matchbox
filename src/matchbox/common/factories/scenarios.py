@@ -115,7 +115,7 @@ def create_index_scenario(
     # Index sources in backend
     for source_testkit in dag_testkit.sources.values():
         backend.create_resolution(
-            resolution=source_testkit.source.to_resolution(),
+            resolution=source_testkit.fake_run().source.to_resolution(),
             path=source_testkit.resolution_path,
         )
         backend.insert_source_data(
@@ -164,7 +164,7 @@ def create_dedupe_scenario(
 
         # Add to backend and DAG
         backend.create_resolution(
-            resolution=model_testkit.model.to_resolution(),
+            resolution=model_testkit.fake_run().model.to_resolution(),
             path=model_testkit.resolution_path,
         )
         backend.insert_model_data(
@@ -215,7 +215,7 @@ def create_probabilistic_dedupe_scenario(
 
         # Add to backend and DAG
         backend.create_resolution(
-            resolution=model_testkit.model.to_resolution(),
+            resolution=model_testkit.fake_run().model.to_resolution(),
             path=model_testkit.resolution_path,
         )
         backend.insert_model_data(
@@ -288,7 +288,7 @@ def create_link_scenario(
 
     # Add to backend and DAG
     backend.create_resolution(
-        resolution=crn_duns_model.model.to_resolution(),
+        resolution=crn_duns_model.fake_run().model.to_resolution(),
         path=crn_duns_model.resolution_path,
     )
     backend.insert_model_data(
@@ -323,7 +323,7 @@ def create_link_scenario(
     # Add to backend and DAG
     backend.create_resolution(
         path=crn_cdms_model.resolution_path,
-        resolution=crn_cdms_model.model.to_resolution(),
+        resolution=crn_cdms_model.fake_run().model.to_resolution(),
     )
     backend.insert_model_data(
         path=crn_cdms_model.resolution_path,
@@ -377,7 +377,7 @@ def create_link_scenario(
 
     # Add to backend and DAG
     backend.create_resolution(
-        resolution=final_join_model.model.to_resolution(),
+        resolution=final_join_model.fake_run().model.to_resolution(),
         path=final_join_model.resolution_path,
     )
     backend.insert_model_data(
@@ -429,7 +429,7 @@ def create_alt_dedupe_scenario(
     # Index sources in backend
     for source_testkit in dag_testkit.sources.values():
         backend.create_resolution(
-            resolution=source_testkit.source.to_resolution(),
+            resolution=source_testkit.fake_run().source.to_resolution(),
             path=source_testkit.resolution_path,
         )
         backend.insert_source_data(
@@ -476,7 +476,8 @@ def create_alt_dedupe_scenario(
 
             # Add both models to backend and DAG
             backend.create_resolution(
-                path=model.resolution_path, resolution=model.model.to_resolution()
+                path=model.resolution_path,
+                resolution=model.fake_run().model.to_resolution(),
             )
             backend.insert_model_data(
                 path=model.resolution_path, results=model.probabilities.to_arrow()
@@ -539,7 +540,7 @@ def create_convergent_scenario(
     # Index sources in backend
     for source_testkit in dag_testkit.sources.values():
         backend.create_resolution(
-            resolution=source_testkit.source.to_resolution(),
+            resolution=source_testkit.fake_run().source.to_resolution(),
             path=source_testkit.resolution_path,
         )
         backend.insert_source_data(

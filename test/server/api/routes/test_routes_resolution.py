@@ -29,7 +29,7 @@ else:
 
 
 def test_get_source(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
-    source_testkit = source_factory(name="foo")
+    source_testkit = source_factory(name="foo").fake_run()
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution = Mock(
         return_value=source_testkit.source.to_resolution(),  # Second call (SOURCE)
@@ -43,7 +43,9 @@ def test_get_source(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
 def test_get_model(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     testkit = model_factory(name="test_model", description="test description")
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_resolution = Mock(return_value=testkit.model.to_resolution())
+    mock_backend.get_resolution = Mock(
+        return_value=testkit.fake_run().model.to_resolution()
+    )
 
     response = test_client.get("/collections/default/runs/1/resolutions/test_model")
 
@@ -66,7 +68,7 @@ def test_get_resolution_404(
 def test_insert_model(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
 ):
-    testkit = model_factory(name="test_model")
+    testkit = model_factory(name="test_model").fake_run()
     test_client, mock_backend, _ = api_client_and_mocks
 
     response = test_client.post(
@@ -100,7 +102,7 @@ def test_insert_model_error(
 
     response = test_client.post(
         "/collections/default/runs/1/resolutions/name",
-        json=testkit.model.to_resolution().model_dump(),
+        json=testkit.fake_run().model.to_resolution().model_dump(),
     )
 
     assert response.status_code == 500
@@ -127,7 +129,7 @@ def test_complete_model_upload_process(
     )
 
     # Create test data with specified model type
-    testkit = model_factory(model_type=model_type)
+    testkit = model_factory(model_type=model_type).fake_run()
 
     # Set up the mock to return the actual model metadata and data
     mock_backend.get_resolution = Mock(return_value=testkit.model.to_resolution())
@@ -235,7 +237,7 @@ def test_complete_model_upload_process(
 def test_set_results(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
 ):
-    testkit = model_factory()
+    testkit = model_factory().fake_run()
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution = Mock(return_value=testkit.model.to_resolution())
 
@@ -449,7 +451,7 @@ def test_complete_source_upload_process(
 ):
     """Test the complete upload process from source creation through processing."""
     # Create test data
-    source_testkit = source_factory()
+    source_testkit = source_factory().fake_run()
 
     # Setup the backend
     test_client, mock_backend, _ = api_client_and_mocks

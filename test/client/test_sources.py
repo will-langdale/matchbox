@@ -29,7 +29,6 @@ from matchbox.common.dtos import (
 from matchbox.common.exceptions import (
     MatchboxServerFileError,
 )
-from matchbox.common.factories.models import model_factory
 from matchbox.common.factories.sources import (
     source_factory,
 )
@@ -413,10 +412,9 @@ def test_source_sync(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         testkit.source.sync()
 
     # Mock earlier endpoint generating a name clash
-    model = model_factory().model
     matchbox_api.get(
         f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/resolutions/{testkit.source.name}"
-    ).mock(return_value=Response(200, json=model.to_resolution().model_dump()))
+    ).mock(return_value=Response(200, json=testkit.source.to_resolution().model_dump()))
 
     with pytest.raises(ValueError, match="existing resolution"):
         testkit.source.sync()

@@ -11,7 +11,6 @@ from matchbox.client.dags import DAG
 from matchbox.client.models import Model, add_model_class
 from matchbox.client.models.linkers.base import LinkerSettings
 from matchbox.client.queries import Query
-from matchbox.client.results import Results
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendResourceType,
@@ -125,7 +124,7 @@ def test_model_sync(matchbox_api: MockRouter):
         )
     )
 
-    set_truth_route = matchbox_api.patch(
+    matchbox_api.patch(
         f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}/truth"
     ).mock(
         return_value=Response(
@@ -176,27 +175,21 @@ def test_model_sync(matchbox_api: MockRouter):
         )
     )
 
-    # Call sync
+    # Calling sync too early fails
+    with pytest.raises(RuntimeError):
+        testkit.model.sync()
+
+    # Set results from testkit
+    testkit.fake_run().model.sync()
     testkit.model.sync()
 
-    # Verify the API call
+    # Verify API calls
     assert get_route.called
     assert insert_config_route.called
     assert (
         insert_config_route.calls.last.request.content.decode()
         == testkit.model.to_resolution().model_dump_json()
     )
-    assert set_truth_route.called
-    assert float(set_truth_route.calls.last.request.read()) == 100
-    assert not insert_results_route.called
-
-    # Set results
-    test_results = Results(probabilities=testkit.probabilities)
-
-    testkit.model.results = test_results
-    testkit.model.sync()
-
-    # Verify API calls
     assert insert_results_route.called
     assert upload_route.called
     assert status_route.called
@@ -222,7 +215,7 @@ def test_model_sync(matchbox_api: MockRouter):
         testkit.model.sync()
 
     # Mock earlier endpoint generating a name clash
-    source = source_factory().source
+    source = source_factory().fake_run().source
     matchbox_api.get(
         f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
     ).mock(return_value=Response(200, json=source.to_resolution().model_dump()))

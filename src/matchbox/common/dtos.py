@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
 from json import JSONDecodeError
-from typing import Any, Self, TypeAlias
+from typing import Annotated, Any, Self, TypeAlias
 
 import polars as pl
 from pydantic import (
@@ -17,6 +17,8 @@ from pydantic import (
     Field,
     GetCoreSchemaHandler,
     GetJsonSchemaHandler,
+    PlainSerializer,
+    PlainValidator,
     field_serializer,
     field_validator,
     model_validator,
@@ -27,6 +29,7 @@ from sqlglot import errors, expressions, parse_one
 
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
 from matchbox.common.exceptions import MatchboxNameError
+from matchbox.common.hash import base64_to_hash, hash_to_base64
 
 
 class DataTypes(StrEnum):
@@ -642,6 +645,11 @@ class Resolution(BaseModel):
 
     description: str | None = Field(default=None, description="Description")
     truth: int | None = Field(default=None, ge=0, le=100, strict=True)
+    fingerprint: Annotated[
+        bytes,
+        PlainSerializer(hash_to_base64, return_type=str),
+        PlainValidator(base64_to_hash),
+    ]
 
     # Discriminator field
     resolution_type: ResolutionType

@@ -1,6 +1,7 @@
 """Interface to source data."""
 
 from collections.abc import Callable, Generator, Iterable
+from functools import wraps
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 import polars as pl
@@ -22,7 +23,7 @@ from matchbox.common.dtos import (
     SourceResolutionPath,
 )
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
-from matchbox.common.hash import HashMethod, hash_rows
+from matchbox.common.hash import HashMethod, hash_arrow_table, hash_rows
 from matchbox.common.logging import logger
 
 if TYPE_CHECKING:
@@ -34,6 +35,24 @@ else:
 
 
 T = TypeVar("T")
+
+
+def post_run(method: Callable[..., T]) -> Callable[..., T]:
+    """Decorator to ensure that a method is called after source run.
+
+    Raises:
+        RuntimeError: If run hasn't happened.
+    """
+
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        if self.hashes is None:
+            raise RuntimeError(
+                "The source must be run before attempting this operation."
+            )
+        return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class Source:
@@ -108,6 +127,7 @@ class Source:
         self.name = name
         self.description = description
         self.extract_transform = extract_transform
+        self.hashes: ArrowTable | None = None
 
         if infer_types:
             self._validate_fields(key_field, index_fields, str)
@@ -154,6 +174,7 @@ class Source:
             index_fields=self.index_fields,
         )
 
+    @post_run
     def to_resolution(self) -> Resolution:
         """Convert to Resolution for API calls."""
         return Resolution(
@@ -161,6 +182,7 @@ class Source:
             truth=None,
             resolution_type=ResolutionType.SOURCE,
             config=self.config,
+            fingerprint=hash_arrow_table(self.hashes),
         )
 
     @classmethod
@@ -345,6 +367,7 @@ class Source:
         """
         return self.config.f(self.name, fields)
 
+    @post_run
     def sync(self) -> None:
         """Send the source config and hashes to the server."""
         resolution = self.to_resolution()
@@ -352,26 +375,20 @@ class Source:
             existing_resolution = _handler.get_resolution(path=self.resolution_path)
         except MatchboxResolutionNotFoundError:
             existing_resolution = None
-        # Check if config matches
-        if existing_resolution:
-            if existing_resolution.config != self.config:
-                raise ValueError(
-                    f"Resolution {self.resolution_path} already exists with different "
-                    "configuration. Please delete the existing resolution "
-                    "or use a different name. "
-                )
-            else:
-                log_prefix = f"Resolution {self.resolution_path}"
-                logger.warning("Already exists. Passing.", prefix=log_prefix)
-        else:
-            _handler.create_resolution(resolution=resolution, path=self.resolution_path)
 
-        if self.hashes:
-            _handler.set_data(
-                path=self.resolution_path,
-                data=self.hashes,
-                validate_type=ResolutionType.SOURCE,
+        if existing_resolution:
+            raise ValueError(
+                f"Resolution {self.resolution_path} already exists."
+                "Please delete the existing resolution "
+                "or use a different name. "
             )
+
+        _handler.create_resolution(resolution=resolution, path=self.resolution_path)
+        _handler.set_data(
+            path=self.resolution_path,
+            data=self.hashes,
+            validate_type=ResolutionType.SOURCE,
+        )
 
     def query(self, **kwargs) -> Query:
         """Generate a query for this source."""

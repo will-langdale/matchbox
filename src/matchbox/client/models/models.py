@@ -2,6 +2,8 @@
 
 import inspect
 import json
+from collections.abc import Callable
+from functools import wraps
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 
 from matchbox.client import _handler
@@ -20,7 +22,7 @@ from matchbox.common.dtos import (
     ResolutionType,
 )
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
-from matchbox.common.logging import logger
+from matchbox.common.hash import hash_model_results
 from matchbox.common.transform import truth_float_to_int, truth_int_to_float
 
 if TYPE_CHECKING:
@@ -30,6 +32,7 @@ else:
 
 P = ParamSpec("P")
 R = TypeVar("R")
+T = TypeVar("T")
 
 
 _MODEL_CLASSES = {
@@ -44,6 +47,24 @@ def add_model_class(ModelClass: type[Linker] | type[Deduper]) -> None:
         _MODEL_CLASSES[ModelClass.__name__] = ModelClass
     else:
         raise ValueError("The argument is not a proper subclass of Deduper or Linker.")
+
+
+def post_run(method: Callable[..., T]) -> Callable[..., T]:
+    """Decorator to ensure that a method is called after model run.
+
+    Raises:
+        RuntimeError: If run hasn't happened.
+    """
+
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        if self.results is None:
+            raise RuntimeError(
+                "The model must be run before attempting this operation."
+            )
+        return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class Model:
@@ -136,6 +157,7 @@ class Model:
             right_query=self.right_query.config if self.right_query else None,
         )
 
+    @post_run
     def to_resolution(self) -> Resolution:
         """Convert to Resolution for API calls."""
         return Resolution(
@@ -143,6 +165,7 @@ class Model:
             truth=self._truth,
             resolution_type=ResolutionType.MODEL,
             config=self.config,
+            fingerprint=hash_model_results(self.results.probabilities),
         )
 
     @classmethod
@@ -231,6 +254,7 @@ class Model:
 
         return self.results
 
+    @post_run
     def sync(self) -> None:
         """Send the model config, truth and results to the server."""
         resolution = self.to_resolution()
@@ -238,23 +262,17 @@ class Model:
             existing_resolution = _handler.get_resolution(path=self.resolution_path)
         except MatchboxResolutionNotFoundError:
             existing_resolution = None
-        # Check if config matches
+
         if existing_resolution:
-            if existing_resolution.config != self.config:
-                raise ValueError(
-                    f"Resolution {self.resolution_path} already exists with different "
-                    "configuration. Please delete the existing resolution "
-                    "or use a different name. "
-                )
-            else:
-                log_prefix = f"Resolution {self.resolution_path}"
-                logger.warning("Already exists. Passing.", prefix=log_prefix)
-        else:
-            _handler.create_resolution(resolution=resolution, path=self.resolution_path)
+            raise ValueError(
+                f"Resolution {self.resolution_path} already exists."
+                "Please delete the existing resolution "
+                "or use a different name. "
+            )
 
+        _handler.create_resolution(resolution=resolution, path=self.resolution_path)
         _handler.set_truth(path=self.resolution_path, truth=self._truth)
-
-        if self.results and len(self.results.probabilities):
+        if len(self.results.probabilities):
             _handler.set_data(
                 path=self.resolution_path,
                 data=self.results.probabilities,

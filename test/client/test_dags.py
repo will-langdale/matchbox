@@ -24,6 +24,7 @@ from matchbox.common.dtos import (
     Resolution,
     ResolutionName,
     ResolutionPath,
+    ResolutionType,
     ResourceOperationStatus,
     Run,
 )
@@ -495,9 +496,14 @@ def test_extract_lookup(
             json=Run(
                 run_id=1,
                 resolutions={
-                    foo.name: foo.source.to_resolution(),
-                    bar.name: bar.source.to_resolution(),
-                    "root": dag.get_model("root").to_resolution(),
+                    foo.name: foo.fake_run().source.to_resolution(),
+                    bar.name: bar.fake_run().source.to_resolution(),
+                    "root": Resolution(
+                        fingerprint=b"mock",
+                        truth=1,
+                        resolution_type=ResolutionType.MODEL,
+                        config=dag.get_model("root").config,
+                    ),
                 },
             ).model_dump(),
         )
@@ -767,11 +773,11 @@ def test_from_resolution():
 
     for testkit in [crn_testkit, duns_testkit]:
         t1_dag.add_resolution(
-            name=testkit.name, resolution=testkit.source.to_resolution()
+            name=testkit.name, resolution=testkit.fake_run().source.to_resolution()
         )
     for testkit in [deduper_model_testkit, linker_model_testkit]:
         t1_dag.add_resolution(
-            name=testkit.name, resolution=testkit.model.to_resolution()
+            name=testkit.name, resolution=testkit.fake_run().model.to_resolution()
         )
 
     # Verify reconstruction matches original
@@ -787,7 +793,7 @@ def test_from_resolution():
     with pytest.raises(ValueError, match="not found in DAG"):
         t2_dag.add_resolution(
             name=linker_model_testkit.name,
-            resolution=linker_model_testkit.model.to_resolution(),
+            resolution=linker_model_testkit.fake_run().model.to_resolution(),
         )
 
 
@@ -910,22 +916,22 @@ def test_dag_load_server_run(matchbox_api: MockRouter):
 
     # Create test sources and model
     linked_testkit = linked_sources_factory(dag=test_dag)
-    crn_testkit = linked_testkit.sources["crn"]
-    duns_testkit = linked_testkit.sources["duns"]
+    crn_testkit = linked_testkit.sources["crn"].fake_run()
+    duns_testkit = linked_testkit.sources["duns"].fake_run()
 
     deduper_model_testkit = model_factory(
         name="deduper",
         left_testkit=crn_testkit,
         true_entities=linked_testkit.true_entities,
         dag=test_dag,
-    )
+    ).fake_run()
     linker_model_testkit = model_factory(
         name="linker",
         left_testkit=deduper_model_testkit,
         right_testkit=duns_testkit,
         true_entities=linked_testkit.true_entities,
         dag=test_dag,
-    )
+    ).fake_run()
 
     # Add to DAG
     test_dag.source(**crn_testkit.into_dag())
@@ -1040,8 +1046,8 @@ def test_dag_load_run_complex_dependencies(matchbox_api: MockRouter):
     test_dag = TestkitDAG().dag
 
     linked_testkit = linked_sources_factory(dag=test_dag)
-    crn_testkit = linked_testkit.sources["crn"]
-    duns_testkit = linked_testkit.sources["duns"]
+    crn_testkit = linked_testkit.sources["crn"].fake_run()
+    duns_testkit = linked_testkit.sources["duns"].fake_run()
 
     # model_inner depends on 2 sources (count=2)
     model_inner_testkit = model_factory(
@@ -1050,7 +1056,7 @@ def test_dag_load_run_complex_dependencies(matchbox_api: MockRouter):
         right_testkit=duns_testkit,
         true_entities=linked_testkit.true_entities,
         dag=test_dag,
-    )
+    ).fake_run()
 
     # model_outer ALSO depends on 2 things: model_inner + a source (count=2)
     # Same count as model_inner, but MUST be loaded AFTER model_inner
@@ -1060,7 +1066,7 @@ def test_dag_load_run_complex_dependencies(matchbox_api: MockRouter):
         right_testkit=crn_testkit,
         true_entities=linked_testkit.true_entities,
         dag=test_dag,
-    )
+    ).fake_run()
 
     # Add to original DAG
     test_dag.source(**crn_testkit.into_dag())

@@ -235,7 +235,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     name = Column(TEXT, nullable=False)
     description = Column(TEXT, nullable=True)
     type = Column(TEXT, nullable=False)
-    hash = Column(BYTEA, nullable=True)
+    fingerprint = Column(BYTEA, nullable=False)
     truth = Column(SMALLINT, nullable=True)
 
     # Relationships
@@ -451,6 +451,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             description=resolution.description,
             type=resolution.resolution_type.value,
             truth=resolution.truth,
+            fingerprint=resolution.fingerprint,
         )
         session.add(resolution_orm)
         session.flush()  # Get resolution_id
@@ -496,6 +497,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             truth=self.truth,
             resolution_type=ResolutionType(self.type),
             config=config,
+            fingerprint=self.fingerprint,
         )
 
     @staticmethod
