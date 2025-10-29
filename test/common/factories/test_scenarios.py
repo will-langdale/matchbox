@@ -43,10 +43,10 @@ def test_register_custom_scenario(
 
     @register_scenario("custom")
     def create_custom_scenario(
-        backend: object,
-        warehouse_engine: object,
-        n_entities: object,
-        seed: object,
+        backend: MatchboxDBAdapter,
+        warehouse_engine: Engine,
+        n_entities: int,
+        seed: int,
         **kwargs: Any,
     ) -> TestkitDAG:
         return create_bare_scenario(
@@ -85,10 +85,10 @@ def test_caching_scenario(
 
     @register_scenario("cacheable")
     def create_cacheable_scenario(
-        backend: object,
-        warehouse_engine: object,
-        n_entities: object,
-        seed: object,
+        backend: MatchboxDBAdapter,
+        warehouse_engine: Engine,
+        n_entities: int,
+        seed: int,
         **kwargs: Any,
     ) -> TestkitDAG:
         nonlocal call_count

@@ -130,8 +130,8 @@ class Source:
 
     def _validate_fields(
         self,
-        key_field: object,
-        index_fields: list[object],
+        key_field: str | SourceField,
+        index_fields: list[str | SourceField],
         type_check: type[str] | type[SourceField],
     ) -> tuple[T, tuple[T, ...]]:
         """Validate that fields match the expected type (str or SourceField)."""

@@ -2,7 +2,7 @@
 
 import importlib.metadata
 import logging
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
 from rich.console import Console
 from rich.progress import (
@@ -46,8 +46,10 @@ class PrefixedLoggerAdapter(logging.LoggerAdapter):
     """
 
     def process(
-        self, msg: object, kwargs: dict[str, object]
-    ) -> tuple[object, dict[str, object]]:
+        self,
+        msg: Any,  # noqa: ANN401
+        kwargs: dict[str, Any],  # noqa: ANN401
+    ) -> tuple[Any, dict[str, Any]]:  # noqa: ANN401
         """Process the log message, adding a prefix if provided.
 
         Args:

@@ -1,5 +1,6 @@
 """API routes for the Matchbox server."""
 
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from importlib.metadata import version
 from pathlib import Path
@@ -156,7 +157,9 @@ async def deletion_not_confirmed_handler(
 
 
 @app.middleware("http")
-async def add_security_headers(request: Request, call_next: object) -> Response:
+async def add_security_headers(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     """Improve security by adding headers to all responses."""
     response: Response = await call_next(request)
     response.headers["Cache-control"] = "no-store, no-cache"

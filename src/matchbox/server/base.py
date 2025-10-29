@@ -42,11 +42,11 @@ class MatchboxSnapshot(BaseModel):
     """A snapshot of the Matchbox database."""
 
     backend_type: MatchboxBackends
-    data: object
+    data: dict[str, Any]
 
     @field_validator("data")
     @classmethod
-    def check_serialisable(cls, value: object) -> object:
+    def check_serialisable(cls, value: dict[str, Any]) -> dict[str, Any]:
         """Validate that the value can be serialised to JSON."""
         try:
             json.dumps(value)

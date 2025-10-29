@@ -252,7 +252,7 @@ class MatchboxDataNotFound(MatchboxException):
         self,
         message: str | None = None,
         table: str | None = None,
-        data: object | None = None,
+        data: str | dict[str, Any] | list[Any] | set[Any] | None = None,
     ) -> None:
         """Initialise the exception."""
         if message is None:

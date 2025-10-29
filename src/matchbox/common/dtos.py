@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
 from json import JSONDecodeError
-from typing import Self, TypeAlias
+from typing import Any, Self, TypeAlias
 
 import polars as pl
 import pyarrow as pa
@@ -237,7 +237,9 @@ class MatchboxName(str):
 
     @classmethod
     def __get_pydantic_core_schema__(
-        cls, source_type: object, handler: GetCoreSchemaHandler
+        cls,
+        source_type: Any,  # noqa: ANN401
+        handler: GetCoreSchemaHandler,
     ) -> core_schema.CoreSchema:
         """Generate core schema for Pydantic compatibility."""
         return core_schema.no_info_plain_validator_function(
