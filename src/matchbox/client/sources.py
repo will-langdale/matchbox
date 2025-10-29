@@ -386,6 +386,6 @@ class Source:
                 validate_type=ResolutionType.SOURCE,
             )
 
-    def query(self, **kwargs: object) -> Query:
+    def query(self, **kwargs: Any) -> Query:
         """Generate a query for this source."""
         return Query(self, **kwargs, dag=self.dag)

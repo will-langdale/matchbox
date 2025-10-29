@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -46,7 +47,7 @@ def test_register_custom_scenario(
         warehouse_engine: object,
         n_entities: object,
         seed: object,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> TestkitDAG:
         return create_bare_scenario(
             backend, warehouse_engine, n_entities=n_entities, seed=seed, **kwargs
@@ -88,7 +89,7 @@ def test_caching_scenario(
         warehouse_engine: object,
         n_entities: object,
         seed: object,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> TestkitDAG:
         nonlocal call_count
         call_count += 1

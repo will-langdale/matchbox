@@ -279,6 +279,6 @@ class Model:
         results = _handler.get_results(name=self.name)
         return Results(probabilities=results, metadata=self.config)
 
-    def query(self, *sources: object, **kwargs: object) -> Query:
+    def query(self, *sources: object, **kwargs: Any) -> Query:
         """Generate a query for this model."""
         return Query(*sources, **kwargs, model=self, dag=self.dag)

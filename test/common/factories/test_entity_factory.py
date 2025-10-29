@@ -16,7 +16,7 @@ from matchbox.common.factories.entities import (
 )
 
 
-def make_cluster_entity(id: int, *args: object) -> ClusterEntity:
+def make_cluster_entity(id: int, *args: Any) -> ClusterEntity:
     """Helper to create a ClusterEntity.
 
     Args:

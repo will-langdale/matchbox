@@ -1,7 +1,7 @@
 """ORM classes for the Matchbox PostgreSQL database."""
 
 import json
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import (
     BIGINT,
@@ -716,7 +716,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         self,
         key_field: SourceFields | None = None,
         index_fields: list[SourceFields] | None = None,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> None:
         """Initialise SourceConfigs with optional field objects."""
         super().__init__(**kwargs)

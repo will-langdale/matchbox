@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from enum import StrEnum
 from functools import wraps
-from typing import ParamSpec, Self, TypeVar
+from typing import Any, ParamSpec, Self, TypeVar
 
 import polars as pl
 import sqlglot
@@ -49,7 +49,7 @@ def requires_client(method: Callable[..., T]) -> Callable[..., T]:
     """
 
     @wraps(method)
-    def wrapper(self: "Location", *args: object, **kwargs: object) -> T:
+    def wrapper(self: "Location", *args: Any, **kwargs: Any) -> T:
         if self.client is None:
             raise MatchboxSourceClientError
         return method(self, *args, **kwargs)

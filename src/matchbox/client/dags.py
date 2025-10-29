@@ -2,7 +2,7 @@
 
 import datetime
 import json
-from typing import Self
+from typing import Any, Self
 
 from pyarrow import Table as ArrowTable
 from sqlalchemy import Engine
@@ -158,14 +158,14 @@ class DAG:
         else:
             return steps[0]
 
-    def source(self, *args: object, **kwargs: object) -> Source:
+    def source(self, *args: Any, **kwargs: Any) -> Source:
         """Create Source and add it to the DAG."""
         source = Source(*args, **kwargs, dag=self)
         self._add_step(source)
 
         return source
 
-    def model(self, *args: object, **kwargs: object) -> Model:
+    def model(self, *args: Any, **kwargs: Any) -> Model:
         """Create Model and add it to the DAG."""
         model = Model(*args, **kwargs, dag=self)
         self._add_step(model)
@@ -250,7 +250,7 @@ class DAG:
 
         return node
 
-    def query(self, *args: object, **kwargs: object) -> Query:
+    def query(self, *args: Any, **kwargs: Any) -> Query:
         """Create Query object."""
         return Query(*args, **kwargs, dag=self)
 
