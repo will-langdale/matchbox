@@ -82,7 +82,7 @@ class Location(ABC):
         """Retrieve client."""
         return self._client
 
-    def set_client(self, client: Engine) -> Self:
+    def set_client(self, client: Any) -> Self:  # noqa: ANN401
         """Set client for location and return the location."""
         if not isinstance(client, CLIENT_CLASSES[self.client_type]):
             raise ValueError(

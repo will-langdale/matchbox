@@ -5,7 +5,6 @@ import json
 from typing import Any, Self
 
 from pyarrow import Table as ArrowTable
-from sqlalchemy import Engine
 
 from matchbox.client import _handler
 from matchbox.client.locations import Location
@@ -380,7 +379,7 @@ class DAG:
 
         return self
 
-    def set_client(self, client: Engine) -> Self:
+    def set_client(self, client: Any) -> Self:  # noqa: ANN401
         """Assign a client to all sources at once."""
         for node in self.nodes.values():
             if isinstance(node, Source):

@@ -27,6 +27,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pyarrow import ArrowInvalid
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import HTMLResponse
 
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
@@ -531,7 +532,7 @@ def clear_database(
 
 
 @app.get("/docs", include_in_schema=False)
-async def custom_swagger_ui_html() -> object:
+async def custom_swagger_ui_html() -> HTMLResponse:
     """Get locally hosted docs."""
     return get_swagger_ui_html(
         openapi_url=app.openapi_url,
@@ -544,6 +545,6 @@ async def custom_swagger_ui_html() -> object:
 
 
 @app.get(app.swagger_ui_oauth2_redirect_url, include_in_schema=False)
-async def swagger_ui_redirect() -> object:
+async def swagger_ui_redirect() -> HTMLResponse:
     """Helper for OAuth2."""
     return get_swagger_ui_oauth2_redirect_html()

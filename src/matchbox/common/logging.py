@@ -28,7 +28,7 @@ def get_formatter() -> logging.Formatter:
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to load logging plugin: {e}")
 
-    if len(_PLUGINS):
+    if _PLUGINS:
         return _PLUGINS[0]
 
     return logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
