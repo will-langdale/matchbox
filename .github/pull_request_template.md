@@ -7,14 +7,12 @@
 ## 👀 Guidance to review
 
 <!-- Help reviewers know where to focus their efforts, or flag controversial decisions -->
+<!-- Add links and diagrams to explain decisions -->
+<!-- Point out any **breaking changes** -->
 
 ## 🤖 AI declaration
 
 <!-- Declare code where AI was used, and how you ensured its quality -->
-
-## 🔗 Relevant links
-
-* <!-- List any useful links] -->
 
 ## ✅ Checklist:
 
