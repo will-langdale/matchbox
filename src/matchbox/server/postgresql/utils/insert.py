@@ -190,6 +190,11 @@ def insert_hashes(
             adbc_connection.rollback()
             raise
 
+    MBDB.vacuum_analyze(
+        Clusters.__table__.fullname,
+        ClusterSourceKey.__table__.fullname,
+    )
+
     if cluster_records.is_empty() and keys_records.is_empty():
         logger.info("No new records to add", prefix=log_prefix)
 
@@ -596,11 +601,19 @@ def insert_results(
             )
 
             adbc_connection.commit()
+
         except Exception as e:
             logger.error(
                 f"Failed to insert data, rolling back: {str(e)}", prefix=log_prefix
             )
             adbc_connection.rollback()
             raise
+
+    MBDB.vacuum_analyze(
+        Clusters.__table__.fullname,
+        Contains.__table__.fullname,
+        Probabilities.__table__.fullname,
+        Results.__table__.fullname,
+    )
 
     logger.info("Insert operation complete!", prefix=log_prefix)

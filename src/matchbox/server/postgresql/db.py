@@ -236,6 +236,26 @@ class MatchboxDatabase:
         command.downgrade(self.alembic_config, "base")
         command.upgrade(self.alembic_config, "head")
 
+    def vacuum_analyze(self, *table_names: str) -> None:
+        """Run VACUUM ANALYZE on specified tables.
+
+        VACUUM ANALYZE reclaims storage and updates statistics for the query planner.
+        PostgreSQL may not fully utilise indexes until VACUUM ANALYZE is run.
+        According to https://www.postgresql.org/docs/current/sql-vacuum.html,
+        VACUUM ANALYZE is recommended over just ANALYZE for optimal performance.
+
+        Args:
+            *table_names: Fully qualified table names to vacuum. If none provided,
+                vacuums the entire database.
+        """
+        engine = self.get_engine()
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            if table_names:
+                for table_name in table_names:
+                    conn.execute(text(f"VACUUM ANALYZE {table_name};"))
+            else:
+                conn.execute(text("VACUUM ANALYZE;"))
+
     def _look_for_alembic_version(self) -> bool:
         engine = self.get_engine()
         inspector = inspect(engine)
