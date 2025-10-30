@@ -216,6 +216,61 @@ class TestUploadTracker:
         assert entry.status.update_timestamp == update_timestamp
 
 
+def test_process_upload_empty_table(s3: S3Client):
+    """Test that files representing empty table can be handled.
+
+    Other behaviours of this task are captured in the API integration tests for adding a
+    source or a model.
+    """
+    # Setup
+    tracker = InMemoryUploadTracker()
+    mock_backend = Mock()
+    mock_backend.settings.datastore.get_client.return_value = s3
+    mock_backend.create_resolution = Mock(return_value=None)
+
+    bucket = "test-bucket"
+    test_key = "test-upload-id.parquet"
+
+    s3.create_bucket(
+        Bucket=bucket,
+        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+    )
+
+    # Add empty parquet to S3 and verify
+    buffer = table_to_buffer(pa.Table.from_arrays([]))
+    s3.put_object(Bucket=bucket, Key=test_key, Body=buffer)
+
+    assert s3.head_object(Bucket=bucket, Key=test_key)
+
+    # Setup metadata store with test data
+    upload_id = tracker.add_source(source_factory().resolution_path)
+    tracker.update(upload_id, UploadStage.AWAITING_UPLOAD)
+
+    process_upload(
+        backend=mock_backend,
+        tracker=tracker,
+        s3_client=s3,
+        upload_id=upload_id,
+        bucket=bucket,
+        filename=test_key,
+        upload_type="type",
+        resolution_name="name",
+    )
+
+    # Check that the status was updated to complete
+    status = tracker.get(upload_id).status
+    assert status.stage == UploadStage.COMPLETE, (
+        f"Expected status 'complete', got '{status.stage}'"
+    )
+
+    # Verify file was deleted
+    with pytest.raises(ClientError) as excinfo:
+        s3.head_object(Bucket=bucket, Key=test_key)
+    assert "404" in str(excinfo.value) or "NoSuchKey" in str(excinfo.value), (
+        f"File was not deleted: {str(excinfo.value)}"
+    )
+
+
 def test_process_upload_deletes_file_on_failure(s3: S3Client):
     """Test that files are deleted from S3 even when processing fails.
 

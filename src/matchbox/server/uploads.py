@@ -297,25 +297,27 @@ def process_upload(
     filename: str,
 ) -> None:
     """Generic task to process uploaded file, usable by FastAPI BackgroundTasks."""
-    tracker.update(upload_id, UploadStage.PROCESSING)
-    upload = tracker.get(upload_id)
-
     try:
-        data = pa.Table.from_batches(
-            [
-                batch
-                for batch in s3_to_recordbatch(
-                    client=s3_client, bucket=bucket, key=filename
-                )
-            ]
-        )
+        tracker.update(upload_id, UploadStage.PROCESSING)
+        upload = tracker.get(upload_id)
 
-        if upload.status.entity == BackendUploadType.INDEX:
-            backend.insert_source_data(path=upload.path, data_hashes=data)
-        elif upload.status.entity == BackendUploadType.RESULTS:
-            backend.insert_model_data(path=upload.path, results=data)
-        else:
-            raise ValueError(f"Unknown upload type: {upload.status.entity}")
+        batches = [
+            batch
+            for batch in s3_to_recordbatch(
+                client=s3_client, bucket=bucket, key=filename
+            )
+        ]
+
+        # At least 1 row present
+        if len(batches):
+            data = pa.Table.from_batches(batches)
+
+            if upload.status.entity == BackendUploadType.INDEX:
+                backend.insert_source_data(path=upload.path, data_hashes=data)
+            elif upload.status.entity == BackendUploadType.RESULTS:
+                backend.insert_model_data(path=upload.path, results=data)
+            else:
+                raise ValueError(f"Unknown upload type: {upload.status.entity}")
 
         tracker.update(upload_id, UploadStage.COMPLETE)
 

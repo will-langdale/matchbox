@@ -272,12 +272,11 @@ class Model:
 
         _handler.create_resolution(resolution=resolution, path=self.resolution_path)
         _handler.set_truth(path=self.resolution_path, truth=self._truth)
-        if len(self.results.probabilities):
-            _handler.set_data(
-                path=self.resolution_path,
-                data=self.results.probabilities,
-                validate_type=ResolutionType.MODEL,
-            )
+        _handler.set_data(
+            path=self.resolution_path,
+            data=self.results.probabilities,
+            validate_type=ResolutionType.MODEL,
+        )
 
     def download_results(self) -> Results:
         """Retrieve results associated with the model from the database."""
