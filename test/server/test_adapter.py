@@ -644,10 +644,25 @@ class TestMatchboxBackend:
                 updated_resolution, path=crn_testkit.source.resolution_path
             )
 
-            # We cannot update source resolution with a model resolution
-            with pytest.raises(MatchboxResolutionUpdateError):
+            # We cannot update source resolution with different fingerprint
+            with pytest.raises(MatchboxResolutionUpdateError, match="fingerprint"):
                 self.backend.update_resolution(
-                    model_factory().fake_run().model.to_resolution(),
+                    updated_resolution.model_copy(update={"fingerprint": 123}),
+                    path=crn_testkit.source.resolution_path,
+                )
+
+            # We cannot update source resolution with a model resolution
+            with pytest.raises(MatchboxResolutionUpdateError, match="parents"):
+                # Create model with same fingerprint as previous resolution
+                valid_fingerprint = crn_testkit.source.to_resolution().fingerprint
+                model_resolution = Resolution.model_validate(
+                    model_factory()
+                    .fake_run()
+                    .model.to_resolution()
+                    .model_copy(update={"fingerprint": valid_fingerprint})
+                )
+                self.backend.update_resolution(
+                    model_resolution,
                     path=crn_testkit.source.resolution_path,
                 )
 
@@ -781,7 +796,7 @@ class TestMatchboxBackend:
             assert linker_retrieved.config.left_query.threshold == 99
 
             # We cannot change a model's inputs
-            wrong_config = ModelConfig.model_validate(
+            rewired_config = ModelConfig.model_validate(
                 old_resolution.config.model_copy(
                     update={
                         "left_query": old_resolution.config.left_query.model_copy(
@@ -790,13 +805,23 @@ class TestMatchboxBackend:
                     }
                 )
             )
-            wrong_resolution = Resolution.model_validate(
-                old_resolution.model_copy(update={"config": wrong_config})
+            rewired_resolution = Resolution.model_validate(
+                old_resolution.model_copy(update={"config": rewired_config})
             )
 
-            with pytest.raises(MatchboxResolutionUpdateError):
+            with pytest.raises(MatchboxResolutionUpdateError, match="parents"):
                 self.backend.update_resolution(
-                    resolution=wrong_resolution,
+                    resolution=rewired_resolution,
+                    path=linker_testkit.resolution_path,
+                )
+
+            # We cannot change model results fingerprint
+            with pytest.raises(MatchboxResolutionUpdateError, match="fingerprint"):
+                corrupt_resolution = Resolution.model_validate(
+                    updated_resolution.model_copy(update={"fingerprint": b"fake"})
+                )
+                self.backend.update_resolution(
+                    resolution=corrupt_resolution,
                     path=linker_testkit.resolution_path,
                 )
 
