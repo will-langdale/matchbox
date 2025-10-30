@@ -124,19 +124,6 @@ def test_model_sync(matchbox_api: MockRouter):
         )
     )
 
-    matchbox_api.patch(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}/truth"
-    ).mock(
-        return_value=Response(
-            200,
-            json=ResourceOperationStatus(
-                success=True,
-                name=testkit.model.name,
-                operation=CRUDOperation.UPDATE,
-            ).model_dump(),
-        )
-    )
-
     insert_results_route = matchbox_api.post(
         f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}/data"
     ).mock(

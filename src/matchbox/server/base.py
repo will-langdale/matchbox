@@ -421,10 +421,6 @@ class MatchboxDBAdapter(ABC):
         Args:
             resolution: Resolution object with a source or model config
             path: The resolution path for the source
-
-        Raises:
-            MatchboxModelConfigError: If the configuration is invalid, such as
-                the ModelConfig's resolutions sharing ancestors
         """
         ...
 
@@ -440,6 +436,18 @@ class MatchboxDBAdapter(ABC):
 
         Returns:
             A Resolution object
+        """
+        ...
+
+    @abstractmethod
+    def update_resolution(self, resolution: Resolution, path: ResolutionPath) -> None:
+        """Updates resolution metadata.
+
+        It cannot be used to update a resolution's fingerprint.
+
+        Args:
+            resolution: Resolution object with a source or model config
+            path: The resolution path for the source
         """
         ...
 
@@ -461,6 +469,9 @@ class MatchboxDBAdapter(ABC):
     ) -> None:
         """Inserts hash data for a source resolution.
 
+        Only possible if data fingerprint matches fingerprint declared when the
+        resolution was created. Data can only be set once on a resolution.
+
         Args:
             path: The path of the source resolution to index.
             data_hashes: The Arrow table with the hash of each data row
@@ -469,22 +480,16 @@ class MatchboxDBAdapter(ABC):
 
     @abstractmethod
     def insert_model_data(self, path: ModelResolutionPath, results: Table) -> None:
-        """Inserts results data for a model resolution."""
+        """Inserts results data for a model resolution.
+
+        Only possible if data fingerprint matches fingerprint declared when the
+        resolution was created. Data can only be set once on a resolution.
+        """
         ...
 
     @abstractmethod
     def get_model_data(self, path: ModelResolutionPath) -> Table:
         """Get the results for a model resolution."""
-        ...
-
-    @abstractmethod
-    def set_model_truth(self, path: ModelResolutionPath, truth: int) -> None:
-        """Sets the truth threshold for this model, changing the default clusters."""
-        ...
-
-    @abstractmethod
-    def get_model_truth(self, path: ModelResolutionPath) -> int:
-        """Gets the current truth threshold for this model."""
         ...
 
     # Data management

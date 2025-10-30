@@ -395,6 +395,23 @@ def create_resolution(
 
 
 @http_retry
+def update_resolution(
+    resolution: Resolution,
+    path: ResolutionPath,
+) -> ResourceOperationStatus:
+    """Update a resolution (model or source)."""
+    log_prefix = f"Resolution {path}"
+    logger.debug("Updating", prefix=log_prefix)
+
+    res = CLIENT.put(
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}",
+        json=resolution.model_dump(),
+    )
+
+    return ResourceOperationStatus.model_validate(res.json())
+
+
+@http_retry
 def get_resolution(
     path: ResolutionPath, validate_type: ResolutionType | None = None
 ) -> Resolution | None:
@@ -465,31 +482,6 @@ def get_results(path: ModelResolutionPath) -> Table:
     )
     buffer = BytesIO(res.content)
     return read_table(buffer)
-
-
-@http_retry
-def set_truth(path: ModelResolutionPath, truth: int) -> ResourceOperationStatus:
-    """Set the truth threshold for a model in Matchbox."""
-    log_prefix = f"Model {path}"
-    logger.debug("Setting truth value", prefix=log_prefix)
-
-    res = CLIENT.patch(
-        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/truth",
-        json=truth,
-    )
-    return ResourceOperationStatus.model_validate(res.json())
-
-
-@http_retry
-def get_truth(path: ModelResolutionPath) -> int:
-    """Get the truth threshold for a model in Matchbox."""
-    log_prefix = f"Model {path}"
-    logger.debug("Retrieving truth value", prefix=log_prefix)
-
-    res = CLIENT.get(
-        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/truth"
-    )
-    return res.json()
 
 
 @http_retry

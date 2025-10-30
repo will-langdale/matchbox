@@ -599,6 +599,7 @@ class ModelTestkit(BaseModel):
     @threshold.setter
     def threshold(self, value: int):
         """Set the threshold for the model."""
+        self.model.truth = value / 100
         right_clusters = self.right_clusters.values() if self.right_clusters else []
         input_results = set(self.left_clusters.values()) | set(right_clusters)
 

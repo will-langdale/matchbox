@@ -15,12 +15,14 @@ from matchbox.common.arrow import (
     SCHEMA_QUERY_WITH_LEAVES,
 )
 from matchbox.common.dtos import (
-    LocationConfig,
-    LocationType,
+    DataTypes,
     Match,
+    ModelConfig,
     Resolution,
     ResolutionPath,
     ResolutionType,
+    SourceConfig,
+    SourceField,
 )
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import (
@@ -31,6 +33,7 @@ from matchbox.common.exceptions import (
     MatchboxResolutionAlreadyExists,
     MatchboxResolutionExistingData,
     MatchboxResolutionNotFoundError,
+    MatchboxResolutionUpdateError,
     MatchboxRunNotFoundError,
     MatchboxRunNotWriteable,
 )
@@ -502,9 +505,6 @@ class TestMatchboxBackend:
                     model_testkit.probabilities.to_arrow(),
                 )
 
-            with pytest.raises(MatchboxRunNotWriteable):
-                self.backend.set_model_truth(model_testkit.resolution_path, 50)
-
     # Resolution management
 
     def test_get_source(self):
@@ -578,6 +578,114 @@ class TestMatchboxBackend:
             assert cluster_assoc_count_post_delete < cluster_assoc_count_pre_delete
             assert proposed_merge_probs_post_delete < proposed_merge_probs_pre_delete
 
+    def test_index_new_source(self):
+        """Test that indexing a new source works."""
+        with self.scenario(self.backend, "bare") as dag_testkit:
+            crn_testkit: SourceTestkit = dag_testkit.sources.get("crn").fake_run()
+
+            assert self.backend.clusters.count() == 0
+
+            self.backend.create_resolution(
+                crn_testkit.source.to_resolution(),
+                path=crn_testkit.resolution_path,
+            )
+
+            # Resolution can't be re-added
+            with pytest.raises(MatchboxResolutionAlreadyExists):
+                self.backend.create_resolution(
+                    crn_testkit.source.to_resolution(),
+                    path=crn_testkit.resolution_path,
+                )
+
+            # After resolution metadata is present, we can add data
+            self.backend.insert_source_data(
+                crn_testkit.source.resolution_path, crn_testkit.data_hashes
+            )
+
+            # Data can't be re-added
+            with pytest.raises(MatchboxResolutionExistingData):
+                self.backend.insert_source_data(
+                    crn_testkit.source.resolution_path, crn_testkit.data_hashes
+                )
+
+            # We can retrieve the resolution
+            crn_retrieved = self.backend.get_resolution(
+                crn_testkit.source.resolution_path, validate=ResolutionType.SOURCE
+            )
+
+            assert crn_testkit.source_config == crn_retrieved.config
+            assert self.backend.data.count() == len(crn_testkit.data_hashes)
+
+            assert self.backend.data.count() == len(crn_testkit.data_hashes)
+            assert self.backend.source_resolutions.count() == 1
+
+            # We can update the resolution metadata, including changes in fields
+            updated_key_field = SourceField(name="new key", type=DataTypes.STRING)
+            updated_index_fields = (
+                SourceField(name="new field", type=DataTypes.BOOLEAN),
+            )
+            updated_config = SourceConfig.model_validate(
+                crn_testkit.source.config.model_copy(
+                    update={
+                        "key_field": updated_key_field,
+                        "index_fields": updated_index_fields,
+                    }
+                )
+            )
+            updated_resolution = Resolution.model_validate(
+                crn_testkit.source.to_resolution().model_copy(
+                    update={
+                        "description": "updated",
+                        "config": updated_config,
+                    }
+                )
+            )
+            self.backend.update_resolution(
+                updated_resolution, path=crn_testkit.source.resolution_path
+            )
+
+            # We cannot update source resolution with a model resolution
+            with pytest.raises(MatchboxResolutionUpdateError):
+                self.backend.update_resolution(
+                    model_factory().fake_run().model.to_resolution(),
+                    path=crn_testkit.source.resolution_path,
+                )
+
+            # We can retrieve the updated resolution
+            crn_retrieved = self.backend.get_resolution(
+                crn_testkit.source.resolution_path, validate=ResolutionType.SOURCE
+            )
+            assert crn_retrieved.description == "updated"
+            assert crn_retrieved.config.key_field == updated_key_field
+            assert crn_retrieved.config.index_fields == updated_index_fields
+
+    def test_index_different_resolution_same_hashes(self):
+        """Test that indexing data with the same hashes but different sources works."""
+        with self.scenario(self.backend, "bare") as dag_testkit:
+            # Prepare original source
+            crn_testkit: SourceTestkit = dag_testkit.sources.get("crn").fake_run()
+            # Create new source with same hashes
+            duns_testkit: SourceTestkit = dag_testkit.sources.get("duns")
+            duns_testkit.data_hashes = crn_testkit.data_hashes
+            duns_testkit.fake_run()
+
+            # Add original source
+            self.backend.create_resolution(
+                crn_testkit.source.to_resolution(), path=crn_testkit.resolution_path
+            )
+            self.backend.insert_source_data(
+                crn_testkit.source.resolution_path, crn_testkit.data_hashes
+            )
+            # Add different source, with same hashes
+            self.backend.create_resolution(
+                duns_testkit.source.to_resolution(), path=duns_testkit.resolution_path
+            )
+            self.backend.insert_source_data(
+                duns_testkit.source.resolution_path, crn_testkit.data_hashes
+            )
+            assert self.backend.data.count() == len(crn_testkit.data_hashes)
+            assert self.backend.source_resolutions.count() == 2
+
     def test_insert_model(self):
         """Test that models can be inserted."""
         with self.scenario(self.backend, "index") as dag_testkit:
@@ -630,7 +738,7 @@ class TestMatchboxBackend:
 
             assert self.backend.models.count() == models_count + 3
 
-            # Test can't insert duplicate
+            # We cannot re-create under the same path
             with pytest.raises(MatchboxResolutionAlreadyExists):
                 self.backend.create_resolution(
                     linker_testkit.fake_run().model.to_resolution(),
@@ -639,118 +747,58 @@ class TestMatchboxBackend:
 
             assert self.backend.models.count() == models_count + 3
 
-    # Data insertion
-
-    def test_index(self):
-        """Test that indexing data works."""
-        assert self.backend.data.count() == 0
-
-        with self.scenario(self.backend, "index") as dag_testkit:
-            assert self.backend.data.count() == (
-                len(dag_testkit.sources["crn"].entities)
-                + len(dag_testkit.sources["cdms"].entities)
-                + len(dag_testkit.sources["duns"].entities)
-            )
-
-    def test_index_new_source(self):
-        """Test that indexing a new source works."""
-        with self.scenario(self.backend, "bare") as dag_testkit:
-            crn_testkit: SourceTestkit = dag_testkit.sources.get("crn")
-
-            assert self.backend.clusters.count() == 0
-
-            self.backend.create_resolution(
-                crn_testkit.fake_run().source.to_resolution(),
-                path=crn_testkit.resolution_path,
-            )
-            self.backend.insert_source_data(
-                crn_testkit.source.resolution_path, crn_testkit.data_hashes
-            )
-
-            crn_retrieved = self.backend.get_resolution(
-                crn_testkit.source.resolution_path, validate=ResolutionType.SOURCE
-            )
-
-            assert crn_testkit.source_config == crn_retrieved.config
-            assert self.backend.data.count() == len(crn_testkit.data_hashes)
-
-            # Data can't be re-added
-            with pytest.raises(MatchboxResolutionExistingData):
-                self.backend.insert_source_data(
-                    crn_testkit.source.resolution_path, crn_testkit.data_hashes
+            # Can update model resolution
+            old_resolution = linker_testkit.model.to_resolution()
+            updated_config = ModelConfig.model_validate(
+                old_resolution.config.model_copy(
+                    update={
+                        "left_query": old_resolution.config.left_query.model_copy(
+                            update={"threshold": 99}
+                        )
+                    }
                 )
-            assert self.backend.data.count() == len(crn_testkit.data_hashes)
-            assert self.backend.source_resolutions.count() == 1
-
-    def test_index_same_resolution(self):
-        """Test that indexing same-name sources errors."""
-        with self.scenario(self.backend, "bare") as dag_testkit:
-            crn_testkit: SourceTestkit = dag_testkit.sources.get("crn")
-
-            crn_source_config_1 = crn_testkit.source_config.model_copy(
-                update={
-                    "location": LocationConfig(type=LocationType.RDBMS, name="postgres")
-                }
             )
-            crn_source_config_2 = crn_testkit.source_config.model_copy(
-                deep=True,
-                update={
-                    "location": LocationConfig(type=LocationType.RDBMS, name="mongodb")
-                },
-            )
-
-            crn_resolution_1 = (
-                crn_testkit.fake_run()
-                .source.to_resolution()
-                .model_copy(update={"config": crn_source_config_1})
-            )
-            crn_resolution_2 = (
-                crn_testkit.fake_run()
-                .source.to_resolution()
-                .model_copy(update={"config": crn_source_config_2})
-            )
-
-            self.backend.create_resolution(
-                crn_resolution_1, path=crn_testkit.resolution_path
-            )
-            self.backend.insert_source_data(
-                crn_testkit.source.resolution_path, crn_testkit.data_hashes
-            )
-
-            with pytest.raises(MatchboxResolutionAlreadyExists):
-                self.backend.create_resolution(
-                    crn_resolution_2, path=crn_testkit.resolution_path
+            updated_resolution = Resolution.model_validate(
+                old_resolution.model_copy(
+                    update={
+                        "description": "updated",
+                        "truth": 33,
+                        "config": updated_config,
+                    }
                 )
+            )
+            self.backend.update_resolution(
+                resolution=updated_resolution,
+                path=linker_testkit.resolution_path,
+            )
 
-            assert self.backend.data.count() == len(crn_testkit.data_hashes)
-            assert self.backend.source_resolutions.count() == 1
+            # We can retrieve the updated resolution
+            linker_retrieved = self.backend.get_resolution(
+                linker_testkit.resolution_path, validate=ResolutionType.MODEL
+            )
+            assert linker_retrieved.description == "updated"
+            assert linker_retrieved.truth == 33
+            assert linker_retrieved.config.left_query.threshold == 99
 
-    def test_index_different_resolution_same_hashes(self):
-        """Test that indexing data with the same hashes but different sources works."""
-        with self.scenario(self.backend, "bare") as dag_testkit:
-            # Prepare original source
-            crn_testkit: SourceTestkit = dag_testkit.sources.get("crn").fake_run()
-            # Create new source with same hashes
-            duns_testkit: SourceTestkit = dag_testkit.sources.get("duns")
-            duns_testkit.data_hashes = crn_testkit.data_hashes
-            duns_testkit.fake_run()
+            # We cannot change a model's inputs
+            wrong_config = ModelConfig.model_validate(
+                old_resolution.config.model_copy(
+                    update={
+                        "left_query": old_resolution.config.left_query.model_copy(
+                            update={"model_resolution": "new_model"}
+                        )
+                    }
+                )
+            )
+            wrong_resolution = Resolution.model_validate(
+                old_resolution.model_copy(update={"config": wrong_config})
+            )
 
-            # Add original source
-            self.backend.create_resolution(
-                crn_testkit.source.to_resolution(), path=crn_testkit.resolution_path
-            )
-            self.backend.insert_source_data(
-                crn_testkit.source.resolution_path, crn_testkit.data_hashes
-            )
-            # Add different source, with same hashes
-            self.backend.create_resolution(
-                duns_testkit.source.to_resolution(), path=duns_testkit.resolution_path
-            )
-            self.backend.insert_source_data(
-                duns_testkit.source.resolution_path, crn_testkit.data_hashes
-            )
-            assert self.backend.data.count() == len(crn_testkit.data_hashes)
-            assert self.backend.source_resolutions.count() == 2
+            with pytest.raises(MatchboxResolutionUpdateError):
+                self.backend.update_resolution(
+                    resolution=wrong_resolution,
+                    path=linker_testkit.resolution_path,
+                )
 
     def test_model_results_basic(self):
         """Test that a model's results data can be set and retrieved."""
@@ -850,29 +898,6 @@ class TestMatchboxBackend:
                     path=model_testkit.resolution_path,
                     results=model_testkit.probabilities.to_arrow(),
                 )
-
-    def test_model_truth(self):
-        """Test that a model's truth can be set and retrieved."""
-        with self.scenario(self.backend, "dedupe") as dag_testkit:
-            naive_crn_testkit = dag_testkit.models.get("naive_test_crn")
-
-            # Retrieve
-            pre_truth = self.backend.get_model_truth(
-                path=naive_crn_testkit.resolution_path
-            )
-
-            # Set
-            self.backend.set_model_truth(
-                path=naive_crn_testkit.resolution_path, truth=75
-            )
-
-            # Retrieve again
-            post_truth = self.backend.get_model_truth(
-                path=naive_crn_testkit.resolution_path
-            )
-
-            # Check difference
-            assert pre_truth != post_truth
 
     # Data management
 

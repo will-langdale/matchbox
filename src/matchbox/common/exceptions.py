@@ -166,20 +166,6 @@ class MatchboxServerFileError(MatchboxException):
         super().__init__(message)
 
 
-# -- ModelConfig exceptions --
-
-
-class MatchboxModelConfigError(MatchboxException):
-    """There was a problem with ModelConfig."""
-
-    def __init__(self, message: str | None = None):
-        """Initialise the exception."""
-        if message is None:
-            message = "There was a problem with ModelConfig."
-
-        super().__init__(message)
-
-
 # -- Resource not found on server exceptions --
 
 
@@ -293,6 +279,10 @@ class MatchboxDeletionNotConfirmed(MatchboxException):
 
 class MatchboxResolutionAlreadyExists(MatchboxException):
     """Resolution already exists."""
+
+
+class MatchboxResolutionUpdateError(MatchboxException):
+    """Resolution metadata cannot be updated."""
 
 
 class MatchboxResolutionInvalidData(MatchboxException):

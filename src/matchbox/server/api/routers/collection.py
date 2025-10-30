@@ -423,6 +423,69 @@ def get_resolution(
     )
 
 
+@router.put(
+    "/{collection}/runs/{run_id}/resolutions/{resolution_name}",
+    responses={
+        404: {
+            "model": ResourceOperationStatus,
+            **ResourceOperationStatus.status_409_examples(),
+        },
+        500: {
+            "model": ResourceOperationStatus,
+            **ResourceOperationStatus.status_500_examples(),
+        },
+    },
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(authorisation_dependencies)],
+    summary="Update a resolution",
+    description="Update an existing resolution (model or source) in the specified run.",
+)
+def update_resolution(
+    backend: BackendDependency,
+    collection: CollectionName,
+    run_id: RunID,
+    resolution_name: ResolutionName,
+    resolution: Resolution,
+) -> ResourceOperationStatus:
+    """Update an existing resolution (model or source)."""
+    try:
+        backend.update_resolution(
+            resolution=resolution,
+            path=ResolutionPath(
+                name=resolution_name, collection=collection, run=run_id
+            ),
+        )
+        return ResourceOperationStatus(
+            success=True,
+            name=resolution_name,
+            operation=CRUDOperation.UPDATE,
+        )
+    except (
+        MatchboxCollectionNotFoundError,
+        MatchboxRunNotFoundError,
+        MatchboxResolutionNotFoundError,
+    ) as e:
+        raise HTTPException(
+            status_code=404,
+            detail=ResourceOperationStatus(
+                success=False,
+                name=resolution_name,
+                operation=CRUDOperation.UPDATE,
+                details=str(e),
+            ),
+        ) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=ResourceOperationStatus(
+                success=False,
+                name=resolution_name,
+                operation=CRUDOperation.UPDATE,
+                details=str(e),
+            ).model_dump(),
+        ) from e
+
+
 @router.delete(
     "/{collection}/runs/{run_id}/resolutions/{resolution}",
     responses={
@@ -527,70 +590,3 @@ def get_results(
 
     buffer = table_to_buffer(res)
     return ParquetResponse(buffer.getvalue())
-
-
-@router.patch(
-    "/{collection}/runs/{run_id}/resolutions/{resolution}/truth",
-    responses={
-        404: {"model": NotFoundError},
-        500: {
-            "model": ResourceOperationStatus,
-            **ResourceOperationStatus.status_500_examples(),
-        },
-    },
-    dependencies=[Depends(authorisation_dependencies)],
-    summary="Set resolution truth",
-    description="Set truth data for a resolution.",
-)
-def set_truth(
-    backend: BackendDependency,
-    collection: CollectionName,
-    run_id: RunID,
-    resolution: ModelResolutionName,
-    truth: Annotated[int, Body(ge=0, le=100)],
-) -> ResourceOperationStatus:
-    """Set truth data for a resolution."""
-    try:
-        backend.set_model_truth(
-            path=ResolutionPath(collection=collection, run=run_id, name=resolution),
-            truth=truth,
-        )
-        return ResourceOperationStatus(
-            success=True,
-            name=resolution,
-            operation=CRUDOperation.UPDATE,
-        )
-    except (
-        MatchboxCollectionNotFoundError,
-        MatchboxRunNotFoundError,
-        MatchboxResolutionNotFoundError,
-    ):
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=ResourceOperationStatus(
-                success=False,
-                name=resolution,
-                operation=CRUDOperation.UPDATE,
-                details=str(e),
-            ).model_dump(),
-        ) from e
-
-
-@router.get(
-    "/{collection}/runs/{run_id}/resolutions/{resolution}/truth",
-    responses={404: {"model": NotFoundError}},
-    summary="Get resolution truth",
-    description="Get truth data for a resolution.",
-)
-def get_truth(
-    backend: BackendDependency,
-    collection: CollectionName,
-    run_id: RunID,
-    resolution: ModelResolutionName,
-) -> float:
-    """Get truth data for a resolution."""
-    return backend.get_model_truth(
-        path=ResolutionPath(collection=collection, run=run_id, name=resolution)
-    )

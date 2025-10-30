@@ -395,7 +395,7 @@ class SourceConfig(BaseModel):
             raise ValueError("Key field must not be in the index fields. ")
 
         if self.key_field.type != DataTypes.STRING:
-            raise ValueError("Key field must be a string. ")
+            raise ValueError("Key field must have string type.")
 
         return self
 

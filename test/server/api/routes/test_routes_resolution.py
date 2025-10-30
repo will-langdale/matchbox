@@ -110,6 +110,46 @@ def test_insert_model_error(
     assert response.json()["details"] == "Test error"
 
 
+def test_update_resolution(
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+):
+    """Resolution metadata can be updated."""
+    testkit = model_factory(name="test_model").fake_run()
+    test_client, mock_backend, _ = api_client_and_mocks
+
+    response = test_client.put(
+        "/collections/default/runs/1/resolutions/test_model",
+        json=testkit.model.to_resolution().model_dump(),
+    )
+
+    assert response.status_code == 200
+    assert (
+        response.json()
+        == ResourceOperationStatus(
+            success=True,
+            name="test_model",
+            operation=CRUDOperation.UPDATE,
+            details=None,
+        ).model_dump()
+    )
+
+    mock_backend.update_resolution.assert_called_once_with(
+        resolution=testkit.model.to_resolution(),
+        path=ResolutionPath(name="test_model", collection="default", run=1),
+    )
+
+    # Errors are handled
+    mock_backend.update_resolution = Mock(side_effect=Exception("Test error"))
+    response = test_client.put(
+        "/collections/default/runs/1/resolutions/name",
+        json=testkit.model.to_resolution().model_dump(),
+    )
+
+    assert response.status_code == 500
+    assert response.json()["success"] is False
+    assert response.json()["details"] == "Test error"
+
+
 @pytest.mark.parametrize("model_type", ["deduper", "linker"])
 def test_complete_model_upload_process(
     s3: S3Client,
@@ -213,22 +253,6 @@ def test_complete_model_upload_process(
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/octet-stream"
 
-    # Verify the model truth can be set and retrieved
-    truth_value = 85
-    mock_backend.get_model_truth = Mock(return_value=truth_value)
-
-    response = test_client.patch(
-        f"/collections/default/runs/1/resolutions/{testkit.model.name}/truth",
-        json=truth_value,
-    )
-    assert response.status_code == 200
-
-    response = test_client.get(
-        f"/collections/default/runs/1/resolutions/{testkit.model.name}/truth"
-    )
-    assert response.status_code == 200
-    assert response.json() == truth_value
-
     # Verify file is deleted from S3 after processing
     with pytest.raises(ClientError):
         s3.head_object(Bucket="test-bucket", Key=f"{upload_id}.parquet")
@@ -277,112 +301,6 @@ def test_get_results(
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/octet-stream"
-
-
-def test_set_truth(
-    api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
-    testkit = model_factory()
-    test_client, mock_backend, _ = api_client_and_mocks
-
-    response = test_client.patch(
-        f"/collections/{testkit.resolution_path.collection}"
-        f"/runs/{testkit.resolution_path.run}"
-        f"/resolutions/{testkit.resolution_path.name}"
-        "/truth",
-        json=95,
-    )
-
-    assert response.status_code == 200
-    assert response.json()["success"] is True
-    mock_backend.set_model_truth.assert_called_once_with(
-        path=testkit.resolution_path, truth=95
-    )
-
-
-def test_set_truth_invalid_value(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
-    """Test setting an invalid truth value (outside 0-1 range)."""
-    testkit = model_factory()
-    test_client, _, _ = api_client_and_mocks
-
-    # Test value > 1
-    response = test_client.patch(
-        f"/collections/default/runs/1/resolutions/{testkit.model.name}/truth",
-        json=150,
-    )
-    assert response.status_code == 422
-
-    # Test value < 0
-    response = test_client.patch(
-        f"/collections/default/runs/1/resolutions/{testkit.model.name}/truth",
-        json=-50,
-    )
-    assert response.status_code == 422
-
-
-def test_get_truth(
-    api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
-    testkit = model_factory()
-    test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_model_truth = Mock(return_value=95)
-
-    response = test_client.get(
-        f"/collections/default/runs/1/resolutions/{testkit.model.name}/truth"
-    )
-
-    assert response.status_code == 200
-    assert response.json() == 95
-
-
-@pytest.mark.parametrize(
-    "endpoint",
-    ["data", "truth"],
-)
-def test_model_get_endpoints_404(
-    endpoint: str,
-    api_client_and_mocks: tuple[TestClient, Mock, Mock],
-) -> None:
-    """Test 404 responses for model GET endpoints when model doesn't exist."""
-    test_client, mock_backend, _ = api_client_and_mocks
-    # Map endpoint to actual backend method name
-    method_name = "get_model_data" if endpoint == "data" else f"get_model_{endpoint}"
-    mock_method = getattr(mock_backend, method_name)
-    mock_method.side_effect = MatchboxResolutionNotFoundError()
-
-    response = test_client.get(
-        f"/collections/default/runs/1/resolutions/nonexistent-model/{endpoint}"
-    )
-
-    assert response.status_code == 404
-    error = NotFoundError.model_validate(response.json())
-    assert error.entity == BackendResourceType.RESOLUTION
-
-
-@pytest.mark.parametrize(
-    ("endpoint", "payload"),
-    [
-        ("truth", 95),
-    ],
-)
-def test_model_patch_endpoints_404(
-    endpoint: str,
-    payload: float | list[dict[str, Any]],
-    api_client_and_mocks: tuple[TestClient, Mock, Mock],
-) -> None:
-    """Test 404 responses for model PATCH endpoints when model doesn't exist."""
-    test_client, mock_backend, _ = api_client_and_mocks
-    mock_method = getattr(mock_backend, f"set_model_{endpoint}")
-    mock_method.side_effect = MatchboxResolutionNotFoundError()
-
-    response = test_client.patch(
-        f"/collections/default/runs/1/resolutions/nonexistent-model/{endpoint}",
-        json=payload,
-    )
-
-    assert response.status_code == 404
-    error = NotFoundError.model_validate(response.json())
-    assert error.entity == BackendResourceType.RESOLUTION
 
 
 def test_delete_resolution(api_client_and_mocks: tuple[TestClient, Mock, Mock]):

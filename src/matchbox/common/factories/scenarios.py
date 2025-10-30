@@ -212,6 +212,7 @@ def create_probabilistic_dedupe_scenario(
             seed=seed,
         )
         model_testkit.threshold = 50
+        assert model_testkit.model.truth == 0.5
 
         # Add to backend and DAG
         backend.create_resolution(
@@ -222,7 +223,6 @@ def create_probabilistic_dedupe_scenario(
             path=model_testkit.resolution_path,
             results=model_testkit.probabilities.to_arrow(),
         )
-        backend.set_model_truth(path=model_testkit.resolution_path, truth=50)
         dag_testkit.add_model(model_testkit)
 
     return dag_testkit
@@ -321,6 +321,8 @@ def create_link_scenario(
     )
 
     # Add to backend and DAG
+    crn_cdms_model.threshold = 75
+    assert crn_cdms_model.model.truth == 0.75
     backend.create_resolution(
         path=crn_cdms_model.resolution_path,
         resolution=crn_cdms_model.fake_run().model.to_resolution(),
@@ -329,7 +331,6 @@ def create_link_scenario(
         path=crn_cdms_model.resolution_path,
         results=crn_cdms_model.probabilities.to_arrow(),
     )
-    backend.set_model_truth(path=crn_cdms_model.resolution_path, truth=75)
     dag_testkit.add_model(crn_cdms_model)
 
     # Create final join
@@ -473,6 +474,7 @@ def create_alt_dedupe_scenario(
 
         for model, threshold in ((model_testkit1, 50), (model_testkit2, 75)):
             model.threshold = threshold
+            assert model.model.truth == threshold / 100
 
             # Add both models to backend and DAG
             backend.create_resolution(
@@ -482,7 +484,6 @@ def create_alt_dedupe_scenario(
             backend.insert_model_data(
                 path=model.resolution_path, results=model.probabilities.to_arrow()
             )
-            backend.set_model_truth(path=model.resolution_path, truth=threshold)
 
             # Add to DAG
             dag_testkit.add_model(model)

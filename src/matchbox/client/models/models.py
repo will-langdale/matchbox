@@ -271,7 +271,6 @@ class Model:
             )
 
         _handler.create_resolution(resolution=resolution, path=self.resolution_path)
-        _handler.set_truth(path=self.resolution_path, truth=self._truth)
         _handler.set_data(
             path=self.resolution_path,
             data=self.results.probabilities,
