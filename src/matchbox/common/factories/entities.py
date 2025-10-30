@@ -191,7 +191,7 @@ class EntityReference(frozendict):
             }
         )
 
-    def __le__(self, other: "EntityReference") -> bool:
+    def __le__(self, other: Self) -> bool:
         """Test if self is a subset of other."""
         if not isinstance(other, EntityReference):
             return NotImplemented
@@ -212,7 +212,7 @@ class EntityIDMixin:
         """Allow converting an entity to an integer by returning its ID."""
         return self.id
 
-    def __lt__(self, other: int | object) -> bool:
+    def __lt__(self, other: Self | int) -> bool:
         """Compare based on ID for sorting operations."""
         if hasattr(other, "id"):
             return self.id < other.id
@@ -220,7 +220,7 @@ class EntityIDMixin:
             return self.id < other
         return NotImplemented
 
-    def __gt__(self, other: int | object) -> bool:
+    def __gt__(self, other: Self | int) -> bool:
         """Compare based on ID for sorting operations."""
         if hasattr(other, "id"):
             return self.id > other.id
@@ -228,7 +228,7 @@ class EntityIDMixin:
             return self.id > other
         return NotImplemented
 
-    def __le__(self, other: int | object) -> bool:
+    def __le__(self, other: Self | int) -> bool:
         """Compare based on ID for sorting operations."""
         if hasattr(other, "id"):
             return self.id <= other.id
@@ -236,7 +236,7 @@ class EntityIDMixin:
             return self.id <= other
         return NotImplemented
 
-    def __ge__(self, other: int | object) -> bool:
+    def __ge__(self, other: Self | int) -> bool:
         """Compare based on ID for sorting operations."""
         if hasattr(other, "id"):
             return self.id >= other.id

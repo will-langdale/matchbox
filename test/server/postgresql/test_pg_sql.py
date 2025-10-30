@@ -1119,14 +1119,14 @@ class TestGetClustersWithLeaves:
             # Based on their default thresholds (cached truth values)
 
             # From dedupe_a (cached truth=80): should include C301 (prob=80)
-            assert 301 in result, (
-                f"C301 missing from linker's parent clusters: {result.keys()}"
-            )
+            assert (
+                301 in result
+            ), f"C301 missing from linker's parent clusters: {result.keys()}"
 
             # From dedupe_b (cached truth=70): should include C401 (prob=70)
-            assert 401 in result, (
-                f"C401 missing from linker's parent clusters: {result.keys()}"
-            )
+            assert (
+                401 in result
+            ), f"C401 missing from linker's parent clusters: {result.keys()}"
 
             # Verify C301's leaves (should contain clusters 101, 102)
             c301_leaves = result[301]["leaves"]
@@ -1155,17 +1155,17 @@ class TestGetClustersWithLeaves:
 
             # Should NOT include C302 (prob=70, flag=2) or C303 (prob=70, flag=0)
             # from dedupe_a because they're below/equal to cached truth=80
-            assert 302 not in result, (
-                f"C302 should be excluded (prob=70 < cached=80): {result.keys()}"
-            )
-            assert 303 not in result, (
-                f"C303 should be excluded (prob=70 < cached=80): {result.keys()}"
-            )
+            assert (
+                302 not in result
+            ), f"C302 should be excluded (prob=70 < cached=80): {result.keys()}"
+            assert (
+                303 not in result
+            ), f"C303 should be excluded (prob=70 < cached=80): {result.keys()}"
 
             # Should include C301 (prob=80, meets cached=80)
-            assert 301 in result, (
-                f"C301 should be included (prob=80 >= cached=80): {result.keys()}"
-            )
+            assert (
+                301 in result
+            ), f"C301 should be included (prob=80 >= cached=80): {result.keys()}"
 
     def test_get_clusters_for_source_returns_empty(
         self, populated_postgres_db: MatchboxPostgres
@@ -1226,16 +1226,16 @@ class TestGetClustersWithLeaves:
 
                 # Should not have duplicate leaves
                 leaf_ids = [leaf["leaf_id"] for leaf in leaves]
-                assert len(leaf_ids) == len(set(leaf_ids)), (
-                    f"Duplicate leaves in cluster {cluster_id}: {leaf_ids}"
-                )
+                assert len(leaf_ids) == len(
+                    set(leaf_ids)
+                ), f"Duplicate leaves in cluster {cluster_id}: {leaf_ids}"
 
                 # Leaves should be valid cluster IDs
                 for leaf in leaves:
                     leaf_id = leaf["leaf_id"]
-                    assert leaf_id in range(101, 206), (
-                        f"Invalid leaf cluster ID: {leaf_id}"
-                    )
+                    assert leaf_id in range(
+                        101, 206
+                    ), f"Invalid leaf cluster ID: {leaf_id}"
 
 
 @pytest.mark.docker
