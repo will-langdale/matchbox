@@ -760,10 +760,12 @@ class ResourceOperationStatus(BaseModel):
                             ),
                             "value": cls(
                                 success=False,
-                                name=ModelResolutionPath(
-                                    collection="default",
-                                    run=1,
-                                    name="example_model",
+                                target=str(
+                                    ModelResolutionPath(
+                                        collection="default",
+                                        run=1,
+                                        name="example_model",
+                                    )
                                 ),
                                 operation=CRUDOperation.UPDATE,
                             ).model_dump(),

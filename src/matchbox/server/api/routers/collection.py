@@ -591,6 +591,7 @@ def set_data(
     resolution_path = ResolutionPath(
         collection=collection, run=run_id, name=resolution_name
     )
+    # Signal to clients that resolution is not ready to receive data
     backend.set_resolution_stage(path=resolution_path, stage=UploadStage.PROCESSING)
     resolution = backend.get_resolution(path=resolution_path)
 

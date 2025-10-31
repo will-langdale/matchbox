@@ -470,13 +470,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 raise ValueError(
                     "Once set to complete, resolution data stage cannot be changed."
                 )
-            if (
-                resolution.upload_stage == UploadStage.READY
-                and stage != UploadStage.PROCESSING
-            ):
-                raise ValueError(
-                    "Resolution data stage must go from 'ready' to 'processing'"
-                )
             resolution.upload_stage = stage
             session.commit()
 
@@ -491,10 +484,12 @@ class MatchboxPostgres(MatchboxDBAdapter):
         insert_hashes(
             path=path, data_hashes=data_hashes, batch_size=self.settings.batch_size
         )
+        self.set_resolution_stage(path=path, stage=UploadStage.COMPLETE)
 
     def insert_model_data(self, path: ModelResolutionPath, results: Table) -> None:  # noqa: D102
         self._check_writeable(path)
         insert_results(path=path, results=results, batch_size=self.settings.batch_size)
+        self.set_resolution_stage(path=path, stage=UploadStage.COMPLETE)
 
     def get_model_data(self, path: ModelResolutionPath) -> Table:  # noqa: D102
         with MBDB.get_session() as session:

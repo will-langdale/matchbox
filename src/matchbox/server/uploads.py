@@ -234,7 +234,7 @@ def process_upload(
             f"Upload processing failed with context: {error_context}", exc_info=True
         )
 
-        # After failure, clients can re-try upload
+        # After failure, signal to clients they can try again
         backend.set_resolution_stage(path=resolution_path, stage=UploadStage.READY)
         # Attach error to upload ID to inform clients
         tracker.set(upload_id=upload_id, message=e)

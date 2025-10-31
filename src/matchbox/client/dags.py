@@ -491,8 +491,7 @@ class DAG:
             except Exception as e:
                 logger.error(f"❌ {node.name} failed: {e}")
                 raise e
-
-        status[step_name] = DAGNodeExecutionStatus.DONE
+            status[step_name] = DAGNodeExecutionStatus.DONE
         logger.info("\n" + self.draw(status=status))
 
     def set_default(self) -> None:

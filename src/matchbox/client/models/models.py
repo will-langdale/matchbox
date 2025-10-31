@@ -264,19 +264,19 @@ class Model:
         try:
             existing_resolution = _handler.get_resolution(path=self.resolution_path)
         except MatchboxResolutionNotFoundError:
-            logger.debug("Found existing resolution", prefix=log_prefix)
+            logger.info("Found existing resolution", prefix=log_prefix)
             existing_resolution = None
 
         if existing_resolution:
             if (existing_resolution.fingerprint == resolution.fingerprint) and (
                 existing_resolution.config.parents == resolution.config.parents
             ):
-                logger.debug("Updating existing resolution", prefix=log_prefix)
+                logger.info("Updating existing resolution", prefix=log_prefix)
                 _handler.update_resolution(
                     resolution=resolution, path=self.resolution_path
                 )
             else:
-                logger.debug(
+                logger.info(
                     "Update not possible. Deleting existing resolution",
                     prefix=log_prefix,
                 )
@@ -284,12 +284,12 @@ class Model:
                 existing_resolution = None
 
         if not existing_resolution:
-            logger.debug("Creating new resolution", prefix=log_prefix)
+            logger.info("Creating new resolution", prefix=log_prefix)
             _handler.create_resolution(resolution=resolution, path=self.resolution_path)
 
-        upload_stage = _handler.get_resolution_stage()
+        upload_stage = _handler.get_resolution_stage(self.resolution_path)
         if upload_stage == UploadStage.READY:
-            logger.debug("Setting data for new resolution", prefix=log_prefix)
+            logger.info("Setting data for new resolution", prefix=log_prefix)
             _handler.set_data(
                 path=self.resolution_path, data=self.results.probabilities
             )
