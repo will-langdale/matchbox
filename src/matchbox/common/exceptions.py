@@ -293,6 +293,10 @@ class MatchboxResolutionExistingData(MatchboxException):
     """Data was already set on resolution."""
 
 
+class MatchboxResolutionNotQueriable(MatchboxException):
+    """The resolution is not ready to be queried."""
+
+
 class MatchboxCollectionAlreadyExists(MatchboxException):
     """Collection already exists."""
 
