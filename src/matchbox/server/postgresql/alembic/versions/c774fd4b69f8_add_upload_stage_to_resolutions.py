@@ -22,12 +22,20 @@ upload_stages = sa.Enum("READY", "PROCESSING", "COMPLETE", name="upload_stages")
 
 def upgrade() -> None:
     """Upgrade schema."""
-    upload_stages.create(op.get_bind())
+    connection = op.get_bind()
+    upload_stages.create(connection)
     op.add_column(
         "resolutions",
-        sa.Column("upload_stage", upload_stages, nullable=False),
+        sa.Column("upload_stage", upload_stages, nullable=True),
         schema="mb",
     )
+
+    connection.execute(
+        sa.text("UPDATE mb.resolutions SET upload_stage = :stage"),
+        {"stage": "COMPLETE"},
+    )
+
+    op.alter_column("resolutions", "upload_stage", nullable=False, schema="mb")
 
 
 def downgrade() -> None:
