@@ -81,7 +81,7 @@ def test_insert_model(
         response.json()
         == ResourceOperationStatus(
             success=True,
-            name="test_model",
+            target="Resolution test_model",
             operation=CRUDOperation.CREATE,
             details=None,
         ).model_dump()
@@ -127,7 +127,7 @@ def test_update_resolution(
         response.json()
         == ResourceOperationStatus(
             success=True,
-            name="test_model",
+            target="Resolution test_model",
             operation=CRUDOperation.UPDATE,
             details=None,
         ).model_dump()
@@ -317,7 +317,7 @@ def test_delete_resolution(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
         response.json()
         == ResourceOperationStatus(
             success=True,
-            name=testkit.model.name,
+            target=f"Resolution {testkit.model.name}",
             operation=CRUDOperation.DELETE,
             details=None,
         ).model_dump()

@@ -18,10 +18,10 @@ from matchbox.common.dtos import (
     ModelResolutionPath,
     Resolution,
     ResolutionPath,
-    ResolutionType,
     Run,
     RunID,
     SourceResolutionPath,
+    UploadStage,
 )
 from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.logging import LogLevelType
@@ -425,14 +425,11 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def get_resolution(
-        self, path: ResolutionPath, validate: ResolutionType | None = None
-    ) -> Resolution:
+    def get_resolution(self, path: ResolutionPath) -> Resolution:
         """Get a resolution from its path.
 
         Args:
             path: The resolution path for the source
-            validate: The expected type of the resolution
 
         Returns:
             A Resolution object
@@ -456,12 +453,31 @@ class MatchboxDBAdapter(ABC):
         """Delete a resolution from the database.
 
         Args:
-            path: The name of the resolution to delete.
+            path: The path of the resolution to delete.
             certain: Whether to delete the model without confirmation.
         """
         ...
 
     # Data insertion
+
+    @abstractmethod
+    def set_resolution_stage(self, path: ResolutionPath, stage: UploadStage) -> None:
+        """Sets upload stage of resolution data.
+
+        Args:
+            path: The path of the resolution to target.
+            stage: The stage to set for the resolution.
+        """
+        ...
+
+    @abstractmethod
+    def get_resolution_stage(self, path: ResolutionPath) -> UploadStage:
+        """Retrieves upload stage of resolution data.
+
+        Args:
+            path: The path of the resolution to target.
+        """
+        ...
 
     @abstractmethod
     def insert_source_data(

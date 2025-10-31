@@ -831,7 +831,7 @@ def test_dag_creates_new_collection(
             200,
             json=ResourceOperationStatus(
                 success=True,
-                name="test_collection",
+                target="Collection test_collection",
                 operation=CRUDOperation.CREATE,
             ).model_dump(),
         )
@@ -887,7 +887,7 @@ def test_dag_uses_existing_collection(
                     200,
                     json=ResourceOperationStatus(
                         success=True,
-                        name=run_id,
+                        name=f"Run {run_id}",
                         operation=CRUDOperation.DELETE,
                     ).model_dump(),
                 )
@@ -1145,7 +1145,7 @@ def test_dag_set_default_ok(matchbox_api: MockRouter):
             200,
             json=ResourceOperationStatus(
                 success=True,
-                name=dag.run,
+                target=f"Run {dag.run}",
                 operation=CRUDOperation.UPDATE,
             ).model_dump(),
         )
@@ -1159,7 +1159,7 @@ def test_dag_set_default_ok(matchbox_api: MockRouter):
             200,
             json=ResourceOperationStatus(
                 success=True,
-                name=dag.run,
+                target=f"Run {dag.run}",
                 operation=CRUDOperation.UPDATE,
             ).model_dump(),
         )

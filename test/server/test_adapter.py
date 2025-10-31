@@ -20,7 +20,6 @@ from matchbox.common.dtos import (
     ModelConfig,
     Resolution,
     ResolutionPath,
-    ResolutionType,
     SourceConfig,
     SourceField,
 )
@@ -512,22 +511,17 @@ class TestMatchboxBackend:
         with self.scenario(self.backend, "index") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
 
-            crn_retrieved = self.backend.get_resolution(
-                crn_testkit.resolution_path, validate=ResolutionType.SOURCE
-            )
+            crn_retrieved = self.backend.get_resolution(crn_testkit.resolution_path)
             assert isinstance(crn_retrieved, Resolution)
             assert crn_testkit.source_config == crn_retrieved.config
 
             with pytest.raises(MatchboxResolutionNotFoundError):
                 self.backend.get_resolution(
-                    path=ResolutionPath(collection="collection", run=1, name="foo"),
-                    validate=ResolutionType.SOURCE,
+                    path=ResolutionPath(collection="collection", run=1, name="foo")
                 )
 
             with pytest.raises(MatchboxResolutionNotFoundError):
-                self.backend.get_resolution(
-                    path=crn_testkit.resolution_path, validate=ResolutionType.MODEL
-                )
+                self.backend.get_resolution(path=crn_testkit.resolution_path)
 
     def test_delete_resolution(self):
         """
@@ -610,7 +604,7 @@ class TestMatchboxBackend:
 
             # We can retrieve the resolution
             crn_retrieved = self.backend.get_resolution(
-                crn_testkit.source.resolution_path, validate=ResolutionType.SOURCE
+                crn_testkit.source.resolution_path
             )
 
             assert crn_testkit.source_config == crn_retrieved.config
@@ -668,7 +662,7 @@ class TestMatchboxBackend:
 
             # We can retrieve the updated resolution
             crn_retrieved = self.backend.get_resolution(
-                crn_testkit.source.resolution_path, validate=ResolutionType.SOURCE
+                crn_testkit.source.resolution_path
             )
             assert crn_retrieved.description == "updated"
             assert crn_retrieved.config.key_field == updated_key_field
@@ -789,7 +783,7 @@ class TestMatchboxBackend:
 
             # We can retrieve the updated resolution
             linker_retrieved = self.backend.get_resolution(
-                linker_testkit.resolution_path, validate=ResolutionType.MODEL
+                linker_testkit.resolution_path
             )
             assert linker_retrieved.description == "updated"
             assert linker_retrieved.truth == 33

@@ -21,6 +21,7 @@ from matchbox.common.dtos import (
     SourceField,
     SourceResolutionName,
     SourceResolutionPath,
+    UploadStage,
 )
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.hash import HashMethod, hash_arrow_table, hash_rows
@@ -370,25 +371,38 @@ class Source:
     @post_run
     def sync(self) -> None:
         """Send the source config and hashes to the server."""
+        log_prefix = f"Sync {self.name}"
         resolution = self.to_resolution()
         try:
             existing_resolution = _handler.get_resolution(path=self.resolution_path)
         except MatchboxResolutionNotFoundError:
+            logger.debug("Found existing resolution", prefix=log_prefix)
             existing_resolution = None
 
         if existing_resolution:
-            raise ValueError(
-                f"Resolution {self.resolution_path} already exists."
-                "Please delete the existing resolution "
-                "or use a different name. "
-            )
+            if (existing_resolution.fingerprint == resolution.fingerprint) and (
+                existing_resolution.config.parents == resolution.config.parents
+            ):
+                logger.debug("Updating existing resolution", prefix=log_prefix)
+                _handler.update_resolution(
+                    resolution=resolution, path=self.resolution_path
+                )
+            else:
+                logger.debug(
+                    "Update not possible. Deleting existing resolution",
+                    prefix=log_prefix,
+                )
+                _handler.delete_resolution(path=self.resolution_path, certain=True)
+                existing_resolution = None
 
-        _handler.create_resolution(resolution=resolution, path=self.resolution_path)
-        _handler.set_data(
-            path=self.resolution_path,
-            data=self.hashes,
-            validate_type=ResolutionType.SOURCE,
-        )
+        if not existing_resolution:
+            logger.debug("Creating new resolution", prefix=log_prefix)
+            _handler.create_resolution(resolution=resolution, path=self.resolution_path)
+
+        upload_stage = _handler.get_resolution_stage()
+        if upload_stage == UploadStage.READY:
+            logger.debug("Setting data for new resolution", prefix=log_prefix)
+            _handler.set_data(path=self.resolution_path, data=self.hashes)
 
     def query(self, **kwargs) -> Query:
         """Generate a query for this source."""
