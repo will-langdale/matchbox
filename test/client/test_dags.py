@@ -887,7 +887,7 @@ def test_dag_uses_existing_collection(
                     200,
                     json=ResourceOperationStatus(
                         success=True,
-                        name=f"Run {run_id}",
+                        target=f"Run {run_id}",
                         operation=CRUDOperation.DELETE,
                     ).model_dump(),
                 )

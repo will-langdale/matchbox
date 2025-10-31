@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 
 import pyarrow as pa
 import pytest
@@ -14,18 +13,17 @@ from matchbox.client.queries import Query
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendResourceType,
-    BackendUploadType,
     CRUDOperation,
     ModelConfig,
     ModelType,
     NotFoundError,
+    Resolution,
     ResourceOperationStatus,
+    UploadInfo,
     UploadStage,
-    UploadStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
-    MatchboxServerFileError,
 )
 from matchbox.common.factories.models import MockLinker, model_factory
 from matchbox.common.factories.sources import (
@@ -96,12 +94,13 @@ def test_init_and_run_model(sqlite_warehouse: Engine, matchbox_api: MockRouter):
 
 
 def test_model_sync(matchbox_api: MockRouter):
-    """Test syncing a model, its truth and results."""
     # Create test model using factory
     testkit = model_factory(model_type="linker")
 
-    # Mock endpoints
-    get_route = matchbox_api.get(
+    # -- MOCK ROUTES --
+
+    # Resolution doesn't yet exist
+    matchbox_api.get(
         f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
     ).mock(
         return_value=Response(
@@ -111,104 +110,133 @@ def test_model_sync(matchbox_api: MockRouter):
             ).model_dump(),
         )
     )
+
+    # Resolution can be inserted
     insert_config_route = matchbox_api.post(
         f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
     ).mock(
         return_value=Response(
             201,
-            json=ResourceOperationStatus(
+            content=ResourceOperationStatus(
                 success=True,
-                name=testkit.model.name,
+                target=f"Resolution {testkit.model.name}",
                 operation=CRUDOperation.CREATE,
-            ).model_dump(),
+            ).model_dump_json(),
         )
     )
 
+    # Resolution data can be inserted
     insert_results_route = matchbox_api.post(
         f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}/data"
     ).mock(
         return_value=Response(
             202,
-            content=UploadStatus(
-                id="test-upload-id",
-                stage=UploadStage.AWAITING_UPLOAD,
-                update_timestamp=datetime.now(),
-                entity=BackendUploadType.RESULTS,
-            ).model_dump_json(),
+            json=ResourceOperationStatus(
+                success=True, target="", operation=CRUDOperation.CREATE
+            ).model_dump(),
         )
     )
 
-    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
-        return_value=Response(
-            202,
-            content=UploadStatus(
-                id="test-upload-id",
-                stage=UploadStage.PROCESSING,
-                update_timestamp=datetime.now(),
-                entity=BackendUploadType.RESULTS,
-            ).model_dump_json(),
-        )
+    # Resolution data status: first READY, then COMPLETE
+    matchbox_api.get(
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}/data/status"
+    ).mock(
+        side_effect=[
+            Response(200, json=UploadInfo(stage=UploadStage.READY).model_dump()),
+            Response(200, json=UploadInfo(stage=UploadStage.COMPLETE).model_dump()),
+        ]
     )
 
-    status_route = matchbox_api.get("/upload/test-upload-id/status").mock(
+    # Later, resolution can be updated
+    update_route = matchbox_api.put(
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
+    ).mock(
         return_value=Response(
             200,
-            content=UploadStatus(
-                id="test-upload-id",
-                stage=UploadStage.COMPLETE,
-                update_timestamp=datetime.now(),
-                entity=BackendUploadType.RESULTS,
+            content=ResourceOperationStatus(
+                success=True,
+                target=f"Resolution {testkit.model.name}",
+                operation=CRUDOperation.UPDATE,
             ).model_dump_json(),
         )
     )
+
+    # Later, resolution can be deleted and recreated
+    delete_route = matchbox_api.delete(
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
+    ).mock(
+        return_value=Response(
+            200,
+            content=ResourceOperationStatus(
+                success=True,
+                target=f"Resolution {testkit.model.name}",
+                operation=CRUDOperation.DELETE,
+            ).model_dump_json(),
+        )
+    )
+
+    # -- ERRORS --
 
     # Calling sync too early fails
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="must be run"):
         testkit.model.sync()
 
-    # Set results from testkit
-    testkit.fake_run().model.sync()
+    # -- FIRST TIME INSERTION --
+
+    testkit.fake_run()
     testkit.model.sync()
 
-    # Verify API calls
-    assert get_route.called
     assert insert_config_route.called
-    assert (
-        insert_config_route.calls.last.request.content.decode()
-        == testkit.model.to_resolution().model_dump_json()
-    )
-    assert insert_results_route.called
-    assert upload_route.called
-    assert status_route.called
-    assert (
-        b"PAR1" in upload_route.calls.last.request.content
-    )  # Check for parquet file signature
+    assert not update_route.called
+    assert not delete_route.called
 
-    # Mock the upload endpoint with a failure
-    matchbox_api.post("/upload/test-upload-id").mock(
+    resolution_call = Resolution.model_validate_json(
+        insert_config_route.calls.last.request.content.decode("utf-8")
+    )
+    assert resolution_call == testkit.model.to_resolution()
+    assert b"PAR1" in insert_results_route.calls.last.request.content
+
+    # -- SOFT UPDATE --
+
+    insert_results_route.reset()
+
+    # Mock endpoint now returns existing resolution
+    matchbox_api.get(
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
+    ).mock(return_value=Response(200, json=testkit.model.to_resolution().model_dump()))
+
+    # Data already uploaded
+    matchbox_api.get(
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}/data/status"
+    ).mock(
         return_value=Response(
-            400,
-            content=UploadStatus(
-                id="test-upload-id",
-                stage=UploadStage.FAILED,
-                update_timestamp=datetime.now(),
-                entity=BackendUploadType.RESULTS,
-                details="Invalid data format",
-            ).model_dump_json(),
+            200, json=UploadInfo(stage=UploadStage.COMPLETE).model_dump()
         )
     )
 
-    with pytest.raises(MatchboxServerFileError, match="Invalid data format"):
-        testkit.model.sync()
+    testkit.model.sync()
+    assert update_route.called
+    assert not delete_route.called
+    # assert not insert_results_route.called
 
-    # Mock earlier endpoint generating a name clash
-    source = source_factory().fake_run().source
+    # -- HARD UPDATE --
+
+    insert_results_route.reset()
+    testkit.probabilities = testkit.probabilities.slice(1, 3)
+    testkit.fake_run()
+
     matchbox_api.get(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
-    ).mock(return_value=Response(200, json=source.to_resolution().model_dump()))
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}/data/status"
+    ).mock(
+        side_effect=[
+            Response(200, json=UploadInfo(stage=UploadStage.READY).model_dump()),
+            Response(200, json=UploadInfo(stage=UploadStage.COMPLETE).model_dump()),
+        ]
+    )
 
-    with pytest.raises(ValueError, match="existing resolution"):
-        testkit.model.sync()
+    testkit.model.sync()
+    assert delete_route.called
+    assert insert_results_route.called
 
 
 def test_truth_getter():
@@ -248,7 +276,7 @@ def test_delete_resolution(matchbox_api: MockRouter):
             200,
             json=ResourceOperationStatus(
                 success=True,
-                name=testkit.model.name,
+                target=f"Resolution {testkit.model.name}",
                 operation=CRUDOperation.DELETE,
             ).model_dump(),
         )
@@ -277,7 +305,7 @@ def test_delete_resolution_needs_confirmation(matchbox_api: MockRouter):
             409,
             json=ResourceOperationStatus(
                 success=False,
-                name=testkit.model.name,
+                target=f"Resolution {testkit.model.name}",
                 operation=CRUDOperation.DELETE,
                 details=error_details,
             ).model_dump(),
