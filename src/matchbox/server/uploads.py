@@ -76,7 +76,10 @@ class RedisUploadTracker:
         self.key_prefix = f"{key_space}:"
 
     def get(self, upload_id: str) -> str | None:  # noqa: D102
-        return self.redis.get(f"{self.key_prefix}{upload_id}")
+        results = self.redis.get(f"{self.key_prefix}{upload_id}")
+        if results:
+            return results.decode("utf-8")
+        return None
 
     def set(self, upload_id: str, message: str) -> None:  # noqa: D102
         expiry_seconds = self.expiry_minutes * 60
@@ -237,9 +240,11 @@ def process_upload(
         # After failure, signal to clients they can try again
         backend.set_resolution_stage(path=resolution_path, stage=UploadStage.READY)
         # Attach error to upload ID to inform clients
-        tracker.set(upload_id=upload_id, message=e)
+        tracker.set(upload_id=upload_id, message=str(e))
 
-        raise MatchboxServerFileError from e
+        raise MatchboxServerFileError(
+            message=f"Error: {e}. Context: {error_context}"
+        ) from e
     finally:
         try:
             s3_client.delete_object(Bucket=bucket, Key=filename)

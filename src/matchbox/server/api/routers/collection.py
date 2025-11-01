@@ -591,6 +591,16 @@ def set_data(
     resolution_path = ResolutionPath(
         collection=collection, run=run_id, name=resolution_name
     )
+    if backend.get_resolution_stage(path=resolution_path) != UploadStage.READY:
+        raise HTTPException(
+            status_code=400,
+            detail=ResourceOperationStatus(
+                success=False,
+                target=f"Resolution data {resolution_path}",
+                operation=CRUDOperation.CREATE,
+                details="Not expecting upload for this resolution.",
+            ),
+        )
     # Signal to clients that resolution is not ready to receive data
     backend.set_resolution_stage(path=resolution_path, stage=UploadStage.PROCESSING)
     resolution = backend.get_resolution(path=resolution_path)
@@ -703,6 +713,7 @@ def get_upload_status(
     error = None
     if upload_id:
         error = upload_tracker.get(upload_id=upload_id)
+
     resolution_stage = backend.get_resolution_stage(
         path=ResolutionPath(collection=collection, run=run_id, name=resolution)
     )

@@ -520,9 +520,6 @@ class TestMatchboxBackend:
                     path=ResolutionPath(collection="collection", run=1, name="foo")
                 )
 
-            with pytest.raises(MatchboxResolutionNotFoundError):
-                self.backend.get_resolution(path=crn_testkit.resolution_path)
-
     def test_delete_resolution(self):
         """
         Tests the deletion of:

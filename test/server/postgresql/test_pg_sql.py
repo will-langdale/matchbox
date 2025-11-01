@@ -15,7 +15,7 @@ from typing import Literal
 import pytest
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.dtos import CollectionName, ResolutionPath, RunID
+from matchbox.common.dtos import CollectionName, ResolutionPath, RunID, UploadStage
 from matchbox.server.postgresql import MatchboxPostgres
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
@@ -207,6 +207,7 @@ def populated_postgres_db(
                 type="source",
                 fingerprint=b"abc",
                 truth=None,
+                upload_stage=UploadStage.COMPLETE,
             ),
             Resolutions(
                 resolution_id=2,
@@ -215,6 +216,7 @@ def populated_postgres_db(
                 type="source",
                 fingerprint=b"abc",
                 truth=None,
+                upload_stage=UploadStage.COMPLETE,
             ),
             Resolutions(
                 resolution_id=3,
@@ -223,6 +225,7 @@ def populated_postgres_db(
                 type="model",
                 fingerprint=b"abc",
                 truth=80,
+                upload_stage=UploadStage.COMPLETE,
             ),
             Resolutions(
                 resolution_id=4,
@@ -231,6 +234,7 @@ def populated_postgres_db(
                 type="model",
                 fingerprint=b"abc",
                 truth=70,
+                upload_stage=UploadStage.COMPLETE,
             ),
             Resolutions(
                 resolution_id=5,
@@ -239,6 +243,7 @@ def populated_postgres_db(
                 type="model",
                 fingerprint=b"abc",
                 truth=90,
+                upload_stage=UploadStage.COMPLETE,
             ),
         ]
 
