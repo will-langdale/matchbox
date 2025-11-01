@@ -57,6 +57,10 @@ def insert_hashes(
         MatchboxResolutionExistingData: If data was already inserted for resolution.
     """
     log_prefix = f"Index hashes {path}"
+    if data_hashes.num_rows == 0:
+        logger.info("No hashes given.", prefix=log_prefix)
+        return
+
     fingerprint = hash_arrow_table(data_hashes)
 
     with MBDB.get_session() as session:
@@ -512,6 +516,11 @@ def insert_results(
         MatchboxResolutionInvalidData: If data fingerprint conflicts with resolution.
         MatchboxResolutionExistingData: If data was already inserted for resolution.
     """
+    log_prefix = f"Model {path.name}"
+    if results.num_rows == 0:
+        logger.info("Empty results given.", prefix=log_prefix)
+        return
+
     resolution = Resolutions.from_path(path=path, res_type=ResolutionType.MODEL)
 
     # Check if the content hash is the same
@@ -529,7 +538,6 @@ def insert_results(
         if existing_results > 0:
             raise MatchboxResolutionExistingData
 
-    log_prefix = f"Model {resolution.name}"
     logger.info(
         f"Writing results data with batch size {batch_size:,}", prefix=log_prefix
     )

@@ -22,6 +22,7 @@ from matchbox.common.dtos import (
     ResolutionPath,
     SourceConfig,
     SourceField,
+    UploadStage,
 )
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import (
@@ -599,6 +600,12 @@ class TestMatchboxBackend:
                     crn_testkit.source.resolution_path, crn_testkit.data_hashes
                 )
 
+            # Resolution marked as complete
+            assert (
+                self.backend.get_resolution_stage(crn_testkit.source.resolution_path)
+                == UploadStage.COMPLETE
+            )
+
             # We can retrieve the resolution
             crn_retrieved = self.backend.get_resolution(
                 crn_testkit.source.resolution_path
@@ -664,6 +671,26 @@ class TestMatchboxBackend:
             assert crn_retrieved.description == "updated"
             assert crn_retrieved.config.key_field == updated_key_field
             assert crn_retrieved.config.index_fields == updated_index_fields
+
+    def test_index_empty_source(self):
+        """Can insert and retrieve empty source data"""
+        with self.scenario(self.backend, "bare") as dag_testkit:
+            crn_testkit: SourceTestkit = dag_testkit.sources.get("crn")
+            crn_testkit.data_hashes = crn_testkit.data_hashes.slice(length=0)
+            crn_testkit.fake_run()
+            self.backend.create_resolution(
+                crn_testkit.source.to_resolution(),
+                path=crn_testkit.resolution_path,
+            )
+
+            self.backend.insert_source_data(
+                crn_testkit.source.resolution_path, crn_testkit.data_hashes
+            )
+            # Resolution marked as complete
+            assert (
+                self.backend.get_resolution_stage(crn_testkit.source.resolution_path)
+                == UploadStage.COMPLETE
+            )
 
     def test_index_different_resolution_same_hashes(self):
         """Test that indexing data with the same hashes but different sources works."""
@@ -823,7 +850,9 @@ class TestMatchboxBackend:
             naive_crn_testkit = dag_testkit.models.get("naive_test_crn")
 
             # Query returns the same results as the testkit, showing
-            # that processing was performed accurately
+            # that processing was performed accurately.
+            # (that we can query from it implies the resolution was correctly
+            # marked as complete)
             res = self.backend.query(
                 source=crn_testkit.resolution_path,
                 point_of_truth=naive_crn_testkit.resolution_path,
@@ -856,7 +885,7 @@ class TestMatchboxBackend:
             with pytest.raises(MatchboxResolutionExistingData):
                 self.backend.insert_model_data(
                     path=naive_crn_testkit.resolution_path,
-                    results=naive_crn_testkit.probabilities,
+                    results=naive_crn_testkit.probabilities.to_arrow(),
                 )
 
             # Retrieve again
@@ -901,6 +930,35 @@ class TestMatchboxBackend:
             # Validate IDs
             self.backend.validate_ids(ids=pre_results["left_id"].to_pylist())
             self.backend.validate_ids(ids=pre_results["right_id"].to_pylist())
+
+    def test_model_results_empty(self):
+        """Can insert and retrieve empty model results"""
+        with self.scenario(self.backend, "index") as dag_testkit:
+            crn_testkit = dag_testkit.sources.get("crn")
+            model_testkit = model_factory(
+                model_type="deduper", dag=crn_testkit.source.dag
+            )
+            model_testkit.probabilities = model_testkit.probabilities.head(0)
+            model_testkit.fake_run()
+
+            self.backend.create_resolution(
+                model_testkit.model.to_resolution(), path=model_testkit.resolution_path
+            )
+
+            self.backend.insert_model_data(
+                path=model_testkit.model.resolution_path,
+                results=model_testkit.model.results.probabilities.to_arrow(),
+            )
+
+            # Querying from deduper with no results is the same as querying from source
+            # (That we can query also implies that resolution marked as complete)
+            source_query = self.backend.query(source=crn_testkit.resolution_path)
+            dedupe_query = self.backend.query(
+                source=crn_testkit.resolution_path,
+                point_of_truth=model_testkit.resolution_path,
+            )
+
+            assert source_query == dedupe_query
 
     def test_model_results_shared_clusters(self):
         """Test that model results data can be inserted when clusters are shared."""

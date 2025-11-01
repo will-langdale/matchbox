@@ -11,6 +11,7 @@ from celery import Celery, Task
 from fastapi import UploadFile
 from pyarrow import parquet as pq
 
+from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
 from matchbox.common.dtos import (
     ResolutionPath,
     ResolutionType,
@@ -215,16 +216,17 @@ def process_upload(
             )
         ]
 
-        # At least 1 row present
-        if len(batches):
-            data = pa.Table.from_batches(batches)
-
-            if resolution.resolution_type == ResolutionType.SOURCE:
-                backend.insert_source_data(path=resolution_path, data_hashes=data)
-            else:
-                backend.insert_model_data(path=resolution_path, results=data)
-
-        backend.set_resolution_stage(path=resolution_path, stage=UploadStage.COMPLETE)
+        # If successful, either backend method marks resolution as complete
+        if resolution.resolution_type == ResolutionType.SOURCE:
+            backend.insert_source_data(
+                path=resolution_path,
+                data_hashes=pa.Table.from_batches(batches, schema=SCHEMA_INDEX),
+            )
+        else:
+            backend.insert_model_data(
+                path=resolution_path,
+                results=pa.Table.from_batches(batches, schema=SCHEMA_RESULTS),
+            )
 
     except Exception as e:
         error_context = {

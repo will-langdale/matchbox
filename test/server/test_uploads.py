@@ -200,13 +200,6 @@ def test_process_upload_success(s3: S3Client, resolution_type: ResolutionType):
     else:
         assert mock_backend.insert_model_data.called
 
-    # Ensure resolution is marked as complete
-    assert mock_backend.set_resolution_stage.called
-    assert (
-        mock_backend.set_resolution_stage.call_args.kwargs["stage"]
-        == UploadStage.COMPLETE
-    )
-
 
 def test_process_upload_empty_table(s3: S3Client):
     """Test that files representing empty table can be handled."""
@@ -239,13 +232,6 @@ def test_process_upload_empty_table(s3: S3Client):
         resolution_path=ResolutionPath(
             collection="collection", run=1, name="resolution"
         ),
-    )
-
-    # Ensure resolution is marked as complete
-    assert mock_backend.set_resolution_stage.called
-    assert (
-        mock_backend.set_resolution_stage.call_args.kwargs["stage"]
-        == UploadStage.COMPLETE
     )
 
     # Verify file was deleted
