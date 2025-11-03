@@ -535,10 +535,7 @@ def delete_resolution(
     """Delete a resolution from the backend."""
     resolution_path = ResolutionPath(collection=collection, run=run_id, name=resolution)
     try:
-        backend.delete_resolution(
-            name=resolution_path,
-            certain=certain,
-        )
+        backend.delete_resolution(path=resolution_path, certain=certain)
         return ResourceOperationStatus(
             success=True,
             target=f"Resolution {resolution_path}",

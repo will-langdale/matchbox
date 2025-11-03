@@ -10,6 +10,7 @@ from matchbox.client.dags import DAG
 from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
+from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.factories.sources import (
     FeatureConfig,
     SourceTestkitParameters,
@@ -286,3 +287,27 @@ class TestE2EPipelineBuilder:
         assert pending_dag.run == rerun_dag.run
 
         logging.info("DAG pipeline test completed successfully!")
+
+        # Possible to overwrite node locally
+        # (following source has one fewer field)
+        source_a = pending_dag.source(
+            location=dw_loc,
+            name="source_a",
+            extract_transform="""
+                select
+                    key::text as id,
+                    company_name
+                from
+                    source_a;
+            """,
+            infer_types=True,
+            key_field="id",
+            index_fields=["company_name"],
+        )
+
+        source_a.run()
+        # Possible to overwrite one node on server
+        source_a.sync()
+        # This will cause downstream queries to fail
+        with pytest.raises(MatchboxResolutionNotFoundError):
+            pending_dag.get_model("final").query(source_a).run()
