@@ -341,9 +341,9 @@ def test_dag_draw(sqlite_warehouse: Engine) -> None:
     # Check that tree has correct formatting with tree characters
     tree_chars = ["└──", "├──", "│"]
     has_tree_chars = any(char in tree_str for char in tree_chars)
-    assert (
-        has_tree_chars
-    ), "Tree representation doesn't use expected formatting characters"
+    assert has_tree_chars, (
+        "Tree representation doesn't use expected formatting characters"
+    )
 
     # Test 2: Drawing with timestamps (status indicators)
     # Set d_foo as processing and foo_bar as completed
@@ -372,9 +372,9 @@ def test_dag_draw(sqlite_warehouse: Engine) -> None:
     # Test 3: Check that node names are still present with status indicators
     for node in node_names:
         node_present = any(node in line for line in status_lines)
-        assert (
-            node_present
-        ), f"Node {node} not found in the tree representation with status indicators"
+        assert node_present, (
+            f"Node {node} not found in the tree representation with status indicators"
+        )
 
     # Test 4: Drawing with skipped nodes
     skipped_nodes = [foo.name, d_foo.name]

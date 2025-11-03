@@ -65,13 +65,11 @@ class Location(ABC):
         self.config = LocationConfig(type=self.location_type, name=name)
         self._client = None
 
-    def __deepcopy__(self, memo: dict[int, object] | None = None) -> Self:
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
         """Create a deep copy of the Location object."""
-        if memo is None:
-            memo = {}
+        obj_copy = type(self)(name=deepcopy(self.config.name, memo))
 
         # Both objects should share the same client
-        obj_copy = type(self)(name=deepcopy(self.config.name, memo))
         if self.client:
             obj_copy.set_client(self.client)
 
