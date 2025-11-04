@@ -86,18 +86,11 @@ def test_query_multiple_runs(
         )
     )
 
-    assert not query.last_run
     query.run()
-    assert query.last_run
     assert query_route.call_count == 1
 
-    # Re-running does nothing
-    with pytest.warns(match="already run"):
-        query.run()
-    assert query_route.call_count == 1
-
-    # Re-run must be forced
-    query.run(full_rerun=True)
+    # Re-running works
+    query.run()
     assert query_route.call_count == 2
 
     new_cleaning = {"col1": f"trim(upper({source.f('col1')}))"}
@@ -111,7 +104,7 @@ def test_query_multiple_runs(
             {"id": 2, "col1": " B "},
         ]
     )
-    cleaned1 = query.run(full_rerun=True, cache_raw=True)
+    cleaned1 = query.run(cache_raw=True)
     assert_frame_equal(
         cleaned1,
         cleaned1_expected,

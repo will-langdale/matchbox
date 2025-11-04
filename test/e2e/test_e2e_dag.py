@@ -11,6 +11,7 @@ from matchbox.client.dags import DAG
 from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
+from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.factories.sources import (
     FeatureConfig,
     SourceTestkitParameters,
@@ -209,7 +210,7 @@ class TestE2EPipelineBuilder:
                 },
             ),
             name="final",
-            description="Link sources A and B on registration_id",
+            description="Link sources A and B on registration ID",
             model_class=DeterministicLinker,
             model_settings={"comparisons": ["l.registration_id = r.registration_id"]},
         )
@@ -217,6 +218,10 @@ class TestE2EPipelineBuilder:
         # === FIRST RUN ===
         logging.info("Running DAG for the first time")
         dag.run_and_sync()
+
+        # Update metadata of one node, will check later
+        link_a_b.description = "Updated description"
+        link_a_b.sync()
 
         # Basic verification - we have some linked results and can retrieve them
         final_df = link_a_b.query(source_a, source_b).run()
@@ -253,6 +258,8 @@ class TestE2EPipelineBuilder:
         # Load default
         reconstructed_dag = DAG("companies").load_default()
         assert reconstructed_dag.run == dag.run
+        # Previous update was effective
+        assert reconstructed_dag.get_model("final").description == "Updated description"
 
         # Can directly read data from default
         assert matches == reconstructed_dag.lookup_key(
@@ -281,3 +288,27 @@ class TestE2EPipelineBuilder:
         assert pending_dag.run == rerun_dag.run
 
         logging.info("DAG pipeline test completed successfully!")
+
+        # Possible to overwrite node locally
+        # (following source has one fewer field)
+        source_a = pending_dag.source(
+            location=dw_loc,
+            name="source_a",
+            extract_transform="""
+                select
+                    key::text as id,
+                    company_name
+                from
+                    source_a;
+            """,
+            infer_types=True,
+            key_field="id",
+            index_fields=["company_name"],
+        )
+
+        source_a.run()
+        # Possible to overwrite one node on server
+        source_a.sync()
+        # This will cause downstream queries to fail
+        with pytest.raises(MatchboxResolutionNotFoundError):
+            pending_dag.get_model("final").query(source_a).run()
