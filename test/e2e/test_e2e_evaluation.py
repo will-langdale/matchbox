@@ -1,3 +1,5 @@
+from collections.abc import Generator
+
 import pytest
 from httpx import Client
 from sqlalchemy import Engine, text
@@ -38,7 +40,7 @@ class TestE2EModelEvaluation:
         self,
         matchbox_client: Client,
         postgres_warehouse: Engine,
-    ):
+    ) -> Generator[None, None, None]:
         """Set up warehouse and database using fixtures."""
         # Persist shared setup for use in the test body
         n_true_entities = 10
@@ -163,7 +165,7 @@ class TestE2EModelEvaluation:
         assert response.status_code == 200, "Failed to clear matchbox database"
 
     @pytest.mark.asyncio
-    async def test_evaluation_workflow(self):
+    async def test_evaluation_workflow(self) -> None:
         """Test end-to-end data pipeline: DAG → samples → judgement → model comparison.
 
         This test focuses on the full data flow through the system with real warehouse
