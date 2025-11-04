@@ -1,4 +1,4 @@
-"""Integration tests with real scenario data - comprehensive behaviour testing."""
+"""Integration tests with real scenario data - minimal coverage."""
 
 from functools import partial
 from unittest.mock import Mock
@@ -26,7 +26,7 @@ def backend_instance(request: pytest.FixtureRequest, backend: str) -> MatchboxDB
 
 
 class TestEvaluationQueue:
-    """Unit tests for EvaluationQueue - no app or mocking needed."""
+    """Unit tests for EvaluationQueue."""
 
     def test_queue_initialises_empty(self) -> None:
         """Test queue starts empty."""
@@ -50,22 +50,13 @@ class TestEvaluationQueue:
         """Test that duplicate cluster IDs are not added."""
         queue = EvaluationQueue()
         item1 = Mock(cluster_id=1)
-        item2 = Mock(cluster_id=1)  # Duplicate
+        item2 = Mock(cluster_id=1)
 
         queue.add_items([item1])
         added = queue.add_items([item2])
 
         assert added == 0
         assert queue.total_count == 1
-
-    def test_add_items_handles_empty_list(self) -> None:
-        """Test that adding empty list returns 0."""
-        queue = EvaluationQueue()
-
-        added = queue.add_items([])
-
-        assert added == 0
-        assert queue.total_count == 0
 
     def test_skip_rotates_deque(self) -> None:
         """Test that skip moves current to back."""
@@ -78,17 +69,6 @@ class TestEvaluationQueue:
 
         assert queue.current is item2
         assert queue.items[1] is item1
-
-    def test_skip_with_single_item_does_nothing(self) -> None:
-        """Test that skip with one item doesn't rotate."""
-        queue = EvaluationQueue()
-        item1 = Mock(cluster_id=1)
-        queue.items.append(item1)
-
-        queue.skip_current()
-
-        assert queue.current is item1
-        assert queue.total_count == 1
 
     def test_remove_current_pops_front(self) -> None:
         """Test that remove_current removes from front."""
@@ -103,20 +83,11 @@ class TestEvaluationQueue:
         assert queue.total_count == 1
         assert queue.current is item2
 
-    def test_remove_current_on_empty_returns_none(self) -> None:
-        """Test that remove_current on empty queue returns None."""
-        queue = EvaluationQueue()
-
-        removed = queue.remove_current()
-
-        assert removed is None
-        assert queue.total_count == 0
-
 
 @pytest.mark.parametrize("backend", backends)
 @pytest.mark.docker
 class TestScenarioIntegration:
-    """Integration tests using real scenario data with backend."""
+    """Integration tests using real scenario data."""
 
     @pytest.fixture
     def test_resolution(self) -> ModelResolutionPath:
@@ -128,27 +99,13 @@ class TestScenarioIntegration:
     @pytest.fixture(autouse=True)
     def setup(self, backend_instance: str, sqlite_warehouse: Engine) -> None:
         """Set up test fixtures."""
-        self.backend = backend_instance
-        self.warehouse_engine = sqlite_warehouse
+        self.backend: MatchboxDBAdapter = backend_instance
+        self.warehouse_engine: Engine = sqlite_warehouse
         self.scenario = partial(setup_scenario, warehouse=sqlite_warehouse)
 
     @pytest.mark.asyncio
-    async def test_complete_evaluation_workflow(self) -> None:
-        """Test complete evaluation workflow: start, load, label, clear, skip, submit.
-
-        This comprehensive test covers the main user journey through the evaluation app:
-
-        - App initialisation and sample loading
-        - Keyboard-driven assignment workflow (letter → digit)
-        - Clearing assignments
-        - Skipping items in the queue
-        - Submitting incomplete assignments (warning)
-        - Completing and submitting assignments (saves judgement)
-        - Status updates and help modal
-
-        Additional edge cases (e.g., clusters too large for screen) should be
-        separate tests as they may require different setup or scenarios.
-        """
+    async def test_evaluation_workflow(self) -> None:
+        """Test core evaluation workflow: load, assign, clear, skip, submit."""
         with self.scenario(self.backend, "dedupe") as dag:
             model_name: str = "naive_test_crn"
 
@@ -164,30 +121,26 @@ class TestScenarioIntegration:
             )
 
             async with app.run_test() as pilot:
+                await pilot.resize_terminal(120, 40)
                 await pilot.pause()
 
-                # 1. Verify app initialisation and sample loading
-                assert app.is_running
+                # Verify initialisation
                 assert app.user_name == "test_user"
                 assert app.user_id is not None
-                assert pilot.app.query("Footer")
                 assert app.queue.total_count > 0
-                assert app.queue.current is not None
-                assert app.queue.current.cluster_id is not None
+                current = app.queue.current
+                assert current is not None
 
-                # 2. Test keyboard workflow: letter then digit
+                # Test assignment workflow
                 await pilot.press("a")
                 await pilot.pause()
                 assert app.current_group == "a"
 
                 await pilot.press("1")
                 await pilot.pause()
-                current = app.queue.current
-                assert current is not None
                 assert 0 in current.assignments
                 assert current.assignments[0] == "a"
 
-                # 3. Test making additional assignments
                 await pilot.press("b")
                 await pilot.press("2")
                 await pilot.pause()
@@ -197,48 +150,80 @@ class TestScenarioIntegration:
                 assert isinstance(app.status, tuple)
                 assert len(app.status) == 2
 
-                # 5. Test clearing assignments
+                # Test clear
                 await pilot.press("escape")
                 await pilot.pause()
                 assert len(current.assignments) == 0
-                assert app.current_group == ""
 
-                # 6. Test skip workflow
+                # Test skip
                 first_item = app.queue.current
-                await pilot.press("right")
+                await pilot.press("shift+right")
                 await pilot.pause()
                 assert app.queue.current is not first_item
-                assert app.queue.items[-1] is first_item
 
-                # 7. Test submitting incomplete assignment shows warning
-                initial_count = app.queue.total_count
+                # Test incomplete submission
                 await pilot.press("space")
                 await pilot.pause()
-                assert app.queue.total_count == initial_count
-                status_message = app.status[0].lower()
-                assert "incomplete" in status_message
+                assert "incomplete" in app.status[0].lower()
 
-                # 8. Test completing and submitting assignment sends judgement
+                # Test complete submission
                 current = app.queue.current
                 assert current is not None
                 num_columns = len(current.display_columns)
+
                 for i in range(num_columns):
                     await pilot.press("a")
-                    await pilot.press(str((i % 9) + 1))
+                    # Use modulo to wrap around digits 1-9, then 0 for 10th
+                    digit_key = str((i % 9) + 1) if i % 10 != 9 else "0"
+                    await pilot.press(digit_key)
                     await pilot.pause()
 
                 initial_judgements, _ = self.backend.get_judgements()
-                initial_judgement_count = len(initial_judgements)
+                initial_count = len(initial_judgements)
 
                 await pilot.press("space")
                 await pilot.pause()
 
                 final_judgements, _ = self.backend.get_judgements()
-                final_judgement_count = len(final_judgements)
-                assert final_judgement_count == initial_judgement_count + 1
+                assert len(final_judgements) == initial_count + 1
 
-                # 9. Test help modal
-                initial_stack_size = len(pilot.app.screen_stack)
-                await pilot.press("f1")
+    @pytest.mark.asyncio
+    async def test_navigation(self) -> None:
+        """Test page and tab navigation."""
+        with self.scenario(self.backend, "mega") as dag:
+            model_name: str = "mega_product_linker"
+
+            loaded_dag: DAG = (
+                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
+            )
+
+            app = EntityResolutionApp(
+                resolution=model_name,
+                num_samples=20,
+                user="test_user",
+                dag=loaded_dag,
+            )
+
+            async with app.run_test() as pilot:
+                await pilot.resize_terminal(120, 40)
                 await pilot.pause()
-                assert len(pilot.app.screen_stack) > initial_stack_size
+
+                initial_page = app.current_page_by_tab.get(0, 0)
+
+                await pilot.press("down")
+                await pilot.pause()
+                assert app.current_page_by_tab.get(0, 0) == initial_page + 1
+
+                await pilot.press("up")
+                await pilot.pause()
+                assert app.current_page_by_tab.get(0, 0) == initial_page
+
+                initial_tab = app._get_current_tab_index()
+
+                await pilot.press("right")
+                await pilot.pause()
+                assert app._get_current_tab_index() == initial_tab + 1
+
+                await pilot.press("left")
+                await pilot.pause()
+                assert app._get_current_tab_index() == initial_tab

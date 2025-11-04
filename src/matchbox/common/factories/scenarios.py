@@ -604,7 +604,7 @@ def create_mega_scenario(
     backend.create_collection(name=dag_testkit.dag.name)
     dag_testkit.dag.run = backend.create_run(collection=dag_testkit.dag.name).run_id
 
-    # ===== FEATURES WITH VARIATIONS (5 string features, 1 variation each) =====
+    # ===== FEATURES WITH VARIATIONS (4 string features, 1 variation each) =====
 
     product_name = FeatureConfig(
         name="product_name",
@@ -639,12 +639,6 @@ def create_mega_scenario(
                     "Metal",
                     "Wood",
                     "Glass",
-                    "Ceramic",
-                    "Fabric",
-                    "Leather",
-                    "Rubber",
-                    "Silicon",
-                    "Carbon Fiber",
                 ),
             ),
         ),
@@ -653,15 +647,7 @@ def create_mega_scenario(
         PrefixRule(prefix="Material: "),
     )
 
-    manufacturer_code = FeatureConfig(
-        name="manufacturer_code",
-        base_generator="bothify",
-        parameters=(("text", "MFR-###??"),),
-    ).add_variations(
-        ReplaceRule(old="-", new="_"),
-    )
-
-    # ===== FEATURES WITHOUT VARIATIONS (45 features) =====
+    # ===== FEATURES WITHOUT VARIATIONS (46 features) =====
 
     # Numeric features
     def _numeric_feature(name: str, pattern: str, **kwargs: Any) -> FeatureConfig:
@@ -682,6 +668,7 @@ def create_mega_scenario(
             ("right_digits", 1),
         ),
     )
+    manufacturer_code = _numeric_feature("manufacturer_code", "MFR-###??")
     width_cm = _numeric_feature("width_cm", "###.#")
     depth_cm = _numeric_feature("depth_cm", "###.#")
     weight_kg = _numeric_feature("weight_kg", "##.##")
@@ -718,9 +705,9 @@ def create_mega_scenario(
     shipping_days = _categorical_feature("shipping_days", "1", "2", "3")
     box_size = _categorical_feature("box_size", "Small", "Medium", "Large")
     safety_cert = _categorical_feature("safety_cert", "CE", "UL", "FCC")
-    frequency_hz = _categorical_feature("frequency_hz", "50", "60", "400", "1000")
+    frequency_hz = _categorical_feature("frequency_hz", "50", "60")
     thread_count = _categorical_feature("thread_count", "100", "200", "300")
-    ply_count = _categorical_feature("ply_count", "1", "2", "3", "4", "5", "6")
+    ply_count = _categorical_feature("ply_count", "1", "2", "3")
     hardness_rating = _categorical_feature("hardness_rating", "Soft", "Medium", "Hard")
     water_resistance = _categorical_feature("water_resistance", "IPX4", "IPX5")
     dust_rating = _categorical_feature("dust_rating", "IP5X", "IP6X")
@@ -736,8 +723,6 @@ def create_mega_scenario(
     chemical_resistance = _categorical_feature("chemical_resistance", "High", "Low")
     recyclability = _categorical_feature("recyclability", "Recyclable")
     fire_rating = _categorical_feature("fire_rating", "Class A", "Class B")
-    odour_level = _categorical_feature("odour_level", "Odourless", "Scented")
-    taste_safe = _categorical_feature("taste_safe", "Food-safe", "BPA-free")
     allergen_info = _categorical_feature("allergen_info", "Hypoallergenic", "Standard")
     assembly_required = _categorical_feature("assembly_required", "Full assembly")
     tool_requirements = _categorical_feature("tool_requirements", "Basic tools")
@@ -781,7 +766,7 @@ def create_mega_scenario(
             thread_count,
         ),
         n_true_entities=n_entities,
-        repetition=2,
+        repetition=0,
         drop_base=False,
     )
 
@@ -815,8 +800,6 @@ def create_mega_scenario(
             chemical_resistance,
             recyclability,
             fire_rating,
-            odour_level,
-            taste_safe,
             allergen_info,
             assembly_required,
             tool_requirements,
@@ -825,7 +808,7 @@ def create_mega_scenario(
             user_capacity,
         ),
         n_true_entities=n_entities,
-        repetition=2,
+        repetition=0,
         drop_base=False,
     )
 
@@ -873,7 +856,7 @@ def create_mega_scenario(
         true_entities=tuple(linked.true_entities),
         name="mega_product_linker",
         description="Links products across marketplace_a and marketplace_b catalogues",
-        prob_range=(0.8, 1.0),
+        prob_range=(1.0, 1.0),
         seed=seed,
     )
 

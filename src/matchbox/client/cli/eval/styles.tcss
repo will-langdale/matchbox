@@ -76,6 +76,54 @@ Screen {
     text-align: right;
 }
 
+/* Content container and tabs */
+#content-container {
+    height: 1fr;
+    width: 100%;
+}
+
+TabbedContent {
+    height: 1fr;
+    width: 100%;
+    border-top: tall #E4A242;
+    padding: 0;
+    margin: 0;
+}
+
+Tabs {
+    padding: 0;
+    margin: 0;
+}
+
+#tabs-scroll {
+    padding: 0;
+    margin: 0;
+}
+
+#tabs-list-bar {
+    padding: 0;
+    margin: 0;
+}
+
+#tabs-list {
+    padding: 0;
+    margin: 0;
+}
+
+Tabs .underline--bar {
+    color: #E4A242;
+}
+
+ContentSwitcher {
+    padding: 0;
+    margin: 0;
+}
+
+TabPane {
+    padding: 0;
+    margin: 0;
+}
+
 /* Table */
 #record-table {
     height: 1fr;
@@ -87,6 +135,8 @@ Screen {
 ComparisonDisplayTable {
     height: 1fr;
     width: 100%;
+    padding: 0;
+    margin: 0;
 }
 
 /* Footer */

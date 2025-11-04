@@ -4,17 +4,19 @@ import logging
 from collections import deque
 from pathlib import Path
 
+from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
 from textual.timer import Timer
-from textual.widgets import Footer, Label
+from textual.widgets import Footer, Label, TabbedContent, TabPane
+from textual.widgets._tabbed_content import ContentTabs
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.client.cli.eval.modals import HelpModal, NoSamplesModal
-from matchbox.client.cli.eval.widgets.styling import get_display_text
+from matchbox.client.cli.eval.widgets.styling import get_display_text, get_group_style
 from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
 from matchbox.client.dags import DAG
 from matchbox.client.eval import EvaluationItem, create_judgement, get_samples
@@ -74,19 +76,22 @@ class EntityResolutionApp(App):
     CSS_PATH = Path(__file__).parent / "styles.tcss"
     TITLE = "Matchbox evaluate"
     SUB_TITLE = "match labelling tool"
+    AUTO_FOCUS = None
 
-    # Triggered by action_* methods
     BINDINGS = [
-        ("right", "skip", "Skip"),
+        ("shift+right", "skip", "Skip"),
         ("space", "submit", "Submit"),
         ("escape", "clear", "Clear"),
         ("question_mark,f1", "show_help", "Help"),
         ("ctrl+q,ctrl+c", "quit", "Quit"),
+        ("up", "page_up", "▲ Page"),
+        ("down", "page_down", "▼ Page"),
+        ("left", "previous_tab", "◀ Tab"),
+        ("right", "next_tab", "▶ Tab"),
     ]
 
-    # Reactive variables that trigger UI updates
     current_group: reactive[str] = reactive("")
-    status: reactive[tuple[str, str]] = reactive(("○ Ready", "dim"))
+    status: reactive[tuple[str, str]] = reactive(("● Ready", "dim"))
 
     sample_limit: int
     resolution: ModelResolutionPath
@@ -97,6 +102,10 @@ class EntityResolutionApp(App):
 
     queue: EvaluationQueue
     timer: Timer | None = None
+
+    current_page_by_tab: dict[int, int]
+    rows_per_page: int
+    cols_per_page: int
 
     def __init__(
         self,
@@ -121,8 +130,11 @@ class EntityResolutionApp(App):
         self.sample_limit = num_samples
         self.user_name = user
         self.dag = dag
-        self.resolution = dag.get_model(resolution).resolution_path
+        self.resolution: ModelResolutionPath = dag.get_model(resolution).resolution_path
         self.show_help = show_help
+        self.current_page_by_tab = {}
+        self.rows_per_page = 20
+        self.cols_per_page = 10
 
     # Lifecycle methods
     def compose(self) -> ComposeResult:
@@ -134,7 +146,7 @@ class EntityResolutionApp(App):
                 id="status-bar",
                 classes="status-bar",
             ),
-            ComparisonDisplayTable(id="record-table"),
+            Vertical(id="content-container"),
             id="main-container",
         )
         yield Footer()
@@ -154,7 +166,7 @@ class EntityResolutionApp(App):
             await self._handle_no_samples()
             return
 
-        self._load_current_item()
+        await self._load_current_item()
 
         if self.show_help:
             self.call_after_refresh(self.action_show_help)
@@ -172,13 +184,20 @@ class EntityResolutionApp(App):
             return
 
         if key.isdigit() and self.current_group:
-            col_num = 10 if key == "0" else int(key)
             current = self.queue.current
-            if current and col_num <= len(current.display_columns):
-                current.assignments[col_num - 1] = self.current_group
+            if not current:
+                event.stop()
+                return
 
-                table = self.query_one(ComparisonDisplayTable)
-                table.refresh()
+            key_position = 10 if key == "0" else int(key)
+            tab_index = self._get_current_tab_index()
+            col_start = tab_index * self.cols_per_page
+            col_end = min(col_start + self.cols_per_page, len(current.display_columns))
+
+            if 1 <= key_position <= col_end - col_start:
+                actual_col_idx = col_start + (key_position - 1)
+                current.assignments[actual_col_idx] = self.current_group
+                await self._refresh_current_tab()
                 self._update_status_labels()
 
             event.stop()
@@ -194,26 +213,168 @@ class EntityResolutionApp(App):
         self._update_status_labels()
 
     # Private methods
-    def _load_current_item(self) -> None:
+    def _get_current_tab_index(self) -> int:
+        """Get the currently active tab index."""
+        tabs_list = list(self.query(TabbedContent))
+        if not tabs_list:
+            return 0
+
+        tabs = tabs_list[0]
+        active_pane = tabs.active
+        if active_pane and active_pane.startswith("tab-"):
+            try:
+                return int(active_pane.split("-")[1])
+            except (ValueError, IndexError):
+                return 0
+
+        return 0
+
+    def _calculate_cols_per_page(self) -> int:
+        """Calculate how many columns fit on screen based on terminal width."""
+        available_width = max(80, self.size.width - 26)
+        num_cols = available_width // 27
+        return max(4, min(10, num_cols))
+
+    def _calculate_rows_per_page(self) -> int:
+        """Calculate how many rows fit on screen."""
+        return max(10, self.size.height - 8)
+
+    def _build_tab_label(self, tab_index: int) -> str:
+        """Build tab label with coloured blocks representing column states."""
+        current = self.queue.current
+        if not current:
+            return "█" * self.cols_per_page
+
+        blocks = []
+        col_start = tab_index * self.cols_per_page
+        col_end = min(col_start + self.cols_per_page, len(current.display_columns))
+
+        for col_idx in range(col_start, col_end):
+            if col_idx in current.assignments:
+                group = current.assignments[col_idx]
+                _, colour = get_group_style(group)
+                blocks.append(f"[{colour}]█[/]")
+            else:
+                blocks.append("[dim]█[/]")
+
+        return "".join(blocks)
+
+    def _update_tab_labels(self, tabs: TabbedContent, num_tabs: int) -> None:
+        """Update tab labels to reflect current assignment state."""
+        if num_tabs <= 1:
+            return
+
+        content_tabs_list = list(tabs.query(ContentTabs))
+        if not content_tabs_list:
+            return
+
+        content_tabs = content_tabs_list[0]
+        tab_widgets = list(content_tabs.query("Tab"))
+
+        for idx, tab_widget in enumerate(tab_widgets):
+            if idx >= num_tabs:
+                break
+
+            new_label_markup = self._build_tab_label(idx)
+            new_label_text = Text.from_markup(new_label_markup)
+            tab_widget.label = new_label_text
+            tab_widget.refresh()
+
+        content_tabs.refresh()
+
+    def _update_current_table(
+        self,
+        current: EvaluationItem,
+        tab_index: int,
+        col_start: int,
+        col_end: int,
+        row_start: int,
+        row_end: int,
+    ) -> None:
+        """Update the table in the current tab pane."""
+        tabs_list = list(self.query(TabbedContent))
+        if not tabs_list:
+            return
+
+        tabs = tabs_list[0]
+        current_pane = tabs.get_pane(f"tab-{tab_index}")
+        if not current_pane:
+            return
+
+        table = current_pane.query_one(ComparisonDisplayTable)
+        table.load_comparison(current, col_start, col_end, row_start, row_end)
+
+    async def _refresh_current_tab(self) -> None:
+        """Refresh the currently visible tab/table."""
+        current = self.queue.current
+        if not current:
+            return
+
+        self.rows_per_page = self._calculate_rows_per_page()
+        self.cols_per_page = self._calculate_cols_per_page()
+
+        num_cols = len(current.display_columns)
+        tab_index = self._get_current_tab_index()
+        col_start = tab_index * self.cols_per_page
+        col_end = min(col_start + self.cols_per_page, num_cols)
+        page = self.current_page_by_tab.get(tab_index, 0)
+        row_start = page * self.rows_per_page
+        row_end = row_start + self.rows_per_page
+
+        tabs_list = list(self.query(TabbedContent))
+        if not tabs_list:
+            return
+
+        tabs = tabs_list[0]
+        num_tabs = (num_cols + self.cols_per_page - 1) // self.cols_per_page
+        self._update_tab_labels(tabs, num_tabs)
+        self._update_current_table(
+            current, tab_index, col_start, col_end, row_start, row_end
+        )
+
+    async def _load_current_item(self) -> None:
         """Load current queue item into the display."""
         current = self.queue.current
-        if current:
-            # Check if cluster has too many columns
-            if len(current.display_columns) > 10:
-                logger.warning(
-                    f"Cluster {current.cluster_id} has {len(current.display_columns)} "
-                    "columns. Skipping cluster as only columns 1-10 can be assigned "
-                    "via keyboard shortcuts."
-                )
-                self._update_status("⚠ Cluster skipped", "red", clear_after=3.0)
-                self.queue.remove_current()
-                self._load_current_item()
-                return
+        if not current:
+            return
 
-            self.current_group = ""
+        if len(current.display_columns) > 80:
+            logger.warning(
+                f"Cluster {current.cluster_id} has {len(current.display_columns)} "
+                "columns - skipping (max 80 supported)"
+            )
+            self._update_status("⚠ Cluster skipped", "red", clear_after=3.0)
+            self.queue.remove_current()
+            await self._load_current_item()
+            return
 
-            table = self.query_one(ComparisonDisplayTable)
-            table.load_comparison(current)
+        self.current_group = ""
+        self.rows_per_page = self._calculate_rows_per_page()
+        self.cols_per_page = self._calculate_cols_per_page()
+
+        container = self.query_one("#content-container", Vertical)
+        for child in list(container.children):
+            child.remove()
+
+        num_cols = len(current.display_columns)
+        num_tabs = (num_cols + self.cols_per_page - 1) // self.cols_per_page
+        self.current_page_by_tab = {i: 0 for i in range(num_tabs)}
+
+        tabs = TabbedContent()
+        await container.mount(tabs)
+
+        for tab_idx in range(num_tabs):
+            label = self._build_tab_label(tab_idx)
+            col_start = tab_idx * self.cols_per_page
+            col_end = min(col_start + self.cols_per_page, num_cols)
+
+            table = ComparisonDisplayTable()
+            table.load_comparison(current, col_start, col_end, 0, self.rows_per_page)
+
+            pane = TabPane(label, table, id=f"tab-{tab_idx}")
+            tabs.add_pane(pane)
+
+        self._update_status_labels()
 
     def _update_status_labels(self) -> None:
         """Update both status bar labels."""
@@ -271,14 +432,12 @@ class EntityResolutionApp(App):
     def _build_status_right(self) -> str:
         """Build right status text with status indicator."""
         message, colour = self.status
-        if message:
-            return f"[{colour}]{message}[/]"
-        return "[dim]○ Ready[/]"
+        return f"[{colour}]{message}[/]" if message else "[dim]● Ready[/]"
 
     async def _handle_no_samples(self) -> None:
         """Handle empty queue state."""
-        self._update_status("◯ No data", "yellow")
-        logger.warning(f"No samples available for resolution '{self.resolution}'.")
+        self._update_status("○ No data", "yellow")
+        logger.warning(f"No samples available for resolution '{self.resolution}'")
         await self.action_show_no_samples()
 
     def _update_status(
@@ -287,13 +446,7 @@ class EntityResolutionApp(App):
         colour: str = "dim",
         clear_after: float | None = None,
     ) -> None:
-        """Update status message with optional auto-clear.
-
-        Args:
-            message: Status message to display
-            colour: Colour for the message
-            clear_after: Seconds after which to auto-clear
-        """
+        """Update status message with optional auto-clear."""
         if self.timer:
             self.timer.stop()
 
@@ -301,8 +454,38 @@ class EntityResolutionApp(App):
 
         if clear_after:
             self.timer = self.set_timer(
-                clear_after, lambda: self._update_status("○ Ready", "dim")
+                clear_after, lambda: self._update_status("● Ready", "dim")
             )
+
+    async def _navigate_page(self, delta: int) -> None:
+        """Navigate pages by delta (-1 for up, +1 for down)."""
+        tab_idx = self._get_current_tab_index()
+        current = self.queue.current
+        if not current or not current.display_data:
+            return
+
+        new_page = self.current_page_by_tab.get(tab_idx, 0) + delta
+        max_page = max(0, (len(current.display_data) - 1) // self.rows_per_page)
+
+        if 0 <= new_page <= max_page:
+            self.current_page_by_tab[tab_idx] = new_page
+            await self._refresh_current_tab()
+
+    def _navigate_tab(self, delta: int) -> None:
+        """Navigate tabs by delta (-1 for previous, +1 for next)."""
+        tabs_list = list(self.query(TabbedContent))
+        if not tabs_list:
+            return
+
+        tabs = tabs_list[0]
+        panes = list(tabs.query(TabPane))
+        if len(panes) <= 1:
+            return
+
+        current_idx = next(
+            (i for i, pane in enumerate(panes) if pane.id == tabs.active), 0
+        )
+        tabs.active = panes[(current_idx + delta) % len(panes)].id
 
     # Public methods
     async def authenticate(self) -> None:
@@ -322,22 +505,13 @@ class EntityResolutionApp(App):
             return
 
         self._update_status("⚡ Fetching", "yellow")
-        logger.info(
-            "Fetching %s samples to reach limit of %s",
-            needed,
-            self.sample_limit,
-        )
 
-        new_samples_dict = None
-        try:
-            new_samples_dict = get_samples(
-                n=needed,
-                resolution=self.resolution.name,
-                user_id=self.user_id,
-                dag=self.dag,
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"Failed to fetch samples: {type(e).__name__}: {e}")
+        new_samples_dict = get_samples(
+            n=needed,
+            resolution=self.resolution.name,
+            user_id=self.user_id,
+            dag=self.dag,
+        )
 
         if new_samples_dict:
             self.queue.add_items(list(new_samples_dict.values()))
@@ -348,11 +522,27 @@ class EntityResolutionApp(App):
             self._update_status("✓ Ready", "green")
 
     # Action methods (public interface)
+    async def action_page_up(self) -> None:
+        """Navigate to previous page in current tab."""
+        await self._navigate_page(-1)
+
+    async def action_page_down(self) -> None:
+        """Navigate to next page in current tab."""
+        await self._navigate_page(1)
+
+    async def action_previous_tab(self) -> None:
+        """Navigate to previous tab."""
+        self._navigate_tab(-1)
+
+    async def action_next_tab(self) -> None:
+        """Navigate to next tab."""
+        self._navigate_tab(1)
+
     async def action_skip(self) -> None:
         """Skip current entity (moves to back of queue)."""
         if self.queue.total_count > 1:
             self.queue.skip_current()
-            self._load_current_item()
+            await self._load_current_item()
         else:
             await self.action_submit()
             if self.queue.total_count == 0:
@@ -365,25 +555,21 @@ class EntityResolutionApp(App):
         if not current:
             return
 
-        # Check if all columns are assigned
         is_painted = len(current.assignments) == len(current.display_columns)
+
         if not is_painted:
             self._update_status("⚠ Incomplete", "yellow", clear_after=3.0)
             return
 
-        try:
-            if self.user_id is None:
-                raise RuntimeError("User ID is not set")
-            judgement = create_judgement(current, self.user_id)
-            _handler.send_eval_judgement(judgement)
-        except Exception as exc:
-            self._update_status("⚠ Send failed", "red", clear_after=4.0)
-            logger.exception(f"Failed to submit: {exc}")
-            return
+        if self.user_id is None:
+            raise RuntimeError("User ID is not set")
+
+        judgement = create_judgement(current, self.user_id)
+        _handler.send_eval_judgement(judgement)
 
         self.queue.remove_current()
         await self.load_samples()
-        self._load_current_item()
+        await self._load_current_item()
         self._update_status("✓ Sent", "green", clear_after=2.0)
 
     async def action_clear(self) -> None:
@@ -392,8 +578,7 @@ class EntityResolutionApp(App):
             current.assignments.clear()
             self.current_group = ""
 
-            table = self.query_one(ComparisonDisplayTable)
-            table.refresh()
+            await self._refresh_current_tab()
             self._update_status_labels()
 
     async def action_show_help(self) -> None:

@@ -22,8 +22,14 @@ paint them that way.
 When you're done, submit, and do another!
 
 • Press letter (a-z): Select that group (26 groups available)
-• Press number (1-9, 0): Assign column to selected group
+• Press number (1-9, 0): Assign column by position in current tab
 • Esc: Clear group selection
+• Shift+Right: Skip to next cluster
+• Tab or Left/Right: Switch between tabs (if multiple tabs)
+• Up/Down: Page through rows (if table doesn't fit)
+
+Column numbers restart at 1 for each tab.
+Coloured blocks in tabs show assignment status.
 """.strip()
 
 NO_SAMPLES_TEXT = """
