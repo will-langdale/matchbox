@@ -52,7 +52,7 @@ def test_dag_run_and_sync(
     model_run_mock: Mock,
     source_run_mock: Mock,
     sqlite_warehouse: Engine,
-):
+) -> None:
     """A legal DAG can be built and run."""
     # Set up constituents
     foo_tkit = source_factory(name="foo", engine=sqlite_warehouse).write_to_location()
@@ -109,7 +109,7 @@ def test_dag_run_and_sync(
     assert model_sync_mock.call_count == 3
 
 
-def test_dags_missing_dependency(sqlite_warehouse: Engine):
+def test_dags_missing_dependency(sqlite_warehouse: Engine) -> None:
     """Steps cannot be added before their dependencies."""
     dag = TestkitDAG().dag
 
@@ -128,7 +128,7 @@ def test_dags_missing_dependency(sqlite_warehouse: Engine):
     assert not len(dag.graph)
 
 
-def test_mixing_dags_fails(sqlite_warehouse: Engine):
+def test_mixing_dags_fails(sqlite_warehouse: Engine) -> None:
     """Cannot reference a different DAG when adding a step."""
     dag = TestkitDAG().dag
     dag2 = TestkitDAG().dag
@@ -150,7 +150,7 @@ def test_mixing_dags_fails(sqlite_warehouse: Engine):
     assert not len(dag2.graph)
 
 
-def test_dag_name_clash(sqlite_warehouse: Engine):
+def test_dag_name_clash(sqlite_warehouse: Engine) -> None:
     """Under some conditions, nodes can be overwritten."""
     dag = TestkitDAG().dag
 
@@ -234,7 +234,7 @@ def test_dag_disconnected(
     model_run_mock: Mock,
     source_run_mock: Mock,
     sqlite_warehouse: Engine,
-):
+) -> None:
     """Nodes cannot be disconnected."""
     dag = TestkitDAG().dag
 
@@ -248,7 +248,7 @@ def test_dag_disconnected(
         dag.run_and_sync()
 
 
-def test_dag_final_steps(sqlite_warehouse: Engine):
+def test_dag_final_steps(sqlite_warehouse: Engine) -> None:
     """Test final_steps property returns all apex nodes."""
     dag = TestkitDAG().dag
 
@@ -276,7 +276,7 @@ def test_dag_final_steps(sqlite_warehouse: Engine):
     assert dag.final_steps[0].name == "foo_bar"
 
 
-def test_dag_draw(sqlite_warehouse: Engine):
+def test_dag_draw(sqlite_warehouse: Engine) -> None:
     """Test that the draw method produces a correct string representation of the DAG."""
     # Set up a simple DAG
     foo_tkit = source_factory(name="foo", engine=sqlite_warehouse).write_to_location()
@@ -430,7 +430,7 @@ def test_extract_lookup(
     sqlite_warehouse: Engine,
     sqlite_in_memory_warehouse: Engine,
     matchbox_api: MockRouter,
-):
+) -> None:
     """Entire lookup can be extracted from DAG."""
     # Make dummy data
     foo = source_from_tuple(
@@ -622,7 +622,7 @@ def test_extract_lookup(
     assert reconstituted_dag.extract_lookup() == foo_bar_mapping
 
 
-def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine) -> None:
     """The DAG can map between single keys."""
     # Set up dummy data
     foo_testkit = source_factory(
@@ -679,7 +679,7 @@ def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     assert matches == {foo.name: ["a"], bar.name: ["b"], baz.name: ["b"]}
 
 
-def test_lookup_key_404_source(matchbox_api: MockRouter):
+def test_lookup_key_404_source(matchbox_api: MockRouter) -> None:
     """Key lookup throws a resolution not found error."""
     # Set up dummy data
     source_testkit = source_factory(name="source")
@@ -709,7 +709,9 @@ def test_lookup_key_404_source(matchbox_api: MockRouter):
         dag.lookup_key(from_source="source", to_sources=["target"], key="pk1")
 
 
-def test_lookup_key_no_matches(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+def test_lookup_key_no_matches(
+    matchbox_api: MockRouter, sqlite_warehouse: Engine
+) -> None:
     """Key lookup raises MatchboxEmptyServerResponse when no matches are found."""
     # Set up dummy data
     source_testkit = source_factory(
@@ -738,7 +740,7 @@ def test_lookup_key_no_matches(matchbox_api: MockRouter, sqlite_warehouse: Engin
         dag.lookup_key(from_source="source", to_sources=["target"], key="pk1")
 
 
-def test_from_resolution():
+def test_from_resolution() -> None:
     """Test reconstructing Sources and Models from a Resolution."""
     # Create test data
     test_dag = TestkitDAG().dag
@@ -800,7 +802,7 @@ def test_from_resolution():
 def test_dag_creates_new_collection(
     matchbox_api: MockRouter,
     sqlite_warehouse: Engine,
-):
+) -> None:
     """Connect creates a new collection when it doesn't exist."""
     dag = DAG(name="test_collection")
 
@@ -862,7 +864,7 @@ def test_dag_creates_new_collection(
 )
 def test_dag_uses_existing_collection(
     matchbox_api: MockRouter, has_existing_runs: bool, expected_run_id: int
-):
+) -> None:
     """New runs can be started from existing collection."""
     dag = DAG(name="test_collection")
 
@@ -909,7 +911,7 @@ def test_dag_uses_existing_collection(
     assert dag.run == expected_run_id
 
 
-def test_dag_load_server_run(matchbox_api: MockRouter):
+def test_dag_load_server_run(matchbox_api: MockRouter) -> None:
     """Can retrieve serialised DAG from the server."""
     # Create test data
     test_dag = TestkitDAG().dag
@@ -1037,7 +1039,7 @@ def test_dag_load_server_run(matchbox_api: MockRouter):
         DAG(name=test_dag.name).load_default()
 
 
-def test_dag_load_run_complex_dependencies(matchbox_api: MockRouter):
+def test_dag_load_run_complex_dependencies(matchbox_api: MockRouter) -> None:
     """Test that _load_run handles nodes with complex dependencies.
 
     In particular, tests for DAGS where nodes have the same dependency count but
@@ -1113,7 +1115,7 @@ def test_dag_load_run_complex_dependencies(matchbox_api: MockRouter):
     assert loaded_dag.graph == test_dag.graph
 
 
-def test_dag_set_client(sqlite_warehouse: Engine):
+def test_dag_set_client(sqlite_warehouse: Engine) -> None:
     """Client can be set for all sources at once."""
     # Create factory data
     foo_params = source_factory(name="foo").into_dag()
@@ -1132,7 +1134,7 @@ def test_dag_set_client(sqlite_warehouse: Engine):
     assert dag.get_source("bar").location.client == sqlite_warehouse
 
 
-def test_dag_set_default_ok(matchbox_api: MockRouter):
+def test_dag_set_default_ok(matchbox_api: MockRouter) -> None:
     """Set default makes run immutable and sets as default."""
     # Create test data
     dag = TestkitDAG().dag
@@ -1173,7 +1175,7 @@ def test_dag_set_default_ok(matchbox_api: MockRouter):
     assert api_default.called
 
 
-def test_dag_set_default_not_connected():
+def test_dag_set_default_not_connected() -> None:
     """Set default raises error when DAG is not connected."""
     dag = DAG(name="test_collection")
 

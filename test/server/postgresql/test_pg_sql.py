@@ -482,7 +482,7 @@ class TestGetLineage:
 
     def test_get_lineage_source_no_parents(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Source resolutions should return only themselves."""
         with MBDB.get_session() as session:
             source_a = session.get(Resolutions, 1)  # source_a
@@ -495,7 +495,7 @@ class TestGetLineage:
 
     def test_get_lineage_dedupe_has_source_parent(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Dedupe resolution should return itself + source parent."""
         with MBDB.get_session() as session:
             dedupe_a = session.get(Resolutions, 3)  # dedupe_a
@@ -508,7 +508,7 @@ class TestGetLineage:
 
     def test_get_lineage_linker_has_multiple_parents(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Linker resolution should return itself + all parents in hierarchy."""
         with MBDB.get_session() as session:
             linker = session.get(Resolutions, 5)  # linker_ab
@@ -531,7 +531,7 @@ class TestGetLineage:
 
     def test_get_lineage_with_source_filter(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should filter lineage to specific source configs."""
         with MBDB.get_session() as session:
             linker = session.get(Resolutions, 5)  # linker_ab
@@ -553,7 +553,7 @@ class TestGetLineage:
 
     def test_get_lineage_with_threshold_override(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should override only the query resolution's threshold."""
         with MBDB.get_session() as session:
             linker = session.get(Resolutions, 5)  # linker_ab
@@ -572,7 +572,7 @@ class TestGetLineage:
 
     def test_get_lineage_with_multiple_source_filter(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should filter lineage to multiple source configs."""
         with MBDB.get_session() as session:
             linker = session.get(Resolutions, 5)  # linker_ab
@@ -593,7 +593,7 @@ class TestGetLineage:
 
     def test_get_lineage_ordering_by_level_then_id(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should verify ordering is by level ASC, then resolution_id ASC."""
         with MBDB.get_session() as session:
             linker = session.get(Resolutions, 5)  # linker_ab
@@ -622,7 +622,7 @@ class TestGetLineage:
 
     def test_get_lineage_threshold_override_only_affects_self(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should verify threshold override only affects the query resolution."""
         with MBDB.get_session() as session:
             linker = session.get(Resolutions, 5)  # linker_ab
@@ -666,7 +666,7 @@ class TestGetLineage:
 class TestGetSourceConfig:
     """Test source config retrieval."""
 
-    def test_get_existing_source(self, populated_postgres_db: MatchboxPostgres):
+    def test_get_existing_source(self, populated_postgres_db: MatchboxPostgres) -> None:
         """Should return source config for existing source."""
         with MBDB.get_session() as session:
             source_config = Resolutions.from_path(
@@ -693,7 +693,7 @@ class TestBuildUnifiedQuery:
         level: Literal["leaf", "key"],
         get_hashes: bool,
         populated_postgres_db: MatchboxPostgres,
-    ):
+    ) -> None:
         """Should build unified query for source-only scenario."""
         with MBDB.get_session() as session:
             source_a_resolution = session.get(Resolutions, 1)  # source_a resolution
@@ -738,7 +738,7 @@ class TestBuildUnifiedQuery:
         level: Literal["leaf", "key"],
         get_hashes: bool,
         populated_postgres_db: MatchboxPostgres,
-    ):
+    ) -> None:
         """Should build unified query mixing sources and models."""
         with MBDB.get_session() as session:
             dedupe_a_resolution = session.get(Resolutions, 3)  # dedupe_a context
@@ -802,7 +802,7 @@ class TestBuildUnifiedQuery:
         level: Literal["leaf", "key"],
         get_hashes: bool,
         populated_postgres_db: MatchboxPostgres,
-    ):
+    ) -> None:
         """Should build unified query for linker with all sources."""
         with MBDB.get_session() as session:
             linker_resolution = session.get(Resolutions, 5)  # linker context
@@ -852,7 +852,7 @@ class TestBuildUnifiedQuery:
         level: Literal["leaf", "key"],
         get_hashes: bool,
         populated_postgres_db: MatchboxPostgres,
-    ):
+    ) -> None:
         """Should exclude linker clusters that don't meet high threshold."""
         with MBDB.get_session() as session:
             linker_resolution = session.get(Resolutions, 5)  # linker context
@@ -898,7 +898,7 @@ class TestBuildUnifiedQuery:
         level: Literal["leaf", "key"],
         get_hashes: bool,
         populated_postgres_db: MatchboxPostgres,
-    ):
+    ) -> None:
         """Should filter to single source lineage."""
         with MBDB.get_session() as session:
             linker_resolution = session.get(Resolutions, 5)  # linker context
@@ -950,7 +950,7 @@ class TestBuildUnifiedQuery:
         level: Literal["leaf", "key"],
         get_hashes: bool,
         populated_postgres_db: MatchboxPostgres,
-    ):
+    ) -> None:
         """Should include all sources when no filtering."""
         with MBDB.get_session() as session:
             linker_resolution = session.get(Resolutions, 5)  # linker context
@@ -996,7 +996,7 @@ class TestBuildUnifiedQuery:
         level: Literal["leaf", "key"],
         get_hashes: bool,
         populated_postgres_db: MatchboxPostgres,
-    ):
+    ) -> None:
         """Source resolution with sources=None returns that source only."""
         with MBDB.get_session() as session:
             source_a_resolution = session.get(Resolutions, 1)  # source_a resolution
@@ -1029,7 +1029,7 @@ class TestBuildUnifiedQuery:
         level: Literal["leaf", "key"],
         get_hashes: bool,
         populated_postgres_db: MatchboxPostgres,
-    ):
+    ) -> None:
         """Simple test showing thresholding works."""
         # Query at threshold=70 where both C301 (80%) and C302 (70%) qualify
         with MBDB.get_session() as session:
@@ -1067,7 +1067,9 @@ class TestBuildUnifiedQuery:
 class TestGetClustersWithLeaves:
     """Test cluster-leaf relationship extraction."""
 
-    def test_get_clusters_for_model(self, populated_postgres_db: MatchboxPostgres):
+    def test_get_clusters_for_model(
+        self, populated_postgres_db: MatchboxPostgres
+    ) -> None:
         """Should return cluster hierarchy for model's parents."""
         with MBDB.get_session() as session:
             linker_res = session.get(Resolutions, 5)  # linker_ab
@@ -1089,7 +1091,9 @@ class TestGetClustersWithLeaves:
                     assert "leaf_id" in leaf
                     assert "leaf_hash" in leaf
 
-    def test_get_clusters_for_deduper(self, populated_postgres_db: MatchboxPostgres):
+    def test_get_clusters_for_deduper(
+        self, populated_postgres_db: MatchboxPostgres
+    ) -> None:
         """Should return cluster assignments from deduper's parent (source)."""
         with MBDB.get_session() as session:
             dedupe_res = session.get(Resolutions, 3)  # dedupe_a
@@ -1114,7 +1118,7 @@ class TestGetClustersWithLeaves:
 
     def test_get_clusters_for_linker_specific_clusters(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should return specific cluster assignments from linker's parents."""
         with MBDB.get_session() as session:
             linker_res = session.get(Resolutions, 5)  # linker_ab
@@ -1152,7 +1156,7 @@ class TestGetClustersWithLeaves:
 
     def test_get_clusters_excludes_low_probability(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should exclude clusters that don't meet parent's cached threshold."""
         with MBDB.get_session() as session:
             linker_res = session.get(Resolutions, 5)  # linker_ab
@@ -1175,7 +1179,7 @@ class TestGetClustersWithLeaves:
 
     def test_get_clusters_for_source_returns_empty(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should return empty dict for source resolution (no parents)."""
         with MBDB.get_session() as session:
             source_res = session.get(Resolutions, 1)  # source_a
@@ -1187,7 +1191,7 @@ class TestGetClustersWithLeaves:
 
     def test_get_clusters_includes_source_assignments(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should include source cluster assignments from indirect parents."""
         with MBDB.get_session() as session:
             linker_res = session.get(Resolutions, 5)  # linker_ab
@@ -1211,7 +1215,9 @@ class TestGetClustersWithLeaves:
                     assert len(leaves) == 1
                     assert leaves[0]["leaf_id"] == cluster_id
 
-    def test_get_clusters_leaf_structure(self, populated_postgres_db: MatchboxPostgres):
+    def test_get_clusters_leaf_structure(
+        self, populated_postgres_db: MatchboxPostgres
+    ) -> None:
         """Should return leaves with correct structure and unique entries."""
         with MBDB.get_session() as session:
             linker_res = session.get(Resolutions, 5)  # linker_ab
@@ -1246,7 +1252,7 @@ class TestGetClustersWithLeaves:
 class TestQueryFunction:
     """Test main query function with various scenarios."""
 
-    def test_query_source_only(self, populated_postgres_db: MatchboxPostgres):
+    def test_query_source_only(self, populated_postgres_db: MatchboxPostgres) -> None:
         """Should query source data without resolution."""
         result = query(
             _resolution_path("source_a"),
@@ -1277,7 +1283,7 @@ class TestQueryFunction:
             "src_a_key6",
         }
 
-    def test_query_source_b_only(self, populated_postgres_db: MatchboxPostgres):
+    def test_query_source_b_only(self, populated_postgres_db: MatchboxPostgres) -> None:
         """Should query source_b which has one key per cluster."""
         result = query(
             _resolution_path("source_b"),
@@ -1301,7 +1307,9 @@ class TestQueryFunction:
             "src_b_key5",
         }
 
-    def test_query_through_deduper(self, populated_postgres_db: MatchboxPostgres):
+    def test_query_through_deduper(
+        self, populated_postgres_db: MatchboxPostgres
+    ) -> None:
         """Should query source through its deduper resolution."""
         result = query(
             _resolution_path("source_a"),
@@ -1326,7 +1334,7 @@ class TestQueryFunction:
 
     def test_query_through_deduper_with_threshold(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should query source through deduper with threshold override."""
         # Test with threshold=90 (higher than dedupe_a's clusters)
         result = query(
@@ -1347,7 +1355,9 @@ class TestQueryFunction:
         expected_source_clusters = {101, 102, 103, 104, 105}
         assert cluster_ids.issubset(expected_source_clusters)
 
-    def test_query_through_linker(self, populated_postgres_db: MatchboxPostgres):
+    def test_query_through_linker(
+        self, populated_postgres_db: MatchboxPostgres
+    ) -> None:
         """Should query source through complex linker resolution."""
         result = query(
             _resolution_path("source_a"),
@@ -1385,7 +1395,7 @@ class TestQueryFunction:
 
     def test_query_both_sources_through_linker(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should query both sources through linker with consistent results."""
         result_a = query(
             _resolution_path("source_a"),
@@ -1439,7 +1449,7 @@ class TestQueryFunction:
         assert key_cluster_map_a["src_a_key6"] == 105  # not claimed by linker
         assert key_cluster_map_b["src_b_key4"] == 204  # not claimed by linker
 
-    def test_query_with_limit(self, populated_postgres_db: MatchboxPostgres):
+    def test_query_with_limit(self, populated_postgres_db: MatchboxPostgres) -> None:
         """Should respect limit parameter."""
         result = query(
             _resolution_path("source_a"), point_of_truth=None, threshold=None, limit=3
@@ -1452,7 +1462,7 @@ class TestQueryFunction:
 
     def test_query_multiple_keys_per_cluster_scenario(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should handle case where multiple keys belong to same cluster."""
         # This tests the scenario causing your test failure
         result = query(
@@ -1490,7 +1500,9 @@ class TestQueryFunction:
 class TestMatchFunction:
     """Test matching function."""
 
-    def test_match_within_same_cluster(self, populated_postgres_db: MatchboxPostgres):
+    def test_match_within_same_cluster(
+        self, populated_postgres_db: MatchboxPostgres
+    ) -> None:
         """Should find matches within the same cluster."""
         matches = match(
             key="src_a_key1",
@@ -1511,7 +1523,7 @@ class TestMatchFunction:
 
     def test_match_no_cross_source_matches(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should return empty matches when no cross-source links exist."""
         # src_a_key6 is in C105, not linked to source_b at dedupe level
         matches = match(
@@ -1526,7 +1538,9 @@ class TestMatchFunction:
         source_b_match = matches[0]
         assert len(source_b_match.target_id) == 0  # No matches in source_b
 
-    def test_match_nonexistent_key(self, populated_postgres_db: MatchboxPostgres):
+    def test_match_nonexistent_key(
+        self, populated_postgres_db: MatchboxPostgres
+    ) -> None:
         """Should handle nonexistent key gracefully."""
         matches = match(
             key="nonexistent_key",
@@ -1541,7 +1555,7 @@ class TestMatchFunction:
 
     def test_match_one_to_many_via_linker(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should find one-to-many matches through linker resolution."""
         # Use linker to connect source_a key to multiple source_b keys via C503
         # C503 contains: 101, 102, 201, 202, 205
@@ -1565,7 +1579,7 @@ class TestMatchFunction:
 
     def test_match_many_to_one_within_same_source_cluster(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should find other keys in the same source cluster AND all target keys."""
         # Use one of the two keys in C101 (src_a_key1, src_a_key2)
         # When matching src_a_key1, should get:
@@ -1594,7 +1608,7 @@ class TestMatchFunction:
 
     def test_match_one_to_none_isolated_cluster(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should handle one-to-none scenario with isolated clusters."""
         # src_a_key5 (cluster 104) is not connected to any source_b clusters
         matches = match(
@@ -1613,7 +1627,7 @@ class TestMatchFunction:
 
     def test_match_none_to_none_nonexistent_key(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should handle none-to-none scenario with nonexistent key."""
         matches = match(
             key="completely_nonexistent_key",
@@ -1632,7 +1646,7 @@ class TestMatchFunction:
 
     def test_match_with_threshold_filtering(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should respect threshold filtering in match results."""
         # At threshold=90, only C504 qualifies from linker (prob=90)
         # C503 is excluded (prob=80 < 90)
@@ -1652,7 +1666,9 @@ class TestMatchFunction:
         assert "src_b_key3" in source_b_match.target_id
         assert len(source_b_match.target_id) == 1  # Only one match at this threshold
 
-    def test_match_multiple_targets(self, populated_postgres_db: MatchboxPostgres):
+    def test_match_multiple_targets(
+        self, populated_postgres_db: MatchboxPostgres
+    ) -> None:
         """Should handle matching against multiple target sources."""
         matches = match(
             key="src_a_key1",
@@ -1684,7 +1700,7 @@ class TestMatchFunction:
 
     def test_match_dedupe_only_no_cross_source(
         self, populated_postgres_db: MatchboxPostgres
-    ):
+    ) -> None:
         """Should handle dedupe-only resolution with no cross-source linking."""
         # dedupe_a only processes source_a, so no source_b matches expected
         matches = match(

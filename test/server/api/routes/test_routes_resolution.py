@@ -21,7 +21,7 @@ from matchbox.common.factories.models import model_factory
 from matchbox.common.factories.sources import source_factory
 
 
-def test_get_source(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+def test_get_source(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
     source_testkit = source_factory(name="foo").fake_run()
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution = Mock(
@@ -33,7 +33,7 @@ def test_get_source(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     assert response.json()["resolution_type"] == "source"
 
 
-def test_get_model(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+def test_get_model(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
     testkit = model_factory(name="test_model", description="test description")
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution = Mock(
@@ -48,7 +48,7 @@ def test_get_model(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
 
 def test_get_resolution_404(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
+) -> None:
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution = Mock(side_effect=MatchboxResolutionNotFoundError())
 
@@ -60,7 +60,7 @@ def test_get_resolution_404(
 
 def test_insert_resolution(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
+) -> None:
     """Resolution metadata can be created."""
     testkit = model_factory(name="test_model").fake_run()
     test_client, mock_backend, _ = api_client_and_mocks
@@ -89,7 +89,7 @@ def test_insert_resolution(
 
 def test_insert_resolution_error(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
+) -> None:
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.create_resolution = Mock(side_effect=Exception("Test error"))
     testkit = model_factory()
@@ -106,7 +106,7 @@ def test_insert_resolution_error(
 
 def test_update_resolution(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
+) -> None:
     """Resolution metadata can be updated."""
     testkit = model_factory(name="test_model").fake_run()
     test_client, mock_backend, _ = api_client_and_mocks
@@ -152,7 +152,7 @@ def test_complete_upload_process(
     mock_add_task: Mock,
     mock_s3_upload: Mock,
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
+) -> None:
     """Test the complete resolution data upload from creation through processing."""
     test_client, mock_backend, _ = api_client_and_mocks
 
@@ -222,7 +222,7 @@ def test_set_data_404(
     mock_add_task: Mock,
     mock_s3_upload: Mock,
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
+) -> None:
     """Test setting data for a non-existent resolution."""
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution_stage = Mock(
@@ -256,7 +256,7 @@ def test_set_data_file_format(
     mock_add_task: Mock,
     mock_s3_upload: Mock,
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
+) -> None:
     """Test that file uploaded has Parquet magic bytes."""
     # Setup
     test_client, mock_backend, _ = api_client_and_mocks
@@ -289,7 +289,7 @@ def test_set_data_already_queued(
     mock_add_task: Mock,
     mock_s3_upload: Mock,
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
+) -> None:
     """Test attempting to upload when status is already queued."""
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution_stage = Mock(return_value=UploadStage.PROCESSING)
@@ -316,7 +316,7 @@ def test_set_data_already_queued(
 
 def test_get_upload_status_404(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
+) -> None:
     """Test getting upload status for a non-existent resolution."""
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution_stage = Mock(
@@ -334,7 +334,7 @@ def test_get_upload_status_404(
 
 def test_get_upload_status_gets_errors(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
+) -> None:
     """Test getting failed upload status."""
     test_client, mock_backend, mock_tracker = api_client_and_mocks
     mock_backend.get_resolution_stage = Mock(return_value=UploadStage.READY)
@@ -352,7 +352,7 @@ def test_get_upload_status_gets_errors(
 
 def test_get_results(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
+) -> None:
     testkit = model_factory()
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_model_data = Mock(return_value=testkit.probabilities.to_arrow())
@@ -365,7 +365,7 @@ def test_get_results(
     assert response.headers["content-type"] == "application/octet-stream"
 
 
-def test_delete_resolution(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+def test_delete_resolution(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
     """Test deletion of a resolution."""
     testkit = model_factory()
     test_client, _, _ = api_client_and_mocks
@@ -388,7 +388,7 @@ def test_delete_resolution(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
 
 def test_delete_resolution_needs_confirmation(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
+) -> None:
     """Test deletion of a model that requires confirmation."""
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.delete_resolution = Mock(

@@ -53,7 +53,7 @@ backends = [
 
 
 @pytest.fixture(scope="function")
-def backend_instance(request: pytest.FixtureRequest, backend: str):
+def backend_instance(request: pytest.FixtureRequest, backend: str) -> MatchboxDBAdapter:
     """Create a fresh backend instance for each test."""
     backend_obj = request.getfixturevalue(backend)
     backend_obj.clear(certain=True)
@@ -64,11 +64,11 @@ def backend_instance(request: pytest.FixtureRequest, backend: str):
 @pytest.mark.docker
 class TestMatchboxBackend:
     @pytest.fixture(autouse=True)
-    def setup(self, backend_instance: str, sqlite_warehouse: Engine):
+    def setup(self, backend_instance: str, sqlite_warehouse: Engine) -> None:
         self.backend: MatchboxDBAdapter = backend_instance
         self.scenario = partial(setup_scenario, warehouse=sqlite_warehouse)
 
-    def test_properties(self):
+    def test_properties(self) -> None:
         """Test that properties obey their protocol restrictions."""
         with self.scenario(self.backend, "index"):
             assert isinstance(self.backend.sources.list_all(), list)
@@ -82,7 +82,7 @@ class TestMatchboxBackend:
 
     # Retrieval
 
-    def test_query_only_source(self):
+    def test_query_only_source(self) -> None:
         """Test querying data from a link point of truth."""
         with self.scenario(self.backend, "index") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
@@ -100,7 +100,7 @@ class TestMatchboxBackend:
             assert df_crn_full.num_rows == crn_testkit.data.num_rows
             assert df_crn_full.schema.equals(SCHEMA_QUERY)
 
-    def test_query_return_leaf_ids(self):
+    def test_query_return_leaf_ids(self) -> None:
         """Test querying data and additionally requesting leaf IDs."""
         with self.scenario(self.backend, "index") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
@@ -112,7 +112,7 @@ class TestMatchboxBackend:
             assert df_crn_full.num_rows == crn_testkit.data.num_rows
             assert df_crn_full.schema.equals(SCHEMA_QUERY_WITH_LEAVES)
 
-    def test_query_with_dedupe_model(self):
+    def test_query_with_dedupe_model(self) -> None:
         """Test querying data from a deduplication point of truth."""
         with self.scenario(self.backend, "dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
@@ -133,7 +133,7 @@ class TestMatchboxBackend:
                 linked.true_entity_subset("crn")
             )
 
-    def test_query_with_link_model(self):
+    def test_query_with_link_model(self) -> None:
         """Test querying data from a link point of truth."""
         with self.scenario(self.backend, "link") as dag_testkit:
             linker_name = "deterministic_naive_test_crn_naive_test_duns"
@@ -170,7 +170,7 @@ class TestMatchboxBackend:
                 linked.true_entity_subset("crn", "duns")
             )
 
-    def test_threshold_query_with_link_model(self):
+    def test_threshold_query_with_link_model(self) -> None:
         """Test querying data from a link point of truth."""
         with self.scenario(self.backend, "link") as dag_testkit:
             linker_name = "probabilistic_naive_test_crn_naive_test_cdms"
@@ -223,7 +223,7 @@ class TestMatchboxBackend:
                 linked.true_entity_subset("crn", "cdms")
             )
 
-    def test_match_one_to_many(self):
+    def test_match_one_to_many(self) -> None:
         """Test that matching data works when the target has many IDs."""
         with self.scenario(self.backend, "link") as dag_testkit:
             linker_name = "deterministic_naive_test_crn_naive_test_duns"
@@ -255,7 +255,7 @@ class TestMatchboxBackend:
             assert res[0].source_id == source_entity.keys["duns"]
             assert res[0].target_id == source_entity.keys["crn"]
 
-    def test_match_many_to_one(self):
+    def test_match_many_to_one(self) -> None:
         """Test that matching data works when the source has more possible IDs."""
         with self.scenario(self.backend, "link") as dag_testkit:
             linker_name = "deterministic_naive_test_crn_naive_test_duns"
@@ -287,7 +287,7 @@ class TestMatchboxBackend:
             assert res[0].source_id == source_entity.keys["crn"]
             assert res[0].target_id == source_entity.keys["duns"]
 
-    def test_match_one_to_none(self):
+    def test_match_one_to_none(self) -> None:
         """Test that matching data works when the target has no IDs."""
         with self.scenario(self.backend, "link") as dag_testkit:
             linker_name = "deterministic_naive_test_crn_naive_test_duns"
@@ -319,7 +319,7 @@ class TestMatchboxBackend:
             assert res[0].source_id == source_entity.keys["crn"]
             assert res[0].target_id == source_entity.keys.get("duns", set())
 
-    def test_match_none_to_none(self):
+    def test_match_none_to_none(self) -> None:
         """Test that matching data works when the supplied key doesn't exist."""
         with self.scenario(self.backend, "link") as dag_testkit:
             linker_name = "deterministic_naive_test_crn_naive_test_duns"
@@ -345,7 +345,7 @@ class TestMatchboxBackend:
             assert res[0].source_id == set()
             assert res[0].target_id == set()
 
-    def test_threshold_match_many_to_one(self):
+    def test_threshold_match_many_to_one(self) -> None:
         """Test that matching data works when the target has many IDs."""
         with self.scenario(self.backend, "link") as dag_testkit:
             linker_name = "probabilistic_naive_test_crn_naive_test_cdms"
@@ -381,7 +381,7 @@ class TestMatchboxBackend:
 
     # Collection management
 
-    def test_collections(self):
+    def test_collections(self) -> None:
         """Test creating, listing, getting and deleting collections."""
         with self.scenario(self.backend, "bare") as _:
             collections_pre = self.backend.list_collections()
@@ -414,7 +414,7 @@ class TestMatchboxBackend:
 
     # Run management
 
-    def test_runs(self):
+    def test_runs(self) -> None:
         """Test creating, listing, getting and deleting runs."""
         with self.scenario(self.backend, "bare") as _:
             collections_pre = self.backend.list_collections()
@@ -469,7 +469,7 @@ class TestMatchboxBackend:
             with pytest.raises(MatchboxRunNotFoundError):
                 self.backend.delete_run("test_collection", v1.run_id, certain=False)
 
-    def test_run_immutable(self):
+    def test_run_immutable(self) -> None:
         """Nothing in an immutable run can be changed."""
         with self.scenario(self.backend, "dedupe") as dag_testkit:
             source_testkit = dag_testkit.sources["crn"]
@@ -507,7 +507,7 @@ class TestMatchboxBackend:
 
     # Resolution management
 
-    def test_get_source(self):
+    def test_get_source(self) -> None:
         """Test querying data from the database."""
         with self.scenario(self.backend, "index") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
@@ -521,7 +521,7 @@ class TestMatchboxBackend:
                     path=ResolutionPath(collection="collection", run=1, name="foo")
                 )
 
-    def test_delete_resolution(self):
+    def test_delete_resolution(self) -> None:
         """
         Tests the deletion of:
 
@@ -570,7 +570,7 @@ class TestMatchboxBackend:
             assert cluster_assoc_count_post_delete < cluster_assoc_count_pre_delete
             assert proposed_merge_probs_post_delete < proposed_merge_probs_pre_delete
 
-    def test_index_new_source(self):
+    def test_index_new_source(self) -> None:
         """Test that indexing a new source works."""
         with self.scenario(self.backend, "bare") as dag_testkit:
             crn_testkit: SourceTestkit = dag_testkit.sources.get("crn").fake_run()
@@ -672,7 +672,7 @@ class TestMatchboxBackend:
             assert crn_retrieved.config.key_field == updated_key_field
             assert crn_retrieved.config.index_fields == updated_index_fields
 
-    def test_index_empty_source(self):
+    def test_index_empty_source(self) -> None:
         """Can insert and retrieve empty source data"""
         with self.scenario(self.backend, "bare") as dag_testkit:
             crn_testkit: SourceTestkit = dag_testkit.sources.get("crn")
@@ -692,7 +692,7 @@ class TestMatchboxBackend:
                 == UploadStage.COMPLETE
             )
 
-    def test_index_different_resolution_same_hashes(self):
+    def test_index_different_resolution_same_hashes(self) -> None:
         """Test that indexing data with the same hashes but different sources works."""
         with self.scenario(self.backend, "bare") as dag_testkit:
             # Prepare original source
@@ -719,7 +719,7 @@ class TestMatchboxBackend:
             assert self.backend.data.count() == len(crn_testkit.data_hashes)
             assert self.backend.source_resolutions.count() == 2
 
-    def test_insert_model(self):
+    def test_insert_model(self) -> None:
         """Test that models can be inserted."""
         with self.scenario(self.backend, "index") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
@@ -843,7 +843,7 @@ class TestMatchboxBackend:
                     path=linker_testkit.resolution_path,
                 )
 
-    def test_model_results_basic(self):
+    def test_model_results_basic(self) -> None:
         """Test that a model's results data can be set and retrieved."""
         with self.scenario(self.backend, "dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
@@ -896,7 +896,7 @@ class TestMatchboxBackend:
             # Check difference
             assert pre_results == post_results
 
-    def test_model_results_probabilistic(self):
+    def test_model_results_probabilistic(self) -> None:
         """Test that a probabilistic model's results data can be set and retrieved."""
         with self.scenario(self.backend, "probabilistic_dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
@@ -931,7 +931,7 @@ class TestMatchboxBackend:
             self.backend.validate_ids(ids=pre_results["left_id"].to_pylist())
             self.backend.validate_ids(ids=pre_results["right_id"].to_pylist())
 
-    def test_model_results_empty(self):
+    def test_model_results_empty(self) -> None:
         """Can insert and retrieve empty model results"""
         with self.scenario(self.backend, "index") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
@@ -960,7 +960,7 @@ class TestMatchboxBackend:
 
             assert source_query == dedupe_query
 
-    def test_model_results_shared_clusters(self):
+    def test_model_results_shared_clusters(self) -> None:
         """Test that model results data can be inserted when clusters are shared."""
         with self.scenario(self.backend, "convergent") as dag_testkit:
             for model_testkit in dag_testkit.models.values():
@@ -975,7 +975,7 @@ class TestMatchboxBackend:
 
     # Data management
 
-    def test_validate_ids(self):
+    def test_validate_ids(self) -> None:
         """Test validating data IDs."""
         with self.scenario(self.backend, "dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
@@ -993,7 +993,7 @@ class TestMatchboxBackend:
             with pytest.raises(MatchboxDataNotFound):
                 self.backend.validate_ids(ids=[-6])
 
-    def test_clear(self):
+    def test_clear(self) -> None:
         """Test deleting all rows in the database."""
         with self.scenario(self.backend, "dedupe"):
             assert self.backend.sources.count() > 0
@@ -1014,7 +1014,7 @@ class TestMatchboxBackend:
             assert self.backend.merges.count() == 0
             assert self.backend.proposes.count() == 0
 
-    def test_clear_and_restore(self):
+    def test_clear_and_restore(self) -> None:
         """Test that clearing and restoring the database works."""
         with self.scenario(self.backend, "link") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
@@ -1030,7 +1030,7 @@ class TestMatchboxBackend:
                 self.backend.proposes.count,
             ]
 
-            def get_counts():
+            def get_counts() -> list[int]:
                 return [f() for f in count_funcs]
 
             # Verify we have data
@@ -1075,7 +1075,7 @@ class TestMatchboxBackend:
 
     # User management
 
-    def test_login(self):
+    def test_login(self) -> None:
         """Can swap user name with user ID."""
         with self.scenario(self.backend, "bare") as _:
             alice_id = self.backend.login("alice")
@@ -1084,7 +1084,7 @@ class TestMatchboxBackend:
 
     # Evaluation management
 
-    def test_insert_and_get_judgement(self):
+    def test_insert_and_get_judgement(self) -> None:
         """Can insert and retrieve judgements."""
         with self.scenario(self.backend, "dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
@@ -1193,7 +1193,7 @@ class TestMatchboxBackend:
                 map(frozenset, [clust1_leaves, clust2_leaves[:1], clust2_leaves[1:]])
             )
 
-    def test_compare_models_fails(self):
+    def test_compare_models_fails(self) -> None:
         """Model comparison errors with no judgement data."""
         with (
             self.scenario(self.backend, "bare"),
@@ -1201,7 +1201,7 @@ class TestMatchboxBackend:
         ):
             self.backend.compare_models([])
 
-    def test_compare_models(self):
+    def test_compare_models(self) -> None:
         """Can compute precision and recall for list of models."""
         with self.scenario(self.backend, "alt_dedupe") as dag_testkit:
             user_id = self.backend.login("alice")
@@ -1238,7 +1238,7 @@ class TestMatchboxBackend:
             assert pr[model_names[0]][1] == 1
             assert pr[model_names[1]][1] < 1
 
-    def test_sample_for_eval(self):
+    def test_sample_for_eval(self) -> None:
         """Can extract samples for a user and a resolution."""
 
         # Missing resolution raises error

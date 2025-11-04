@@ -29,8 +29,10 @@ from matchbox.common.transform import truth_float_to_int, truth_int_to_float
 
 if TYPE_CHECKING:
     from matchbox.client.dags import DAG
+    from matchbox.client.sources import Source
 else:
     DAG = Any
+    Source = Any
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -59,7 +61,7 @@ def post_run(method: Callable[..., T]) -> Callable[..., T]:
     """
 
     @wraps(method)
-    def wrapper(self, *args, **kwargs):
+    def wrapper(self: "Model", *args: Any, **kwargs: Any) -> T:
         if self.results is None:
             raise RuntimeError(
                 "The model must be run before attempting this operation."
@@ -299,6 +301,6 @@ class Model:
         results = _handler.get_results(name=self.name)
         return Results(probabilities=results, metadata=self.config)
 
-    def query(self, *sources, **kwargs) -> Query:
+    def query(self, *sources: Source, **kwargs: Any) -> Query:
         """Generate a query for this model."""
         return Query(*sources, **kwargs, model=self, dag=self.dag)

@@ -46,7 +46,7 @@ def post_run(method: Callable[..., T]) -> Callable[..., T]:
     """
 
     @wraps(method)
-    def wrapper(self, *args, **kwargs):
+    def wrapper(self: "Source", *args: Any, **kwargs: Any) -> T:
         if self.hashes is None:
             raise RuntimeError(
                 "The source must be run before attempting this operation."
@@ -148,8 +148,8 @@ class Source:
 
     def _validate_fields(
         self,
-        key_field: Any,
-        index_fields: list[Any],
+        key_field: str | SourceField,
+        index_fields: list[str | SourceField],
         type_check: type[str] | type[SourceField],
     ) -> tuple[T, tuple[T, ...]]:
         """Validate that fields match the expected type (str or SourceField)."""
@@ -213,7 +213,7 @@ class Source:
         """Return a hash of the Source based on its config."""
         return hash(self.config)
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Check equality of two Source objects based on their config."""
         if not isinstance(other, Source):
             return False
@@ -404,6 +404,6 @@ class Source:
             logger.info("Setting data for new resolution", prefix=log_prefix)
             _handler.set_data(path=self.resolution_path, data=self.hashes)
 
-    def query(self, **kwargs) -> Query:
+    def query(self, **kwargs: Any) -> Query:
         """Generate a query for this source."""
         return Query(self, **kwargs, dag=self.dag)

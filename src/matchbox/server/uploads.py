@@ -56,7 +56,7 @@ class UploadTracker(ABC):
 class InMemoryUploadTracker:
     """In-memory error tracker."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialise dictionary."""
         self.tracker: dict[str, str] = {}
 
@@ -70,7 +70,9 @@ class InMemoryUploadTracker:
 class RedisUploadTracker:
     """Error tracker backed by Redis."""
 
-    def __init__(self, redis_url: str, expiry_minutes: int, key_space: str = "upload"):
+    def __init__(
+        self, redis_url: str, expiry_minutes: int, key_space: str = "upload"
+    ) -> None:
         """Connect Redis and initialise tracker object."""
         self.expiry_minutes = expiry_minutes
         self.redis = redis.Redis.from_url(redis_url)
@@ -184,7 +186,7 @@ celery.conf.update(
 )
 
 
-def initialise_celery_worker():
+def initialise_celery_worker() -> None:
     """Initialise backend and tracker for celery worker."""
     global CELERY_SETTINGS
     global CELERY_BACKEND

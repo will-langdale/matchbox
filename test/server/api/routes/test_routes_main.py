@@ -35,7 +35,7 @@ else:
 # General
 
 
-def test_healthcheck(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+def test_healthcheck(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
     """Test the healthcheck endpoint."""
     test_client, _, _ = api_client_and_mocks
     response = test_client.get("/health")
@@ -45,7 +45,7 @@ def test_healthcheck(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     assert response.version == version("matchbox-db")
 
 
-def test_login(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+def test_login(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
     """Test the login endpoint."""
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.login = Mock(return_value=1)
@@ -62,7 +62,7 @@ def test_login(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
 # Retrieval
 
 
-def test_query(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+def test_query(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.query = Mock(
         return_value=pa.Table.from_pylist(
@@ -92,7 +92,7 @@ def test_query(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     assert table.schema.equals(SCHEMA_QUERY)
 
 
-def test_query_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+def test_query_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
     test_client, mock_backend, _ = api_client_and_mocks
 
     mock_backend.query = Mock(side_effect=MatchboxCollectionNotFoundError())
@@ -140,7 +140,7 @@ def test_query_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     assert response.json()["entity"] == BackendResourceType.RESOLUTION
 
 
-def test_match(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+def test_match(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
     test_client, mock_backend, _ = api_client_and_mocks
     mock_matches = [
         Match(
@@ -174,7 +174,7 @@ def test_match(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     [Match.model_validate(m) for m in response.json()]
 
 
-def test_match_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+def test_match_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
     test_client, mock_backend, _ = api_client_and_mocks
 
     mock_backend.match = Mock(side_effect=MatchboxCollectionNotFoundError())
@@ -232,7 +232,9 @@ def test_match_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
 # Admin
 
 
-def test_count_all_backend_items(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+def test_count_all_backend_items(
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+) -> None:
     """Test the unparameterised entity counting endpoint."""
     test_client, mock_backend, _ = api_client_and_mocks
     entity_counts = {
@@ -254,7 +256,9 @@ def test_count_all_backend_items(api_client_and_mocks: tuple[TestClient, Mock, M
     assert response.json() == {"entities": entity_counts}
 
 
-def test_count_backend_item(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+def test_count_backend_item(
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+) -> None:
     """Test the parameterised entity counting endpoint."""
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.models.count = Mock(return_value=20)
@@ -264,7 +268,7 @@ def test_count_backend_item(api_client_and_mocks: tuple[TestClient, Mock, Mock])
     assert response.json() == {"entities": {"models": 20}}
 
 
-def test_clear_backend_ok(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+def test_clear_backend_ok(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.clear = Mock()
 
@@ -273,7 +277,9 @@ def test_clear_backend_ok(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     OKMessage.model_validate(response.json())
 
 
-def test_clear_backend_errors(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+def test_clear_backend_errors(
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+) -> None:
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.clear = Mock(side_effect=MatchboxDeletionNotConfirmed)
 
@@ -283,7 +289,9 @@ def test_clear_backend_errors(api_client_and_mocks: tuple[TestClient, Mock, Mock
     assert response.content
 
 
-def test_api_key_authorisation(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
+def test_api_key_authorisation(
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+) -> None:
     test_client, _, _ = api_client_and_mocks
     routes = [
         (test_client.post, "/collections/default/runs/1/resolutions/name/data"),

@@ -29,7 +29,7 @@ else:
     S3Client = Any
 
 
-def test_file_to_s3(s3: S3Client):
+def test_file_to_s3(s3: S3Client) -> None:
     """Test that a file can be uploaded to S3."""
     # Create a mock bucket
     s3.create_bucket(
@@ -112,7 +112,7 @@ def test_file_to_s3(s3: S3Client):
 
 
 @pytest.fixture(scope="function")
-def tracker_instance(request: pytest.FixtureRequest, tracker: str):
+def tracker_instance(request: pytest.FixtureRequest, tracker: str) -> UploadTracker:
     """Create a fresh tracker instance for each test."""
     tracker_obj = request.getfixturevalue(tracker)
     return tracker_obj
@@ -128,10 +128,10 @@ def tracker_instance(request: pytest.FixtureRequest, tracker: str):
 @pytest.mark.docker
 class TestUploadTracker:
     @pytest.fixture(autouse=True)
-    def setup(self, tracker_instance: str):
+    def setup(self, tracker_instance: str) -> None:
         self.tracker: UploadTracker = tracker_instance
 
-    def test_getting_and_setting(self):
+    def test_getting_and_setting(self) -> None:
         assert self.tracker.get("upload_id") is None
         self.tracker.set("upload_id", "error_message")
         assert self.tracker.get("upload_id") == "error_message"
@@ -144,7 +144,7 @@ class TestUploadTracker:
         pytest.param(ResolutionType.MODEL, id="model"),
     ],
 )
-def test_process_upload_success(s3: S3Client, resolution_type: ResolutionType):
+def test_process_upload_success(s3: S3Client, resolution_type: ResolutionType) -> None:
     """Test that upload process hands data to backend."""
     # Prepare data
     if resolution_type == ResolutionType.SOURCE:
@@ -201,7 +201,7 @@ def test_process_upload_success(s3: S3Client, resolution_type: ResolutionType):
         assert mock_backend.insert_model_data.called
 
 
-def test_process_upload_empty_table(s3: S3Client):
+def test_process_upload_empty_table(s3: S3Client) -> None:
     """Test that files representing empty table can be handled."""
     # Setup mock backend
     mock_backend = Mock()
@@ -242,7 +242,7 @@ def test_process_upload_empty_table(s3: S3Client):
     )
 
 
-def test_process_upload_deletes_file_on_failure(s3: S3Client):
+def test_process_upload_deletes_file_on_failure(s3: S3Client) -> None:
     """Test that files are deleted from S3 even when processing fails.
 
     Other behaviours of this task are captured in the API integration tests for adding a
