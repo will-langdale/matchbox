@@ -147,7 +147,7 @@ def test_update_resolution(
 # We can patch BackgroundTasks, since the api_client_and_mocks fixture
 # ensures the API runs the task (not Celery)
 @patch("matchbox.server.api.routers.collection.BackgroundTasks.add_task")
-@patch("matchbox.server.api.routers.collection.table_to_s3")
+@patch("matchbox.server.api.routers.collection.file_to_s3")
 def test_complete_upload_process(
     mock_add_task: Mock,
     mock_s3_upload: Mock,
@@ -217,7 +217,7 @@ def test_complete_upload_process(
 
 
 @patch("matchbox.server.api.routers.collection.BackgroundTasks.add_task")
-@patch("matchbox.server.api.routers.collection.table_to_s3")
+@patch("matchbox.server.api.routers.collection.file_to_s3")
 def test_set_data_404(
     mock_add_task: Mock,
     mock_s3_upload: Mock,
@@ -251,7 +251,7 @@ def test_set_data_404(
 
 
 @patch("matchbox.server.api.routers.collection.BackgroundTasks.add_task")
-@patch("matchbox.server.api.routers.collection.table_to_s3")
+@patch("matchbox.server.api.routers.collection.file_to_s3")
 def test_set_data_file_format(
     mock_add_task: Mock,
     mock_s3_upload: Mock,
@@ -284,7 +284,7 @@ def test_set_data_file_format(
 
 
 @patch("matchbox.server.api.routers.collection.BackgroundTasks.add_task")
-@patch("matchbox.server.api.routers.collection.table_to_s3")
+@patch("matchbox.server.api.routers.collection.file_to_s3")
 def test_set_data_already_queued(
     mock_add_task: Mock,
     mock_s3_upload: Mock,

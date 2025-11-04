@@ -49,7 +49,7 @@ from matchbox.server.api.dependencies import (
     UploadTrackerDependency,
     authorisation_dependencies,
 )
-from matchbox.server.uploads import process_upload, process_upload_celery, table_to_s3
+from matchbox.server.uploads import file_to_s3, process_upload, process_upload_celery
 
 router = APIRouter(prefix="/collections", tags=["collection"])
 
@@ -588,6 +588,8 @@ def set_data(
     resolution_path = ResolutionPath(
         collection=collection, run=run_id, name=resolution_name
     )
+    # Not resistant to race conditions: currently, multiple requests to set data
+    # could go through
     if backend.get_resolution_stage(path=resolution_path) != UploadStage.READY:
         raise HTTPException(
             status_code=400,
@@ -598,8 +600,6 @@ def set_data(
                 details="Not expecting upload for this resolution.",
             ),
         )
-    # Signal to clients that resolution is not ready to receive data
-    backend.set_resolution_stage(path=resolution_path, stage=UploadStage.PROCESSING)
     resolution = backend.get_resolution(path=resolution_path)
 
     upload_id = str(uuid.uuid4())
@@ -640,14 +640,15 @@ def set_data(
     else:
         expected_schema = SCHEMA_RESULTS
 
-    try:
-        table_to_s3(
-            client=client,
-            bucket=bucket,
-            key=key,
-            file=file,
-            expected_schema=expected_schema,
+    table = pq.read_table(file.file)
+    if not table.schema.equals(expected_schema):
+        raise MatchboxServerFileError(
+            message=(
+                f"Schema mismatch. Expected:\n{expected_schema}\nGot:\n{table.schema}"
+            )
         )
+    try:
+        file_to_s3(client=client, bucket=bucket, key=key, file=file)
     except MatchboxServerFileError as e:
         raise HTTPException(
             status_code=400,
@@ -660,6 +661,7 @@ def set_data(
         ) from e
 
     # Start background processing
+    backend.set_resolution_stage(path=resolution_path, stage=UploadStage.PROCESSING)
     match settings.task_runner:
         case "api":
             background_tasks.add_task(

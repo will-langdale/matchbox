@@ -109,13 +109,7 @@ def settings_to_upload_tracker(settings: MatchboxServerSettings) -> UploadTracke
 # -- S3 functions --
 
 
-def table_to_s3(
-    client: S3Client,
-    bucket: str,
-    key: str,
-    file: UploadFile,
-    expected_schema: pa.Schema,
-) -> str:
+def file_to_s3(client: S3Client, bucket: str, key: str, file: UploadFile) -> str:
     """Upload a PyArrow Table to S3 and return the key.
 
     Args:
@@ -123,7 +117,6 @@ def table_to_s3(
         bucket: The S3 bucket to upload to.
         key: The key to upload to.
         file: The file to upload.
-        expected_schema: The schema that the file should match.
 
     Raises:
         MatchboxServerFileError: If the file is not a valid Parquet file or the schema
@@ -133,20 +126,8 @@ def table_to_s3(
         The key of the uploaded file.
     """
     try:
-        table = pq.read_table(file.file)
-
-        if not table.schema.equals(expected_schema):
-            raise MatchboxServerFileError(
-                message=(
-                    "Schema mismatch. "
-                    f"Expected:\n{expected_schema}\nGot:\n{table.schema}"
-                )
-            )
-
         file.file.seek(0)
-
         client.put_object(Bucket=bucket, Key=key, Body=file.file)
-
     except Exception as e:
         if isinstance(e, MatchboxServerFileError):
             raise

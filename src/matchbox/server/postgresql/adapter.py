@@ -22,9 +22,7 @@ from matchbox.common.dtos import (
     SourceResolutionPath,
     UploadStage,
 )
-from matchbox.common.dtos import (
-    ModelConfig as CommonModelConfig,
-)
+from matchbox.common.dtos import ModelConfig as CommonModelConfig
 from matchbox.common.dtos import (
     SourceConfig as CommonSourceConfig,
 )
@@ -391,7 +389,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
             # Update config
             if old_resolution.type == "source":
                 old_config: SourceConfigs = old_resolution.source_config
-                assert isinstance(new_config, CommonSourceConfig)
+                if not isinstance(new_config, CommonSourceConfig):
+                    raise ValueError("Config for source resolution expected.")
                 old_config.location_name = new_config.location_config.name
                 old_config.location_type = str(new_config.location_config.type)
                 old_config.extract_transform = new_config.extract_transform
@@ -429,7 +428,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
             else:
                 old_config: ModelConfigs = old_resolution.model_config
-                assert isinstance(new_config, CommonModelConfig)
+                if not isinstance(new_config, CommonModelConfig):
+                    raise ValueError("Config for model resolution expected.")
                 old_config.model_class = new_config.model_class
                 old_config.model_settings = new_config.model_settings
                 old_config.left_query = new_config.left_query.model_dump_json()

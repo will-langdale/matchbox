@@ -235,7 +235,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         BIGINT, ForeignKey("runs.run_id", ondelete="CASCADE"), nullable=False
     )
     upload_stage = Column(
-        Enum(UploadStage, native_enum=True, name="upload_stages"),
+        Enum(UploadStage, native_enum=True, name="upload_stages", schema="mb"),
         nullable=False,
         default=UploadStage.READY,
     )

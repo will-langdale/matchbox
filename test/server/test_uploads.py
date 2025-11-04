@@ -18,9 +18,9 @@ from matchbox.common.factories.sources import source_factory
 from matchbox.server.uploads import (
     InMemoryUploadTracker,
     UploadTracker,
+    file_to_s3,
     process_upload,
     s3_to_recordbatch,
-    table_to_s3,
 )
 
 if TYPE_CHECKING:
@@ -54,7 +54,6 @@ def test_file_to_s3(s3: S3Client) -> None:
     )
     all_companies = source_testkit.data.to_pandas()
 
-    # Test 1: Upload a parquet file
     # Create a mock UploadFile
     all_companies["id"] = all_companies["id"].astype(str)
     table = pa.Table.from_pandas(all_companies)
@@ -66,13 +65,7 @@ def test_file_to_s3(s3: S3Client) -> None:
 
     # Call the function
     key = "foo.parquet"
-    upload_id = table_to_s3(
-        client=s3,
-        bucket="test-bucket",
-        key=key,
-        file=parquet_file,
-        expected_schema=table.schema,
-    )
+    upload_id = file_to_s3(client=s3, bucket="test-bucket", key=key, file=parquet_file)
     # Validate response
     assert key == upload_id
 
@@ -86,29 +79,6 @@ def test_file_to_s3(s3: S3Client) -> None:
     )
 
     assert response_table.equals(table)
-
-    # Test 2: Upload a non-parquet file
-    text_file = UploadFile(filename="test.txt", file=BytesIO(b"test"))
-
-    with pytest.raises(MatchboxServerFileError):
-        table_to_s3(
-            client=s3,
-            bucket="test-bucket",
-            key=key,
-            file=text_file,
-            expected_schema=table.schema,
-        )
-
-    # Test 3: Upload a parquet file with a different schema
-    corrupted_schema = table.schema.remove(0)
-    with pytest.raises(MatchboxServerFileError):
-        table_to_s3(
-            client=s3,
-            bucket="test-bucket",
-            key=key,
-            file=parquet_file,
-            expected_schema=corrupted_schema,
-        )
 
 
 @pytest.fixture(scope="function")
