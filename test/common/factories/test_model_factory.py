@@ -569,7 +569,7 @@ def test_query_to_model_factory_validation() -> None:
             left_data=left_data,
             left_keys=left_keys,
             true_entities=true_entities,
-            right_query=Query(linked.sources["duns"].source, dag=linked.dag),
+            right_query=Query(linked.sources["dh"].source, dag=linked.dag),
         )
 
 

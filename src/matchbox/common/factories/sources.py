@@ -721,8 +721,8 @@ def linked_sources_factory(
                 base_generator="bothify",
                 parameters=(("text", "???-###-???-###"),),
             ),
-            "duns": FeatureConfig(
-                name="duns",
+            "dh": FeatureConfig(
+                name="dh",
                 base_generator="numerify",
                 parameters=(("text", "########"),),
             ),
@@ -753,11 +753,11 @@ def linked_sources_factory(
                 repetition=0,
             ),
             SourceTestkitParameters(
-                name="duns",
+                name="dh",
                 engine=engine or default_engine,
                 features=(
                     features["company_name"],
-                    features["duns"],
+                    features["dh"],
                 ),
                 n_true_entities=n_true_entities // 2,
                 repetition=0,

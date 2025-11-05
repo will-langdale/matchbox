@@ -748,7 +748,7 @@ def test_from_resolution() -> None:
     # Create test sources and model
     linked_testkit = linked_sources_factory(dag=test_dag)
     crn_testkit = linked_testkit.sources["crn"]
-    duns_testkit = linked_testkit.sources["duns"]
+    dh_testkit = linked_testkit.sources["dh"]
 
     deduper_model_testkit = model_factory(
         name="deduper",
@@ -759,21 +759,21 @@ def test_from_resolution() -> None:
     linker_model_testkit = model_factory(
         name="linker",
         left_testkit=deduper_model_testkit,
-        right_testkit=duns_testkit,
+        right_testkit=dh_testkit,
         true_entities=linked_testkit.true_entities,
         dag=test_dag,
     )
 
     # Add to DAG
     test_dag.source(**crn_testkit.into_dag())
-    test_dag.source(**duns_testkit.into_dag())
+    test_dag.source(**dh_testkit.into_dag())
     test_dag.model(**deduper_model_testkit.into_dag())
     test_dag.model(**linker_model_testkit.into_dag())
 
     # Test 1: Add all resolutions to the DAG in order
     t1_dag = TestkitDAG().dag
 
-    for testkit in [crn_testkit, duns_testkit]:
+    for testkit in [crn_testkit, dh_testkit]:
         t1_dag.add_resolution(
             name=testkit.name, resolution=testkit.fake_run().source.to_resolution()
         )
@@ -919,7 +919,7 @@ def test_dag_load_server_run(matchbox_api: MockRouter) -> None:
     # Create test sources and model
     linked_testkit = linked_sources_factory(dag=test_dag)
     crn_testkit = linked_testkit.sources["crn"].fake_run()
-    duns_testkit = linked_testkit.sources["duns"].fake_run()
+    dh_testkit = linked_testkit.sources["dh"].fake_run()
 
     deduper_model_testkit = model_factory(
         name="deduper",
@@ -930,21 +930,21 @@ def test_dag_load_server_run(matchbox_api: MockRouter) -> None:
     linker_model_testkit = model_factory(
         name="linker",
         left_testkit=deduper_model_testkit,
-        right_testkit=duns_testkit,
+        right_testkit=dh_testkit,
         true_entities=linked_testkit.true_entities,
         dag=test_dag,
     ).fake_run()
 
     # Add to DAG
     test_dag.source(**crn_testkit.into_dag())
-    test_dag.source(**duns_testkit.into_dag())
+    test_dag.source(**dh_testkit.into_dag())
     test_dag.model(**deduper_model_testkit.into_dag())
     test_dag.model(**linker_model_testkit.into_dag())
 
     # Create default Run
     resolutions: dict[ResolutionName, Resolution] = {
         crn_testkit.name: crn_testkit.source.to_resolution(),
-        duns_testkit.name: duns_testkit.source.to_resolution(),
+        dh_testkit.name: dh_testkit.source.to_resolution(),
         deduper_model_testkit.name: deduper_model_testkit.model.to_resolution(),
         linker_model_testkit.name: linker_model_testkit.model.to_resolution(),
     }
@@ -1012,11 +1012,11 @@ def test_dag_load_server_run(matchbox_api: MockRouter) -> None:
     # Cannot load pending into local DAG that alters the graph
     clashing_dag = DAG(name=test_dag.name)
     crn = clashing_dag.source(**crn_testkit.into_dag())
-    duns = clashing_dag.source(**duns_testkit.into_dag())
+    dh = clashing_dag.source(**dh_testkit.into_dag())
 
     # This linker skips the deduper defined above
     crn.query().linker(
-        duns.query(),
+        dh.query(),
         name=linker_model_testkit.name,
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.field=r.field"},
@@ -1049,13 +1049,13 @@ def test_dag_load_run_complex_dependencies(matchbox_api: MockRouter) -> None:
 
     linked_testkit = linked_sources_factory(dag=test_dag)
     crn_testkit = linked_testkit.sources["crn"].fake_run()
-    duns_testkit = linked_testkit.sources["duns"].fake_run()
+    dh_testkit = linked_testkit.sources["dh"].fake_run()
 
     # model_inner depends on 2 sources (count=2)
     model_inner_testkit = model_factory(
         name="model_inner",
         left_testkit=crn_testkit,
-        right_testkit=duns_testkit,
+        right_testkit=dh_testkit,
         true_entities=linked_testkit.true_entities,
         dag=test_dag,
     ).fake_run()
@@ -1072,7 +1072,7 @@ def test_dag_load_run_complex_dependencies(matchbox_api: MockRouter) -> None:
 
     # Add to original DAG
     test_dag.source(**crn_testkit.into_dag())
-    test_dag.source(**duns_testkit.into_dag())
+    test_dag.source(**dh_testkit.into_dag())
     test_dag.model(**model_inner_testkit.into_dag())
     test_dag.model(**model_outer_testkit.into_dag())
 
@@ -1080,7 +1080,7 @@ def test_dag_load_run_complex_dependencies(matchbox_api: MockRouter) -> None:
     resolutions: dict[ResolutionName, Resolution] = {
         model_outer_testkit.name: model_outer_testkit.model.to_resolution(),  # 2 deps
         crn_testkit.name: crn_testkit.source.to_resolution(),  # 0 deps
-        duns_testkit.name: duns_testkit.source.to_resolution(),  # 0 deps
+        dh_testkit.name: dh_testkit.source.to_resolution(),  # 0 deps
         model_inner_testkit.name: model_inner_testkit.model.to_resolution(),  # 2 deps
     }
 

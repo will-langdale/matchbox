@@ -46,7 +46,7 @@ def test_file_to_s3(s3: S3Client) -> None:
                 "parameters": (("text", "???-###-???-###"),),
             },
             {
-                "name": "duns",
+                "name": "dh",
                 "base_generator": "bothify",
                 "parameters": (("text", "??######"),),
             },

@@ -739,24 +739,24 @@ def test_query_from_config() -> None:
     # Create test sources
     linked_testkit = linked_sources_factory(dag=dag)
     crn_testkit = linked_testkit.sources["crn"]
-    duns_testkit = linked_testkit.sources["duns"]
+    dh_testkit = linked_testkit.sources["dh"]
 
     model_testkit = model_factory(
         left_testkit=crn_testkit,
-        right_testkit=duns_testkit,
+        right_testkit=dh_testkit,
         true_entities=linked_testkit.true_entities,
         dag=dag,
     )
 
     # Add to DAG
     dag.source(**crn_testkit.into_dag())
-    dag.source(**duns_testkit.into_dag())
+    dag.source(**dh_testkit.into_dag())
     dag.model(**model_testkit.into_dag())
 
     # Create original query
     original_query = Query(
         crn_testkit.source,
-        duns_testkit.source,
+        dh_testkit.source,
         dag=dag,
         model=model_testkit.model,
         combine_type="explode",

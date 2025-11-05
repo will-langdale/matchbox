@@ -15,7 +15,7 @@ def test_linked_sources_factory_default() -> None:
 
     # Check that default sources were created
     assert "crn" in linked.sources
-    assert "duns" in linked.sources
+    assert "dh" in linked.sources
     assert "cdms" in linked.sources
 
     # Verify default entity count
@@ -84,7 +84,7 @@ def test_linked_sources_find_entities() -> None:
     linked = linked_sources_factory(n_true_entities=10)
 
     # Find entities that appear at least once in each source
-    min_appearances = {"crn": 1, "duns": 1, "cdms": 1}
+    min_appearances = {"crn": 1, "dh": 1, "cdms": 1}
     common_entities = linked.find_entities(min_appearances=min_appearances)
 
     # Should be subset of total entities
@@ -96,7 +96,7 @@ def test_linked_sources_find_entities() -> None:
             assert len(entity.get_keys(source)) >= min_count
 
     # Find entities with maximum appearances
-    max_appearances = {"duns": 1}
+    max_appearances = {"dh": 1}
     limited_entities = linked.find_entities(max_appearances=max_appearances)
 
     for entity in limited_entities:
@@ -105,12 +105,12 @@ def test_linked_sources_find_entities() -> None:
 
     # Combined criteria
     filtered_entities = linked.find_entities(
-        min_appearances={"crn": 1}, max_appearances={"duns": 2}
+        min_appearances={"crn": 1}, max_appearances={"dh": 2}
     )
 
     for entity in filtered_entities:
         assert len(entity.get_keys("crn")) >= 1
-        assert len(entity.get_keys("duns")) <= 2
+        assert len(entity.get_keys("dh")) <= 2
 
 
 def test_entity_value_consistency() -> None:

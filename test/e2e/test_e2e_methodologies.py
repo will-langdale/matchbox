@@ -116,23 +116,21 @@ class TestE2EMethodologyIntegration:
 
             # Get two sources that can be linked
             crn_testkit = dag_testkit.sources.get("crn")
-            duns_testkit = dag_testkit.sources.get("duns")
+            dh_testkit = dag_testkit.sources.get("dh")
             crn_source = dag.get_source("crn")
-            duns_source = dag.get_source("duns")
+            dh_source = dag.get_source("dh")
 
             # Create settings and linker
-            settings = configure_linker(crn_testkit, duns_testkit)
+            settings = configure_linker(crn_testkit, dh_testkit)
 
             link_result = crn_source.query(
                 cleaning={
                     "company_name": self._clean_field(crn_source.f("company_name")),
                 },
             ).linker(
-                duns_source.query(
+                dh_source.query(
                     cleaning={
-                        "company_name": self._clean_field(
-                            duns_source.f("company_name")
-                        ),
+                        "company_name": self._clean_field(dh_source.f("company_name")),
                     },
                 ),
                 name=f"test_{Linker.__name__}",
