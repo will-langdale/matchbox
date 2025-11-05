@@ -247,7 +247,7 @@ def create_link_scenario(
 
     # Extract models for linking
     crn_model = dag_testkit.models["naive_test_crn"]
-    duns_model = dag_testkit.models["naive_test_duns"]
+    dh_model = dag_testkit.models["naive_test_dh"]
     cdms_model = dag_testkit.models["naive_test_cdms"]
 
     # Query data for each resolution
@@ -255,18 +255,18 @@ def create_link_scenario(
         source=dag_testkit.sources["crn"].resolution_path,
         point_of_truth=crn_model.resolution_path,
     )
-    duns_data = backend.query(
-        source=dag_testkit.sources["duns"].resolution_path,
-        point_of_truth=duns_model.resolution_path,
+    dh_data = backend.query(
+        source=dag_testkit.sources["dh"].resolution_path,
+        point_of_truth=dh_model.resolution_path,
     )
     cdms_data = backend.query(
         source=dag_testkit.sources["cdms"].resolution_path,
         point_of_truth=cdms_model.resolution_path,
     )
 
-    # Create CRN-DUNS link
-    crn_duns_name = "deterministic_naive_test_crn_naive_test_duns"
-    crn_duns_model = query_to_model_factory(
+    # Create CRN-DH link
+    crn_dh_name = "deterministic_naive_test_crn_naive_test_dh"
+    crn_dh_model = query_to_model_factory(
         left_query=Query(
             dag_testkit.sources["crn"].source,
             model=crn_model.model,
@@ -275,27 +275,27 @@ def create_link_scenario(
         left_data=crn_data,
         left_keys={"crn": "key"},
         right_query=Query(
-            dag_testkit.sources["duns"], model=duns_model.model, dag=dag_testkit.dag
+            dag_testkit.sources["dh"], model=dh_model.model, dag=dag_testkit.dag
         ),
-        right_data=duns_data,
-        right_keys={"duns": "key"},
+        right_data=dh_data,
+        right_keys={"dh": "key"},
         true_entities=tuple(linked.true_entities),
-        name=crn_duns_name,
-        description="Link between CRN and DUNS",
+        name=crn_dh_name,
+        description="Link between CRN and DH",
         prob_range=(1.0, 1.0),
         seed=seed,
     )
 
     # Add to backend and DAG
     backend.create_resolution(
-        resolution=crn_duns_model.fake_run().model.to_resolution(),
-        path=crn_duns_model.resolution_path,
+        resolution=crn_dh_model.fake_run().model.to_resolution(),
+        path=crn_dh_model.resolution_path,
     )
     backend.insert_model_data(
-        path=crn_duns_model.resolution_path,
-        results=crn_duns_model.probabilities.to_arrow(),
+        path=crn_dh_model.resolution_path,
+        results=crn_dh_model.probabilities.to_arrow(),
     )
-    dag_testkit.add_model(crn_duns_model)
+    dag_testkit.add_model(crn_dh_model)
 
     # Create CRN-CDMS link
     crn_cdms_name = "probabilistic_naive_test_crn_naive_test_cdms"
@@ -348,9 +348,9 @@ def create_link_scenario(
         promote_options="default",
     ).combine_chunks()
 
-    duns_data_linked = backend.query(
-        source=dag_testkit.sources["duns"].resolution_path,
-        point_of_truth=duns_model.resolution_path,
+    dh_data_linked = backend.query(
+        source=dag_testkit.sources["dh"].resolution_path,
+        point_of_truth=dh_model.resolution_path,
     )
 
     final_join_name = "final_join"
@@ -364,12 +364,12 @@ def create_link_scenario(
         left_data=crn_cdms_data,
         left_keys={"crn": "keys_crn", "cdms": "keys_cdms"},
         right_query=Query(
-            dag_testkit.sources["duns"].source,
-            model=duns_model.model,
+            dag_testkit.sources["dh"].source,
+            model=dh_model.model,
             dag=dag_testkit.dag,
         ),
-        right_data=duns_data_linked,
-        right_keys={"duns": "key"},
+        right_data=dh_data_linked,
+        right_keys={"dh": "key"},
         true_entities=tuple(linked.true_entities),
         name=final_join_name,
         description="Final join of all entities",
