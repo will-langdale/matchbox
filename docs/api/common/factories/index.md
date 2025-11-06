@@ -156,8 +156,8 @@ backend.set_model_results(
 Configure the true state of your data with `linked_sources_factory()`. Its default is a set of three tables of ten unique company entites.
 
 * CRN (company name, CRN ID) contains all entities with three unique variations of the company's name
-* CDMS (CRN ID, DUNS ID) contains all entities repeated twice
-* DUNS (company name, DUNS ID) contains half the entities
+* CDMS (CRN ID, DH ID) contains all entities repeated twice
+* DH (company name, DH ID) contains half the entities
 
 `linked_sources_factory()` can be configured using tuples of [`SourceTestkitParameters`][matchbox.common.factories.sources.SourceTestkitParameters] objects. Using these you can create complex sets of interweaving sources for methodologies to be tested against.
 

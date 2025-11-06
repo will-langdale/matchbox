@@ -110,7 +110,7 @@ def test_get_linked_testkit_for_source() -> None:
     linked_testkit = dag_testkit.source_to_linked["crn"]
     assert linked_testkit == linked
 
-    linked_testkit = dag_testkit.source_to_linked["duns"]
+    linked_testkit = dag_testkit.source_to_linked["dh"]
     assert linked_testkit == linked
 
     # Standalone and nonexistent sources should generate a KeyError

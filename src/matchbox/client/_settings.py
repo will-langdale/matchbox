@@ -10,7 +10,7 @@ class ClientSettings(BaseSettings):
     api_root: str
     timeout: float | None = None
     private_key: SecretStr | None = None
-    retry_delay: int = 15
+    retry_delay: float = 15.0
     default_warehouse: str | None = None
     jwt: str | None = None
     user: str | None = None
