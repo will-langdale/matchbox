@@ -79,8 +79,8 @@ class EntityResolutionApp(App):
     AUTO_FOCUS = None
 
     BINDINGS = [
-        ("shift+right", "skip", "Skip"),
         ("space", "submit", "Submit"),
+        ("shift+right", "skip", "Skip"),
         ("escape", "clear", "Clear"),
         ("question_mark,f1", "show_help", "Help"),
         ("ctrl+q,ctrl+c", "quit", "Quit"),

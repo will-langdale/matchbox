@@ -864,7 +864,7 @@ def create_mega_scenario(
 
     # Add model to backend
     backend.create_resolution(
-        resolution=link_model.model.to_resolution(),
+        resolution=link_model.fake_run().model.to_resolution(),
         path=link_model.resolution_path,
     )
     backend.insert_model_data(

@@ -1,5 +1,3 @@
-"""End-to-end evaluation tests with real data."""
-
 from collections.abc import Generator
 
 import pytest
@@ -22,7 +20,7 @@ from matchbox.common.factories.sources import (
 
 @pytest.mark.docker
 class TestE2EModelEvaluation:
-    """End-to-end tests for model evaluation."""
+    """End to end tests for model evaluation functionality."""
 
     def _clean_company_name(self, column: str) -> str:
         """Generate cleaning SQL for a company name column."""
@@ -43,13 +41,14 @@ class TestE2EModelEvaluation:
         matchbox_client: Client,
         postgres_warehouse: Engine,
     ) -> Generator[None, None, None]:
-        """Set up warehouse and database."""
+        """Set up warehouse and database using fixtures."""
+        # Persist shared setup for use in the test body
         n_true_entities = 10
         final_resolution_1_name = "final_1"
         final_resolution_2_name = "final_2"
         self.warehouse_engine = postgres_warehouse
 
-        # Create source with duplicates
+        # Create a SINGLE source with duplicates
         source_parameters = (
             SourceTestkitParameters(
                 name="source_a",
@@ -69,7 +68,7 @@ class TestE2EModelEvaluation:
                     ),
                 ),
                 n_true_entities=n_true_entities,
-                repetition=1,
+                repetition=1,  # Duplicate all rows for deduplication
             ),
         )
         self.linked_testkit = linked_sources_factory(
@@ -78,14 +77,14 @@ class TestE2EModelEvaluation:
         for source_testkit in self.linked_testkit.sources.values():
             source_testkit.write_to_location()
 
-        # Clear matchbox database
+        # Clear matchbox database before test
         response = matchbox_client.delete("/database", params={"certain": "true"})
-        assert response.status_code == 200
+        assert response.status_code == 200, "Failed to clear matchbox database"
 
-        # Create DAGs
+        # Create DAG
         dw_loc = RelationalDBLocation(name="postgres").set_client(postgres_warehouse)
 
-        # DAG 1: Strict deduplication
+        # === DAG 1: Created by User 1 (Strict Deduplication) ===
         dag1 = DAG("companies1").new_run()
 
         source_a_dag1 = dag1.source(
@@ -96,7 +95,8 @@ class TestE2EModelEvaluation:
                     key::text as id, 
                     company_name, 
                     registration_id 
-                from source_a;
+                from
+                    source_a;
             """,
             infer_types=True,
             key_field="id",
@@ -114,9 +114,11 @@ class TestE2EModelEvaluation:
         )
 
         dag1.run_and_sync()
+
+        # Retain DAG for use in tests
         self.dag1 = dag1
 
-        # DAG 2: Loose deduplication
+        # === DAG 2: Created by User 2 (Loose Deduplication) ===
         dag2 = DAG("companies2").new_run()
 
         source_a_dag2 = dag2.source(
@@ -127,7 +129,8 @@ class TestE2EModelEvaluation:
                     key::text as id, 
                     company_name, 
                     registration_id 
-                from source_a;
+                from
+                    source_a;
             """,
             infer_types=True,
             key_field="id",
@@ -148,6 +151,7 @@ class TestE2EModelEvaluation:
         )
 
         dag2.run_and_sync()
+
         self.dag2 = dag2
 
         yield
@@ -158,17 +162,22 @@ class TestE2EModelEvaluation:
                 conn.execute(text(f"DROP TABLE IF EXISTS {source_name};"))
             conn.commit()
         response = matchbox_client.delete("/database", params={"certain": "true"})
-        assert response.status_code == 200
+        assert response.status_code == 200, "Failed to clear matchbox database"
 
     @pytest.mark.asyncio
     async def test_evaluation_workflow(self) -> None:
-        """Test end-to-end workflow: samples → judgement → comparison."""
-        # Load DAG from server
+        """Test end-to-end data pipeline: DAG → samples → judgement → model comparison.
+
+        This test focuses on the full data flow through the system with real warehouse
+        data, multiple DAGs, and model comparison. UI interaction details are tested
+        separately in unit/integration tests.
+        """
+        # Load DAG from server with warehouse location
         dag: DAG = (
             DAG(str(self.dag1.name)).load_pending().set_client(self.warehouse_engine)
         )
 
-        # Create app and load samples
+        # Create app and verify it can load samples from real data
         app = EntityResolutionApp(
             resolution=dag.final_step.resolution_path.name,
             num_samples=2,
@@ -179,19 +188,19 @@ class TestE2EModelEvaluation:
         async with app.run_test() as pilot:
             await pilot.pause()
 
-            # Verify app loaded samples
+            # Verify app authenticated and loaded samples from real warehouse data
             await app.authenticate()
             assert app.user_id is not None
 
             if not app.queue.items:
                 await app.load_samples()
 
-            assert len(app.queue.items) > 0
+            assert len(app.queue.items) > 0, "Should load samples from warehouse"
 
-            # Submit one judgement
+            # Submit one judgement to verify data flow
             item = app.queue.items[0]
             for i in range(len(item.display_columns)):
-                item.assignments[i] = "a"
+                item.assignments[i] = "a"  # Assign all to same cluster
 
             initial_judgements, _ = _handler.download_eval_data()
             initial_count = len(initial_judgements)
@@ -199,9 +208,11 @@ class TestE2EModelEvaluation:
             await app.action_submit()
 
             final_judgements, _ = _handler.download_eval_data()
-            assert len(final_judgements) == initial_count + 1
+            assert len(final_judgements) == initial_count + 1, (
+                "Judgement should flow through to backend"
+            )
 
-        # Test model comparison
+        # Test model comparison functionality with both DAGs
         comparison = compare_models(
             [
                 dag.final_step.resolution_path,
@@ -212,6 +223,8 @@ class TestE2EModelEvaluation:
             str(dag.final_step.resolution_path),
             str(self.dag2.final_step.resolution_path),
         }
-        assert expected_keys.issubset(comparison.keys())
+        assert expected_keys.issubset(comparison.keys()), (
+            "Comparison should include both models"
+        )
         for key in expected_keys:
-            assert len(comparison[key]) == 2
+            assert len(comparison[key]) == 2, "Each model should have precision/recall"

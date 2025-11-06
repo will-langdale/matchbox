@@ -20,8 +20,8 @@ class TestComparisonDisplayTable:
             cluster_id=1,
             dataframe=df,
             display_data={
-                "name": ["Company A", "Company B", "Company C"],
-                "address": ["123 Main", "456 Oak", "789 Pine"],
+                "name": ["Company A", "Company B", ""],
+                "address": ["", "", "123 Main St"],
             },
             duplicate_groups=[[1], [2], [3]],
             display_columns=[1, 2, 3],
