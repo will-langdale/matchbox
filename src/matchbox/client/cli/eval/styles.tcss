@@ -83,10 +83,19 @@ Screen {
     background: $surface;
 }
 
-/* Rich table styling through the widget */
+/* DataTable styling */
 ComparisonDisplayTable {
     height: 1fr;
     width: 100%;
+}
+
+ComparisonDisplayTable > .datatable--header {
+    text-style: bold;
+    background: #342c20;
+}
+
+ComparisonDisplayTable > .datatable--even-row {
+    background: #141f32;
 }
 
 /* Footer */

@@ -5,8 +5,10 @@ from unittest.mock import Mock
 
 import pytest
 from sqlalchemy import Engine
+from textual.widgets import Footer, Label
 
 from matchbox.client.cli.eval.app import EntityResolutionApp, EvaluationQueue
+from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
 from matchbox.client.dags import DAG
 from matchbox.common.dtos import ModelResolutionPath
 from matchbox.common.factories.scenarios import setup_scenario
@@ -38,7 +40,7 @@ class TestEvaluationQueue:
     def test_add_items_increases_count(self) -> None:
         """Test adding items increases count."""
         queue = EvaluationQueue()
-        items = [Mock(cluster_id=1), Mock(cluster_id=2)]
+        items = [Mock(item=Mock(cluster_id=1)), Mock(item=Mock(cluster_id=2))]
 
         added = queue.add_items(items)
 
@@ -49,8 +51,8 @@ class TestEvaluationQueue:
     def test_add_items_prevents_duplicates(self) -> None:
         """Test that duplicate cluster IDs are not added."""
         queue = EvaluationQueue()
-        item1 = Mock(cluster_id=1)
-        item2 = Mock(cluster_id=1)  # Duplicate
+        item1 = Mock(item=Mock(cluster_id=1))
+        item2 = Mock(item=Mock(cluster_id=1))  # Duplicate
 
         queue.add_items([item1])
         added = queue.add_items([item2])
@@ -70,8 +72,8 @@ class TestEvaluationQueue:
     def test_skip_rotates_deque(self) -> None:
         """Test that skip moves current to back."""
         queue = EvaluationQueue()
-        item1 = Mock(cluster_id=1)
-        item2 = Mock(cluster_id=2)
+        item1 = Mock(item=Mock(cluster_id=1))
+        item2 = Mock(item=Mock(cluster_id=2))
         queue.items.extend([item1, item2])
 
         queue.skip_current()
@@ -82,7 +84,7 @@ class TestEvaluationQueue:
     def test_skip_with_single_item_does_nothing(self) -> None:
         """Test that skip with one item doesn't rotate."""
         queue = EvaluationQueue()
-        item1 = Mock(cluster_id=1)
+        item1 = Mock(item=Mock(cluster_id=1))
         queue.items.append(item1)
 
         queue.skip_current()
@@ -93,8 +95,8 @@ class TestEvaluationQueue:
     def test_remove_current_pops_front(self) -> None:
         """Test that remove_current removes from front."""
         queue = EvaluationQueue()
-        item1 = Mock(cluster_id=1)
-        item2 = Mock(cluster_id=2)
+        item1 = Mock(item=Mock(cluster_id=1))
+        item2 = Mock(item=Mock(cluster_id=2))
         queue.items.extend([item1, item2])
 
         removed = queue.remove_current()
@@ -173,12 +175,13 @@ class TestScenarioIntegration:
                 assert pilot.app.query("Footer")
                 assert app.queue.total_count > 0
                 assert app.queue.current is not None
-                assert app.queue.current.cluster_id is not None
+                assert app.queue.current.item.cluster_id is not None
 
                 # 2. Test keyboard workflow: letter then digit
                 await pilot.press("a")
                 await pilot.pause()
-                assert app.current_group == "a"
+                table = app.query_one(ComparisonDisplayTable)
+                assert table.current_group == "a"
 
                 await pilot.press("1")
                 await pilot.pause()
@@ -201,11 +204,11 @@ class TestScenarioIntegration:
                 await pilot.press("escape")
                 await pilot.pause()
                 assert len(current.assignments) == 0
-                assert app.current_group == ""
+                assert app._current_group_for_display == ""
 
                 # 6. Test skip workflow
                 first_item = app.queue.current
-                await pilot.press("right")
+                await pilot.press("shift+right")
                 await pilot.pause()
                 assert app.queue.current is not first_item
                 assert app.queue.items[-1] is first_item
@@ -221,7 +224,7 @@ class TestScenarioIntegration:
                 # 8. Test completing and submitting assignment sends judgement
                 current = app.queue.current
                 assert current is not None
-                num_columns = len(current.display_columns)
+                num_columns = len(current.item.get_unique_record_groups())
                 for i in range(num_columns):
                     await pilot.press("a")
                     await pilot.press(str((i % 9) + 1))
@@ -242,3 +245,48 @@ class TestScenarioIntegration:
                 await pilot.press("f1")
                 await pilot.pause()
                 assert len(pilot.app.screen_stack) > initial_stack_size
+
+    @pytest.mark.asyncio
+    async def test_app_widgets_are_visible(self) -> None:
+        """Test that all app widgets are visible with non-zero dimensions."""
+        with self.scenario(self.backend, "dedupe") as dag:
+            model_name: str = "naive_test_crn"
+
+            loaded_dag: DAG = (
+                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
+            )
+
+            app = EntityResolutionApp(
+                resolution=model_name,
+                num_samples=3,
+                user="test_user",
+                dag=loaded_dag,
+            )
+
+            async with app.run_test() as pilot:
+                await pilot.pause()
+
+                # Check table
+                table = app.query_one(ComparisonDisplayTable)
+                assert table is not None
+                assert table.size.width > 0, "Table has no width - not rendering"
+                assert table.size.height > 0, "Table has no height - not rendering"
+                assert table.row_count > 0, "Table has no rows"
+                assert len(table.ordered_columns) > 0, "Table has no columns"
+
+                # Check status bar widgets
+                status_left = app.query_one("#status-left", Label)
+                assert status_left is not None
+                assert status_left.size.width > 0, "Status left not rendering"
+                assert status_left.size.height > 0
+
+                status_right = app.query_one("#status-right", Label)
+                assert status_right is not None
+                assert status_right.size.width > 0, "Status right not rendering"
+                assert status_right.size.height > 0
+
+                # Check footer
+                footer = app.query_one(Footer)
+                assert footer is not None
+                assert footer.size.width > 0, "Footer not rendering"
+                assert footer.size.height > 0

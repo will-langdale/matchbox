@@ -1,59 +1,77 @@
-"""Minimal widget tests - verify rendering only."""
+"""Minimal widget tests - verify construction only."""
 
-import polars as pl
-import pytest
-from rich.table import Table
+from rich.text import Text
 
 from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
-from matchbox.client.eval import EvaluationItem
 
 
 class TestComparisonDisplayTable:
-    """Test table widget renders correctly."""
+    """Test table widget construction."""
 
-    @pytest.fixture
-    def mock_item(self) -> EvaluationItem:
-        """Create a mock evaluation item."""
-        df = pl.DataFrame({"leaf": [1, 2, 3]})
-
-        item = EvaluationItem(
-            cluster_id=1,
-            dataframe=df,
-            display_data={
-                "name": ["Company A", "Company B", ""],
-                "address": ["", "", "123 Main St"],
-            },
-            duplicate_groups=[[1], [2], [3]],
-            display_columns=[1, 2, 3],
-            assignments={},
-        )
-        return item
-
-    def test_table_renders(self, mock_item: EvaluationItem) -> None:
-        """Test that table can render."""
+    def test_table_initializes(self) -> None:
+        """Test that table can be created."""
         table = ComparisonDisplayTable()
-        table.load_comparison(mock_item)
+        assert table is not None
+        assert table.current_item is None
+        assert table.current_assignments == {}
+        assert table.current_group == ""
+        assert table.zebra_stripes is True
+        assert table.cursor_type == "none"
+        assert table.show_cursor is False
 
-        result = table.render()
-
-        assert isinstance(result, Table)
-
-    def test_table_renders_with_assignments(self, mock_item: EvaluationItem) -> None:
-        """Test that table renders with column assignments."""
-        mock_item.assignments = {0: "a", 2: "b"}
-
-        table = ComparisonDisplayTable()
-        table.load_comparison(mock_item)
-
-        result = table.render()
-
-        assert isinstance(result, Table)
-        assert len(result.columns) == 4  # Field + 3 display columns
-
-    def test_table_handles_no_item(self) -> None:
-        """Test that table handles no current item."""
+    def test_build_header_without_assignment(self) -> None:
+        """Test that _build_header creates correct header without assignment."""
         table = ComparisonDisplayTable()
 
-        result = table.render()
+        # Build header for position 1 with no duplicates
+        header = table._build_header(1, [1], None)
+        assert isinstance(header, Text)
+        assert header.plain == "1"
 
-        assert isinstance(result, Table)
+        # Build header for position 2 with duplicates
+        header = table._build_header(2, [1, 2, 3], None)
+        assert header.plain == "2 (×3)"
+
+    def test_build_header_with_assignment(self) -> None:
+        """Test that _build_header creates correct header with assignment."""
+        table = ComparisonDisplayTable()
+
+        # Build header with assignment 'a' (◇ - hollow diamond)
+        header = table._build_header(1, [1], "a")
+        assert header.plain.startswith("◇")  # Symbol for group 'a'
+        assert "1" in header.plain
+        # Should have exactly one symbol
+        assert header.plain.count("◇") == 1
+
+        # Build header with assignment 'b' (⬤ - filled circle)
+        header = table._build_header(2, [1, 2], "b")
+        assert header.plain.startswith("⬤")  # Symbol for group 'b'
+        assert "2 (×2)" in header.plain
+        assert header.plain.count("⬤") == 1
+
+    def test_build_header_different_assignments_no_accumulation(self) -> None:
+        """Test headers with different assignments don't accumulate symbols."""
+        table = ComparisonDisplayTable()
+
+        # Build header with assignment 'a' (◇ - hollow diamond)
+        header1 = table._build_header(1, [1], "a")
+        assert header1.plain.count("◇") == 1
+        assert "⬤" not in header1.plain
+
+        # Build header for same position with assignment 'b' (⬤ - filled circle)
+        header2 = table._build_header(1, [1], "b")
+        assert header2.plain.count("⬤") == 1
+        assert "◇" not in header2.plain  # No old symbol
+
+        # Build header for same position with assignment 'c' (◻ - hollow square)
+        header3 = table._build_header(1, [1], "c")
+        assert header3.plain.startswith("◻")  # Symbol for group 'c'
+        assert "◇" not in header3.plain  # No old symbols
+        assert "⬤" not in header3.plain
+
+    def test_get_column_positions(self) -> None:
+        """Test that _get_column_positions returns correct positions."""
+        table = ComparisonDisplayTable()
+
+        # Without current_item, should return empty list
+        assert table._get_column_positions() == []

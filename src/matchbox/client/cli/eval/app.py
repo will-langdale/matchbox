@@ -4,7 +4,7 @@ import logging
 from collections import deque
 from pathlib import Path
 
-from textual import events
+from pydantic import BaseModel, ConfigDict, Field
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
@@ -24,15 +24,27 @@ from matchbox.common.exceptions import MatchboxClientSettingsException
 logger = logging.getLogger(__name__)
 
 
+class CLIEvaluationSession(BaseModel):
+    """CLI evaluation session state.
+
+    Used by queue to store items with their assignments.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    item: EvaluationItem
+    assignments: dict[int, str] = Field(default_factory=dict)
+
+
 class EvaluationQueue:
     """Deque-based queue with current item always at front."""
 
     def __init__(self) -> None:
         """Initialise the queue."""
-        self.items: deque[EvaluationItem] = deque()
+        self.items: deque[CLIEvaluationSession] = deque()
 
     @property
-    def current(self) -> EvaluationItem | None:
+    def current(self) -> CLIEvaluationSession | None:
         """Get the current item (always at index 0)."""
         return self.items[0] if self.items else None
 
@@ -46,11 +58,11 @@ class EvaluationQueue:
         if len(self.items) > 1:
             self.items.rotate(-1)
 
-    def remove_current(self) -> EvaluationItem | None:
+    def remove_current(self) -> CLIEvaluationSession | None:
         """Remove and return current item."""
         return self.items.popleft() if self.items else None
 
-    def add_items(self, items: list[EvaluationItem]) -> int:
+    def add_items(self, items: list[CLIEvaluationSession]) -> int:
         """Add new items to queue, preventing duplicates.
 
         Returns:
@@ -59,8 +71,10 @@ class EvaluationQueue:
         if not items:
             return 0
 
-        existing_ids = {item.cluster_id for item in self.items}
-        unique_items = [item for item in items if item.cluster_id not in existing_ids]
+        existing_ids = {item.item.cluster_id for item in self.items}
+        unique_items = [
+            item for item in items if item.item.cluster_id not in existing_ids
+        ]
 
         if unique_items:
             self.items.extend(unique_items)
@@ -77,7 +91,7 @@ class EntityResolutionApp(App):
 
     # Triggered by action_* methods
     BINDINGS = [
-        ("right", "skip", "Skip"),
+        ("shift+right", "skip", "Skip"),
         ("space", "submit", "Submit"),
         ("escape", "clear", "Clear"),
         ("question_mark,f1", "show_help", "Help"),
@@ -85,8 +99,10 @@ class EntityResolutionApp(App):
     ]
 
     # Reactive variables that trigger UI updates
-    current_group: reactive[str] = reactive("")
     status: reactive[tuple[str, str]] = reactive(("○ Ready", "dim"))
+    current_item: reactive[EvaluationItem | None] = reactive(None)
+    current_assignments: reactive[dict[int, str]] = reactive({}, init=False)
+    _current_group_for_display: str = ""
 
     sample_limit: int
     resolution: ModelResolutionPath
@@ -159,38 +175,44 @@ class EntityResolutionApp(App):
         if self.show_help:
             self.call_after_refresh(self.action_show_help)
 
-    async def on_key(self, event: events.Key) -> None:
-        """Handle keyboard shortcuts for group assignment.
+    # Message handlers
+    def on_comparison_display_table_assignment_made(
+        self, message: ComparisonDisplayTable.AssignmentMade
+    ) -> None:
+        """Update reactive assignments when table reports an assignment."""
+        # Create new dict to trigger reactivity
+        new_assignments = {
+            **self.current_assignments,
+            message.column_idx: message.group,
+        }
+        self.current_assignments = new_assignments
 
-        Textual's basic key event handler. Handles keys beyond BINDINGS.
-        """
-        key = event.key
+        # Save to queue item
+        if current := self.queue.current:
+            current.assignments = new_assignments
 
-        if key.isalpha() and len(key) == 1:
-            self.current_group = key.lower()
-            event.stop()
-            return
-
-        if key.isdigit() and self.current_group:
-            col_num = 10 if key == "0" else int(key)
-            current = self.queue.current
-            if current and col_num <= len(current.display_columns):
-                current.assignments[col_num - 1] = self.current_group
-
-                table = self.query_one(ComparisonDisplayTable)
-                table.refresh()
-                self._update_status_labels()
-
-            event.stop()
-            return
+    def on_comparison_display_table_current_group_changed(
+        self, message: ComparisonDisplayTable.CurrentGroupChanged
+    ) -> None:
+        """Update status bar when table's current group changes."""
+        # Store for status bar display (underlines current group)
+        self._current_group_for_display = message.group
+        self._update_status_labels()
 
     # Reactive watchers
     def watch_status(self, new_value: tuple[str, str]) -> None:
         """React to status changes."""
         self._update_status_labels()
 
-    def watch_current_group(self, new_value: str) -> None:
-        """React to current group changes."""
+    def watch_current_item(self, item: EvaluationItem | None) -> None:
+        """React to item changes - propagate to table."""
+        table = self.query_one(ComparisonDisplayTable)
+        table.current_item = item
+
+    def watch_current_assignments(self, assignments: dict[int, str]) -> None:
+        """React to assignment changes - propagate to table and update status."""
+        table = self.query_one(ComparisonDisplayTable)
+        table.current_assignments = assignments
         self._update_status_labels()
 
     # Private methods
@@ -198,22 +220,11 @@ class EntityResolutionApp(App):
         """Load current queue item into the display."""
         current = self.queue.current
         if current:
-            # Check if cluster has too many columns
-            if len(current.display_columns) > 10:
-                logger.warning(
-                    f"Cluster {current.cluster_id} has {len(current.display_columns)} "
-                    "columns. Skipping cluster as only columns 1-10 can be assigned "
-                    "via keyboard shortcuts."
-                )
-                self._update_status("⚠ Cluster skipped", "red", clear_after=3.0)
-                self.queue.remove_current()
-                self._load_current_item()
-                return
+            self._current_group_for_display = ""
 
-            self.current_group = ""
-
-            table = self.query_one(ComparisonDisplayTable)
-            table.load_comparison(current)
+            # Set reactive properties (will propagate to table via watchers)
+            self.current_item = current.item
+            self.current_assignments = current.assignments.copy()
 
     def _update_status_labels(self) -> None:
         """Update both status bar labels."""
@@ -222,26 +233,31 @@ class EntityResolutionApp(App):
 
     def _compute_group_counts(self) -> dict[str, int]:
         """Compute group counts for current entity."""
-        current = self.queue.current
-        if not current:
+        if not self.current_item:
             return {}
 
         counts = {}
+        unique_record_groups = self.current_item.get_unique_record_groups()
 
-        for display_col_index, group in current.assignments.items():
-            if display_col_index < len(current.duplicate_groups):
-                duplicate_group_size = len(current.duplicate_groups[display_col_index])
-                counts[group] = counts.get(group, 0) + duplicate_group_size
+        for display_col_index, group in self.current_assignments.items():
+            if display_col_index >= len(unique_record_groups):
+                continue
+            duplicate_group_size = len(unique_record_groups[display_col_index])
+            counts[group] = counts.get(group, 0) + duplicate_group_size
 
-        if self.current_group and self.current_group not in counts:
-            counts[self.current_group] = 0
+        if (
+            self._current_group_for_display
+            and self._current_group_for_display not in counts
+        ):
+            counts[self._current_group_for_display] = 0
 
-        assigned_display_cols = set(current.assignments.keys())
+        assigned_display_cols = set(self.current_assignments.keys())
         unassigned_leaf_count = 0
-        for display_col_index in range(len(current.duplicate_groups)):
-            if display_col_index not in assigned_display_cols:
-                duplicate_group = current.duplicate_groups[display_col_index]
-                unassigned_leaf_count += len(duplicate_group)
+        for display_col_index in range(len(unique_record_groups)):
+            if display_col_index in assigned_display_cols:
+                continue
+            duplicate_group = unique_record_groups[display_col_index]
+            unassigned_leaf_count += len(duplicate_group)
 
         if unassigned_leaf_count > 0:
             counts["unassigned"] = unassigned_leaf_count
@@ -261,7 +277,7 @@ class EntityResolutionApp(App):
         for group, count in group_counts.items():
             display_text, colour = get_display_text(group, count)
 
-            if group == self.current_group:
+            if group == self._current_group_for_display:
                 group_parts.append(f"[bold {colour} underline]{display_text}[/]")
             else:
                 group_parts.append(f"[bold {colour}]{display_text}[/]")
@@ -340,7 +356,11 @@ class EntityResolutionApp(App):
             logger.warning(f"Failed to fetch samples: {type(e).__name__}: {e}")
 
         if new_samples_dict:
-            self.queue.add_items(list(new_samples_dict.values()))
+            # Wrap evaluation items in CLI sessions
+            sessions = [
+                CLIEvaluationSession(item=item) for item in new_samples_dict.values()
+            ]
+            self.queue.add_items(sessions)
 
         if self.queue.total_count == 0:
             await self._handle_no_samples()
@@ -366,7 +386,8 @@ class EntityResolutionApp(App):
             return
 
         # Check if all columns are assigned
-        is_painted = len(current.assignments) == len(current.display_columns)
+        unique_record_groups = current.item.get_unique_record_groups()
+        is_painted = len(current.assignments) == len(unique_record_groups)
         if not is_painted:
             self._update_status("⚠ Incomplete", "yellow", clear_after=3.0)
             return
@@ -374,7 +395,9 @@ class EntityResolutionApp(App):
         try:
             if self.user_id is None:
                 raise RuntimeError("User ID is not set")
-            judgement = create_judgement(current, self.user_id)
+            judgement = create_judgement(
+                current.item, current.assignments, self.user_id
+            )
             _handler.send_eval_judgement(judgement)
         except Exception as exc:
             self._update_status("⚠ Send failed", "red", clear_after=4.0)
@@ -388,13 +411,14 @@ class EntityResolutionApp(App):
 
     async def action_clear(self) -> None:
         """Clear current entity's group assignments."""
-        if current := self.queue.current:
-            current.assignments.clear()
-            self.current_group = ""
+        if self.queue.current:
+            self._current_group_for_display = ""
 
-            table = self.query_one(ComparisonDisplayTable)
-            table.refresh()
-            self._update_status_labels()
+            # Clear reactive assignments (will propagate to table)
+            self.current_assignments = {}
+
+            # Update queue item
+            self.queue.current.assignments = {}
 
     async def action_show_help(self) -> None:
         """Show the help modal."""
