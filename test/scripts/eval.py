@@ -73,6 +73,8 @@ def scenario_setup(scenario_name: str) -> Generator[dict[str, object], None, Non
                     resolution = dag.dag.nodes["final_join"]
                 case "alt_dedupe":
                     resolution = dag.dag.nodes["dedupe_foo_a"]
+                case "mega":
+                    resolution = dag.dag.nodes["mega_product_linker"]
                 case _:
                     raise ValueError(f"Unknown scenario: {scenario_name}")
 

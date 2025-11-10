@@ -29,26 +29,23 @@ class TestComparisonDisplayTable:
         )
         return item
 
-    def test_table_renders(self, mock_item: EvaluationItem) -> None:
-        """Test that table can render."""
-        table = ComparisonDisplayTable()
-        table.load_comparison(mock_item)
-
-        result = table.render()
-
-        assert isinstance(result, Table)
-
     def test_table_renders_with_assignments(self, mock_item: EvaluationItem) -> None:
         """Test that table renders with column assignments."""
         mock_item.assignments = {0: "a", 2: "b"}
 
         table = ComparisonDisplayTable()
-        table.load_comparison(mock_item)
+        table.load_comparison(
+            mock_item,
+            col_start=0,
+            col_end=2,
+            row_start=0,
+            row_end=1,
+        )
 
         result = table.render()
 
         assert isinstance(result, Table)
-        assert len(result.columns) == 4  # Field + 3 display columns
+        assert len(result.columns) == 3  # Field + 2 display columns
 
     def test_table_handles_no_item(self) -> None:
         """Test that table handles no current item."""

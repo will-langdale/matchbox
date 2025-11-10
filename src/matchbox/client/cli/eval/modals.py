@@ -23,7 +23,11 @@ When you're done, submit, and do another!
 
 • Press letter (a-z): Select that group (26 groups available)
 • Press number (1-9, 0): Assign column to selected group
+* Space: Submit completed review
 • Esc: Clear group selection
+• Shift+Right: Skip to next entity
+• Left/Right: Switch between tabs
+• Up/Down: Page through rows
 """.strip()
 
 NO_SAMPLES_TEXT = """

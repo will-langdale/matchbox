@@ -1,5 +1,6 @@
 """Integration tests with real scenario data - comprehensive behaviour testing."""
 
+from collections.abc import Callable
 from functools import partial
 from unittest.mock import Mock
 
@@ -128,9 +129,9 @@ class TestScenarioIntegration:
     @pytest.fixture(autouse=True)
     def setup(self, backend_instance: str, sqlite_warehouse: Engine) -> None:
         """Set up test fixtures."""
-        self.backend = backend_instance
-        self.warehouse_engine = sqlite_warehouse
-        self.scenario = partial(setup_scenario, warehouse=sqlite_warehouse)
+        self.backend: MatchboxDBAdapter = backend_instance
+        self.warehouse_engine: Engine = sqlite_warehouse
+        self.scenario: Callable = partial(setup_scenario, warehouse=sqlite_warehouse)
 
     @pytest.mark.asyncio
     async def test_complete_evaluation_workflow(self) -> None:
@@ -205,7 +206,7 @@ class TestScenarioIntegration:
 
                 # 6. Test skip workflow
                 first_item = app.queue.current
-                await pilot.press("right")
+                await pilot.press("shift+right")
                 await pilot.pause()
                 assert app.queue.current is not first_item
                 assert app.queue.items[-1] is first_item
@@ -242,3 +243,44 @@ class TestScenarioIntegration:
                 await pilot.press("f1")
                 await pilot.pause()
                 assert len(pilot.app.screen_stack) > initial_stack_size
+
+    @pytest.mark.asyncio
+    async def test_navigation(self) -> None:
+        """Test page and tab navigation."""
+        with self.scenario(self.backend, "mega") as dag:
+            model_name: str = "mega_product_linker"
+
+            loaded_dag: DAG = (
+                DAG(str(dag.dag.name)).load_pending().set_client(self.warehouse_engine)
+            )
+
+            app = EntityResolutionApp(
+                resolution=model_name,
+                num_samples=20,
+                user="test_user",
+                dag=loaded_dag,
+            )
+
+            async with app.run_test() as pilot:
+                await pilot.resize_terminal(120, 40)
+                await pilot.pause()
+
+                initial_page = app.current_page_by_tab.get(0, 0)
+
+                await pilot.press("down")
+                await pilot.pause()
+                assert app.current_page_by_tab.get(0, 0) == initial_page + 1
+
+                await pilot.press("up")
+                await pilot.pause()
+                assert app.current_page_by_tab.get(0, 0) == initial_page
+
+                initial_tab = app._get_current_tab_index()
+
+                await pilot.press("right")
+                await pilot.pause()
+                assert app._get_current_tab_index() == initial_tab + 1
+
+                await pilot.press("left")
+                await pilot.pause()
+                assert app._get_current_tab_index() == initial_tab

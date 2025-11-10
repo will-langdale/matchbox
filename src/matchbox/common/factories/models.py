@@ -52,11 +52,11 @@ T = TypeVar("T", bound=Hashable)
 class MockDeduper(Deduper):
     """Mock deduper that does nothing."""
 
-    def prepare(self, left: pl.DataFrame) -> None:
+    def prepare(self, data: pl.DataFrame) -> None:
         """Mock prepare method."""
         return self
 
-    def dedupe(self, left: pl.DataFrame) -> pl.DataFrame:
+    def dedupe(self, data: pl.DataFrame) -> pl.DataFrame:
         """Mock dedupe method."""
         return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_RESULTS))
 
@@ -546,7 +546,6 @@ class ModelTestkit(BaseModel):
     probabilities: pl.DataFrame
 
     _entities: tuple[ClusterEntity, ...]
-    _threshold: int
     _query_lookup: pa.Table
 
     @property
@@ -594,12 +593,12 @@ class ModelTestkit(BaseModel):
     @property
     def threshold(self) -> int:
         """Threshold for the model."""
-        return self._threshold
+        return self.model._truth
 
     @threshold.setter
     def threshold(self, value: int) -> None:
         """Set the threshold for the model."""
-        self.model.truth = value / 100
+        self.model._truth = value
         right_clusters = self.right_clusters.values() if self.right_clusters else []
         input_results = set(self.left_clusters.values()) | set(right_clusters)
 
@@ -628,7 +627,6 @@ class ModelTestkit(BaseModel):
             }
         )
         self._entities = entities
-        self._threshold = value
 
     def fake_run(self) -> Self:
         """Set model results without running model."""
@@ -850,6 +848,7 @@ def model_factory(
         model_settings=model_settings,
         left_query=left_query,
         right_query=right_query,
+        truth=min(prob_range),
     )
 
     # ==== Entity and probability generation ====
@@ -964,6 +963,7 @@ def query_to_model_factory(
         model_settings=model_settings,
         left_query=left_query,
         right_query=right_query,
+        truth=min(prob_range),
     )
 
     # Generate probabilities
