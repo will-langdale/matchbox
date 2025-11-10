@@ -153,17 +153,17 @@ class EntityResolutionApp(App):
 
     async def on_mount(self) -> None:
         """Initialise the application."""
-        await self.authenticate()
+        self.authenticate()
 
         if self.dag is None:
             raise RuntimeError(
                 "DAG not loaded. EntityResolutionApp requires a pre-loaded DAG."
             )
 
-        await self.load_samples()
+        self.load_samples()
 
         if self.queue.total_count == 0:
-            await self._handle_no_samples()
+            self.action_show_no_samples()
             return
 
         await self._load_current_item()
@@ -197,7 +197,7 @@ class EntityResolutionApp(App):
             if 1 <= key_position <= col_end - col_start:
                 actual_col_idx = col_start + (key_position - 1)
                 current.assignments[actual_col_idx] = self.current_group
-                await self._refresh_current_tab()
+                self._refresh_current_tab_content()
                 self._update_status_labels()
 
             event.stop()
@@ -219,8 +219,7 @@ class EntityResolutionApp(App):
         if not tabs_list:
             return 0
 
-        tabs = tabs_list[0]
-        active_pane = tabs.active
+        active_pane = tabs_list[0].active
         if active_pane and active_pane.startswith("tab-"):
             try:
                 return int(active_pane.split("-")[1])
@@ -304,8 +303,8 @@ class EntityResolutionApp(App):
         table = current_pane.query_one(ComparisonDisplayTable)
         table.load_comparison(current, col_start, col_end, row_start, row_end)
 
-    async def _refresh_current_tab(self) -> None:
-        """Refresh the currently visible tab/table."""
+    def _refresh_current_tab_content(self) -> None:
+        """Refresh the data and labels within the currently visible tab."""
         current = self.queue.current
         if not current:
             return
@@ -315,8 +314,12 @@ class EntityResolutionApp(App):
 
         num_cols = len(current.display_columns)
         tab_index = self._get_current_tab_index()
+
+        # Calculate which columns are visible in this tab (horizontal pagination)
         col_start = tab_index * self.cols_per_page
         col_end = min(col_start + self.cols_per_page, num_cols)
+
+        # Calculate which rows are visible in this page (in-tab vertical pagination)
         page = self.current_page_by_tab.get(tab_index, 0)
         row_start = page * self.rows_per_page
         row_end = row_start + self.rows_per_page
@@ -333,7 +336,12 @@ class EntityResolutionApp(App):
         )
 
     async def _load_current_item(self) -> None:
-        """Load current queue item into the display."""
+        """Load current queue item into the display.
+
+        Builds a multi-tab interface where each tab shows a horizontal slice of columns
+        (because there may be too many columns to fit on screen at once).
+        Each tab contains a table that can be paginated vertically.
+        """
         current = self.queue.current
         if not current:
             return
@@ -372,7 +380,7 @@ class EntityResolutionApp(App):
             table.load_comparison(current, col_start, col_end, 0, self.rows_per_page)
 
             pane = TabPane(label, table, id=f"tab-{tab_idx}")
-            tabs.add_pane(pane)
+            await tabs.add_pane(pane)
 
         self._update_status_labels()
 
@@ -382,13 +390,20 @@ class EntityResolutionApp(App):
         self.query_one("#status-right", Label).update(self._build_status_right())
 
     def _compute_group_counts(self) -> dict[str, int]:
-        """Compute group counts for current entity."""
+        """Compute group counts for current entity.
+
+        Display columns may represent multiple identical underlying entities (shown as
+        "x2", "x3", etc.). When we assign a display column to a group, we're actually
+        assigning all the duplicates it represents. This counts the total underlying
+        entities per group, not just display columns.
+        """
         current = self.queue.current
         if not current:
             return {}
 
         counts = {}
 
+        # Count underlying entities (not just display columns) for each assigned group
         for display_col_index, group in current.assignments.items():
             if display_col_index < len(current.duplicate_groups):
                 duplicate_group_size = len(current.duplicate_groups[display_col_index])
@@ -434,12 +449,6 @@ class EntityResolutionApp(App):
         message, colour = self.status
         return f"[{colour}]{message}[/]" if message else "[dim]● Ready[/]"
 
-    async def _handle_no_samples(self) -> None:
-        """Handle empty queue state."""
-        self._update_status("○ No data", "yellow")
-        logger.warning(f"No samples available for resolution '{self.resolution}'")
-        await self.action_show_no_samples()
-
     def _update_status(
         self,
         message: str,
@@ -457,7 +466,7 @@ class EntityResolutionApp(App):
                 clear_after, lambda: self._update_status("● Ready", "dim")
             )
 
-    async def _navigate_page(self, delta: int) -> None:
+    def _navigate_page(self, delta: int) -> None:
         """Navigate pages by delta (-1 for up, +1 for down)."""
         tab_idx = self._get_current_tab_index()
         current = self.queue.current
@@ -469,26 +478,10 @@ class EntityResolutionApp(App):
 
         if 0 <= new_page <= max_page:
             self.current_page_by_tab[tab_idx] = new_page
-            await self._refresh_current_tab()
-
-    def _navigate_tab(self, delta: int) -> None:
-        """Navigate tabs by delta (-1 for previous, +1 for next)."""
-        tabs_list = list(self.query(TabbedContent))
-        if not tabs_list:
-            return
-
-        tabs = tabs_list[0]
-        panes = list(tabs.query(TabPane))
-        if len(panes) <= 1:
-            return
-
-        current_idx = next(
-            (i for i, pane in enumerate(panes) if pane.id == tabs.active), 0
-        )
-        tabs.active = panes[(current_idx + delta) % len(panes)].id
+            self._refresh_current_tab_content()
 
     # Public methods
-    async def authenticate(self) -> None:
+    def authenticate(self) -> None:
         """Authenticate with the server."""
         user_name = self.user_name or settings.user
         if not user_name:
@@ -497,7 +490,7 @@ class EntityResolutionApp(App):
         self.user_name = user_name
         self.user_id = _handler.login(user_name=user_name)
 
-    async def load_samples(self) -> None:
+    def load_samples(self) -> None:
         """Load evaluation samples from the server."""
         needed = max(0, self.sample_limit - self.queue.total_count)
 
@@ -506,37 +499,44 @@ class EntityResolutionApp(App):
 
         self._update_status("⚡ Fetching", "yellow")
 
-        new_samples_dict = get_samples(
-            n=needed,
-            resolution=self.resolution.name,
-            user_id=self.user_id,
-            dag=self.dag,
-        )
+        try:
+            new_samples_dict = get_samples(
+                n=needed,
+                resolution=self.resolution.name,
+                user_id=self.user_id,
+                dag=self.dag,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Failed to fetch samples: {type(e).__name__}: {e}")
+            new_samples_dict = None
 
         if new_samples_dict:
             self.queue.add_items(list(new_samples_dict.values()))
 
         if self.queue.total_count == 0:
-            await self._handle_no_samples()
+            self._update_status("○ No data", "yellow")
+            logger.warning(f"No samples available for resolution '{self.resolution}'")
         else:
             self._update_status("✓ Ready", "green")
 
     # Action methods (public interface)
-    async def action_page_up(self) -> None:
+    def action_page_up(self) -> None:
         """Navigate to previous page in current tab."""
-        await self._navigate_page(-1)
+        self._navigate_page(-1)
 
-    async def action_page_down(self) -> None:
+    def action_page_down(self) -> None:
         """Navigate to next page in current tab."""
-        await self._navigate_page(1)
+        self._navigate_page(1)
 
-    async def action_previous_tab(self) -> None:
+    def action_previous_tab(self) -> None:
         """Navigate to previous tab."""
-        self._navigate_tab(-1)
+        tabs = self.query_one(TabbedContent).query_one(ContentTabs)
+        tabs.action_previous_tab()
 
-    async def action_next_tab(self) -> None:
+    def action_next_tab(self) -> None:
         """Navigate to next tab."""
-        self._navigate_tab(1)
+        tabs = self.query_one(TabbedContent).query_one(ContentTabs)
+        tabs.action_next_tab()
 
     async def action_skip(self) -> None:
         """Skip current entity (moves to back of queue)."""
@@ -544,7 +544,7 @@ class EntityResolutionApp(App):
             self.queue.skip_current()
             await self._load_current_item()
         else:
-            await self.action_submit()
+            self.action_submit()
             if self.queue.total_count == 0:
                 self.exit()
 
@@ -564,31 +564,36 @@ class EntityResolutionApp(App):
         if self.user_id is None:
             raise RuntimeError("User ID is not set")
 
-        judgement = create_judgement(current, self.user_id)
-        _handler.send_eval_judgement(judgement)
+        try:
+            judgement = create_judgement(current, self.user_id)
+            _handler.send_eval_judgement(judgement)
+        except Exception as exc:
+            self._update_status("⚠ Send failed", "red", clear_after=4.0)
+            logger.exception(f"Failed to submit: {exc}")
+            return
 
         self.queue.remove_current()
-        await self.load_samples()
+        self.load_samples()
         await self._load_current_item()
         self._update_status("✓ Sent", "green", clear_after=2.0)
 
-    async def action_clear(self) -> None:
+    def action_clear(self) -> None:
         """Clear current entity's group assignments."""
         if current := self.queue.current:
             current.assignments.clear()
             self.current_group = ""
 
-            await self._refresh_current_tab()
+            self._refresh_current_tab_content()
             self._update_status_labels()
 
-    async def action_show_help(self) -> None:
+    def action_show_help(self) -> None:
         """Show the help modal."""
         self.push_screen(HelpModal())
 
-    async def action_show_no_samples(self) -> None:
+    def action_show_no_samples(self) -> None:
         """Show the no samples modal."""
         self.push_screen(NoSamplesModal())
 
-    async def action_quit(self) -> None:
+    def action_quit(self) -> None:
         """Quit the application."""
         self.exit()

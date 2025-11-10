@@ -189,12 +189,7 @@ class TestE2EModelEvaluation:
             await pilot.pause()
 
             # Verify app authenticated and loaded samples from real warehouse data
-            await app.authenticate()
             assert app.user_id is not None
-
-            if not app.queue.items:
-                await app.load_samples()
-
             assert len(app.queue.items) > 0, "Should load samples from warehouse"
 
             # Submit one judgement to verify data flow

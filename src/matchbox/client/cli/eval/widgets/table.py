@@ -97,15 +97,15 @@ class ComparisonDisplayTable(Widget):
             max_width=50,
         )
 
-        # Data columns - only for the specified range
-        # Column numbers are relative to each tab (1-N per tab)
-        for idx, display_col_index in enumerate(range(self.col_start, self.col_end)):
-            # Column number within this tab (1-based, or 0 for 10th column)
-            col_num = idx + 1
+        # Data columns for the specified range
+        for tab_idx, sample_idx in enumerate(range(self.col_start, self.col_end)):
+            # tab_idx: position in current tab (0-9)
+            # sample_idx: absolute column in evaluation sample
+            col_num = tab_idx + 1
             if col_num == 10:
                 col_num = 0  # 10th column shows as 0 (typed with "0" key)
 
-            duplicate_count = len(current.duplicate_groups[display_col_index])
+            duplicate_count = len(current.duplicate_groups[sample_idx])
 
             header_text = (
                 f"{col_num} (×{duplicate_count})"
@@ -113,8 +113,8 @@ class ComparisonDisplayTable(Widget):
                 else str(col_num)
             )
 
-            if display_col_index in current.assignments:
-                group = current.assignments[display_col_index]
+            if sample_idx in current.assignments:
+                group = current.assignments[sample_idx]
                 symbol, colour = get_group_style(group)
                 header = f"[{colour} bold]{symbol} {header_text}[/]"
                 table.add_column(
