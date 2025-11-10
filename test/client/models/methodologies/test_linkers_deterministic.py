@@ -83,6 +83,55 @@ def configure_deterministic_linker(
     return settings_dict
 
 
+def configure_deterministic_linker_sequential(
+    left_testkit: SourceTestkit, right_testkit: SourceTestkit
+) -> dict[str, Any]:
+    """Configure settings for DeterministicLinker with sequential rounds.
+
+    Args:
+        left_testkit: Left SourceTestkit from linked_sources_factory
+        right_testkit: Right SourceTestkit from linked_sources_factory
+
+    Returns:
+        A dictionary with validated settings for DeterministicLinker using
+            sequential rounds
+    """
+    # Extract field names excluding key and id
+    left_fields = {
+        c.name
+        for c in left_testkit.source_config.index_fields
+        if c.name not in ("key", "id")
+    }
+    right_fields = {
+        c.name
+        for c in right_testkit.source_config.index_fields
+        if c.name not in ("key", "id")
+    }
+    shared_fields: list[str] = sorted(left_fields & right_fields)
+
+    if not shared_fields:
+        raise ValueError("Must have at least one shared field")
+
+    # Build sequential rounds - one comparison per round
+    comparisons: list[list[str]] = []
+    for field in shared_fields:
+        comparisons.append([f"l.{field} = r.{field}"])
+
+    settings_dict = {
+        "left_id": "id",
+        "right_id": "id",
+        "comparisons": comparisons,
+    }
+
+    # Meaningfully using rounds
+    assert len(comparisons) > 1
+
+    # Validate the settings dictionary
+    DeterministicSettings.model_validate(settings_dict)
+
+    return settings_dict
+
+
 def configure_weighted_deterministic_linker(
     left_testkit: SourceTestkit, right_testkit: SourceTestkit
 ) -> dict[str, Any]:
@@ -211,6 +260,11 @@ def configure_splink_linker(
 LINKERS = [
     pytest.param(
         DeterministicLinker, configure_deterministic_linker, id="Deterministic"
+    ),
+    pytest.param(
+        DeterministicLinker,
+        configure_deterministic_linker_sequential,
+        id="DeterministicSequential",
     ),
     pytest.param(
         WeightedDeterministicLinker,
