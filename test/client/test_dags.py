@@ -235,7 +235,7 @@ def test_dag_disconnected(
     source_run_mock: Mock,
     sqlite_warehouse: Engine,
 ) -> None:
-    """Nodes cannot be disconnected."""
+    """Nodes cannot be disconnected when setting a default run."""
     dag = TestkitDAG().dag
 
     foo_tkit = source_factory(name="foo", engine=sqlite_warehouse)
@@ -1134,10 +1134,17 @@ def test_dag_set_client(sqlite_warehouse: Engine) -> None:
     assert dag.get_source("bar").location.client == sqlite_warehouse
 
 
-def test_dag_set_default_ok(matchbox_api: MockRouter) -> None:
+def test_dag_set_default_ok(
+    matchbox_api: MockRouter,
+    sqlite_warehouse: Engine,
+) -> None:
     """Set default makes run immutable and sets as default."""
     # Create test data
     dag = TestkitDAG().dag
+
+    foo_tkit = source_factory(name="foo", engine=sqlite_warehouse)
+
+    dag.source(**foo_tkit.into_dag())
 
     # Mock set mutable
     api_mutable = matchbox_api.patch(

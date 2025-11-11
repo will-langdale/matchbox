@@ -500,6 +500,9 @@ class DAG:
 
         Makes it immutable, then moves the default pointer to it.
         """
+        # prevents setting default if there's no run loaded
+        _ = self.run
+
         # prevents setting default if there's no single apex
         _ = self.final_step
 
