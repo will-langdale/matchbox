@@ -442,7 +442,7 @@ class DAG:
     ) -> None:
         """Run entire DAG and send results to server."""
         # Determine order of execution steps
-        root_node = self.final_step.name
+        root_nodes = self.final_steps
 
         def depth_first(node: str, sequence: list) -> None:
             sequence.append(node)
@@ -451,7 +451,8 @@ class DAG:
                     depth_first(neighbour, sequence)
 
         inverse_sequence = []
-        depth_first(root_node, inverse_sequence)
+        for root_node in root_nodes:
+            depth_first(root_node.name, inverse_sequence)
         sequence = list(reversed(inverse_sequence))
 
         # Identify skipped nodes
