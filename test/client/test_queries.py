@@ -54,6 +54,7 @@ def test_query_multiple_runs(
     sqlite_warehouse: Engine, matchbox_api: MockRouter
 ) -> None:
     """Can run a query multiple times and clean separately."""
+    # Set up mocks
     source = (
         source_from_tuple(
             data_tuple=({"col1": " a "}, {"col1": " b "}),
@@ -86,6 +87,7 @@ def test_query_multiple_runs(
         )
     )
 
+    # Run a query a first time
     query.run()
     assert query_route.call_count == 1
 
@@ -95,8 +97,13 @@ def test_query_multiple_runs(
 
     new_cleaning = {"col1": f"trim(upper({source.f('col1')}))"}
 
+    # Can't change cleaning if data wasn't cached
     with pytest.raises(RuntimeError, match="raw data"):
         query.clean(new_cleaning)
+
+    # Let's try again caching this time
+    cleaned1 = query.run(cache_raw=True)
+    assert query_route.call_count == 3
 
     cleaned1_expected = pl.DataFrame(
         [
@@ -104,27 +111,31 @@ def test_query_multiple_runs(
             {"id": 2, "col1": " B "},
         ]
     )
-    cleaned1 = query.run(cache_raw=True)
+
     assert_frame_equal(
-        cleaned1,
-        cleaned1_expected,
-        check_column_order=False,
-        check_row_order=False,
+        cleaned1, cleaned1_expected, check_column_order=False, check_row_order=False
     )
+
+    # Now we can just change the cleaning
+    cleaned2 = query.clean(cleaning=new_cleaning)
+
     cleaned2_expected = pl.DataFrame(
         [
             {"id": 1, "col1": "A"},
             {"id": 2, "col1": "B"},
         ]
     )
-    cleaned2 = query.clean(cleaning=new_cleaning)
     assert_frame_equal(
-        cleaned2,
-        cleaned2_expected,
-        check_column_order=False,
-        check_row_order=False,
+        cleaned2, cleaned2_expected, check_column_order=False, check_row_order=False
     )
     assert query.config.cleaning == new_cleaning
+
+    # Because we have cached the data, we can skip re-run
+    cleaned3 = query.run(reuse_cache=True)
+    assert query_route.call_count == 3  # hasn't changed
+    assert_frame_equal(
+        cleaned3, cleaned2, check_column_order=False, check_row_order=False
+    )
 
 
 def test_query_single_source(

@@ -125,6 +125,7 @@ class Query:
         return_leaf_id: bool = False,
         batch_size: int | None = None,
         cache_raw: bool = False,
+        reuse_cache: bool = False,
     ) -> QueryReturnClass:
         """Runs queries against the selected backend.
 
@@ -137,12 +138,16 @@ class Query:
                 warehouse, which helps reduce memory usage and load on the database.
                 Default is None.
             cache_raw: Whether to store the pre-cleaned data to iterate on cleaning.
+            reuse_cache: Whether to re-use raw cached data if available.
 
         Returns: Data in the requested return type
 
         Raises:
             MatchboxEmptyServerResponse: If no data was returned by the server.
         """
+        if self.raw_data is not None and reuse_cache:
+            return self.clean(self.cleaning, return_type=return_type)
+
         source_results: list[PolarsDataFrame] = []
         for source in self.sources:
             mb_ids = pl.from_arrow(

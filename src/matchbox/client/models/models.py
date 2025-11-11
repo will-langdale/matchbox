@@ -222,21 +222,29 @@ class Model:
         result = _handler.delete_resolution(path=self.resolution_path, certain=certain)
         return result.success
 
-    def run(self, for_validation: bool = False) -> Results:
+    def run(self, for_validation: bool = False, cache_queries: bool = False) -> Results:
         """Execute the model pipeline and return results.
 
         Args:
             for_validation: Whether to download and store extra data to explore and
                     score results.
+            cache_queries: Whether to cache query results on first run and re-use them
+                subsequently.
         """
         left_df = self.left_query.run(
-            return_leaf_id=for_validation, batch_size=settings.batch_size
+            return_leaf_id=for_validation,
+            batch_size=settings.batch_size,
+            cache_raw=cache_queries,
+            reuse_cache=cache_queries,
         )
         right_df = None
 
         if self.config.type == ModelType.LINKER:
             right_df = self.right_query.run(
-                return_leaf_id=for_validation, batch_size=settings.batch_size
+                return_leaf_id=for_validation,
+                batch_size=settings.batch_size,
+                cache_raw=cache_queries,
+                reuse_cache=cache_queries,
             )
 
             self.model_instance.prepare(left_df, right_df)
