@@ -499,6 +499,10 @@ class DAG:
 
         Makes it immutable, then moves the default pointer to it.
         """
+        # prevents setting default if there's no single apex
+        _ = self.final_step
+
+        # tries to get apex, error if it doesn't exist
         _handler.set_run_mutable(collection=self.name, run_id=self.run, mutable=False)
         _handler.set_run_default(collection=self.name, run_id=self.run, default=True)
 
