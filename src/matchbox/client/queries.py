@@ -1,6 +1,6 @@
 """Definition of model inputs."""
 
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, Literal, Self, TypeAlias
 
 import duckdb
 import polars as pl
@@ -26,6 +26,8 @@ else:
     DAG = Any
     Model = Any
     Source = Any
+
+CacheMode: TypeAlias = Literal["off", "raw", "clean"]
 
 
 class Query:
@@ -68,12 +70,14 @@ class Query:
                 expression that will populate a new column.
         """
         self.raw_data: PolarsDataFrame | None = None
+        self.data: PolarsDataFrame | None = None
         self.dag = dag
         self.sources = sources
         self.model = model
         self.combine_type = combine_type
         self.threshold = threshold
         self.cleaning = cleaning
+        self._cache_mode: CacheMode = "off"
 
     @property
     def config(self) -> QueryConfig:
@@ -119,12 +123,34 @@ class Query:
             cleaning=config.cleaning,
         )
 
+    def set_cache_mode(self, mode: CacheMode = "off") -> Self:
+        """Configures caching behaviour of query operations.
+
+        * If "off" (default), doesn't cache anything
+        * If "raw", caches data as fetched from the source
+        * If "clean", it additionally caches the result of applying the
+            cleaning dict.
+        """
+        self._cache_mode = mode
+        return self
+
+    def _set_cache(
+        self, raw_data: PolarsDataFrame | None, data: PolarsDataFrame | None
+    ) -> None:
+        self.raw_data = None
+        self.data = None
+
+        if self._cache_mode in ["raw", "clean"]:
+            self.raw_data = raw_data
+
+        if self._cache_mode == "clean":
+            self.data = data
+
     def run(
         self,
         return_type: QueryReturnType = QueryReturnType.POLARS,
         return_leaf_id: bool = False,
         batch_size: int | None = None,
-        cache_raw: bool = False,
         reuse_cache: bool = False,
     ) -> QueryReturnClass:
         """Runs queries against the selected backend.
@@ -137,7 +163,6 @@ class Query:
             batch_size (optional): The size of each batch when fetching data from the
                 warehouse, which helps reduce memory usage and load on the database.
                 Default is None.
-            cache_raw: Whether to store the pre-cleaned data to iterate on cleaning.
             reuse_cache: Whether to re-use raw cached data if available.
 
         Returns: Data in the requested return type
@@ -145,8 +170,15 @@ class Query:
         Raises:
             MatchboxEmptyServerResponse: If no data was returned by the server.
         """
-        if self.raw_data is not None and reuse_cache:
-            return self.clean(self.cleaning, return_type=return_type)
+        if reuse_cache:
+            if self.data is not None:
+                result = _convert_df(self.data, return_type=return_type)
+                self._set_cache(self.raw_data, self.data)
+                return result
+            elif self.raw_data is not None:
+                result = self.clean(self.cleaning, return_type=return_type)
+                self._set_cache(self.raw_data, self.data)
+                return result
 
         source_results: list[PolarsDataFrame] = []
         for source in self.sources:
@@ -208,18 +240,10 @@ class Query:
                 ]
                 raw_data = raw_data.group_by("id").agg(agg_expressions)
 
-        if cache_raw:
-            self.raw_data = raw_data
+        clean_data = _clean(data=raw_data, cleaning_dict=self.config.cleaning)
 
-        self.data = _convert_df(
-            _clean(
-                data=raw_data,
-                cleaning_dict=self.config.cleaning,
-            ),
-            return_type=return_type,
-        )
-
-        return self.data
+        self._set_cache(raw_data, clean_data)
+        return _convert_df(clean_data, return_type=return_type)
 
     def clean(
         self,
@@ -239,7 +263,7 @@ class Query:
         if self.raw_data is None:
             raise RuntimeError("No raw data is stored in this query.")
 
-        self.data = _convert_df(
+        clean_data = _convert_df(
             data=_clean(
                 data=self.raw_data,
                 cleaning_dict=cleaning,
@@ -249,7 +273,9 @@ class Query:
 
         self.cleaning = cleaning
 
-        return self.data
+        self._set_cache(self.raw_data, clean_data)
+
+        return clean_data
 
     def deduper(
         self,

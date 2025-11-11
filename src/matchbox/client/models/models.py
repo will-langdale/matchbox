@@ -231,19 +231,18 @@ class Model:
             cache_queries: Whether to cache query results on first run and re-use them
                 subsequently.
         """
-        left_df = self.left_query.run(
+        cache_mode = "clean" if cache_queries else "off"
+        left_df = self.left_query.set_cache_mode(cache_mode).run(
             return_leaf_id=for_validation,
             batch_size=settings.batch_size,
-            cache_raw=cache_queries,
             reuse_cache=cache_queries,
         )
         right_df = None
 
         if self.config.type == ModelType.LINKER:
-            right_df = self.right_query.run(
+            right_df = self.right_query.set_cache_mode(cache_mode).run(
                 return_leaf_id=for_validation,
                 batch_size=settings.batch_size,
-                cache_raw=cache_queries,
                 reuse_cache=cache_queries,
             )
 
