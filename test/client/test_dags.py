@@ -245,7 +245,7 @@ def test_dag_disconnected(
     dag.source(**bar_tkit.into_dag())
 
     with pytest.raises(ValueError, match="disconnected"):
-        dag.run_and_sync()
+        dag.set_default()
 
 
 def test_dag_final_steps(sqlite_warehouse: Engine) -> None:
