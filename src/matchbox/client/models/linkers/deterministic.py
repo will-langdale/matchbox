@@ -1,5 +1,6 @@
 """A linking methodology based on a deterministic set of conditions."""
 
+import duckdb
 import polars as pl
 from pydantic import Field, field_validator
 
@@ -12,7 +13,7 @@ class DeterministicSettings(LinkerSettings):
 
     comparisons: list[str] | list[list[str]] = Field(
         description="""
-            Comparison rules for matching.
+            Comparison rules for matching using DuckDB SQL syntax.
             
             Can be specified as:
             - A flat list of strings: All comparisons applied in parallel (OR logic)
@@ -41,7 +42,7 @@ class DeterministicSettings(LinkerSettings):
             before the next round.
             
             Use left.field and right.field to refer to columns in the respective 
-            sources.
+            sources. Supports all DuckDB SQL operations and functions.
         """,
     )
 
@@ -53,7 +54,7 @@ class DeterministicSettings(LinkerSettings):
         """Normalise to list of lists format."""
         # Single string -> [[string]]
         if isinstance(value, str):
-            return [[comparison(value)]]
+            return [[comparison(value, dialect="duckdb")]]
 
         # Empty list
         if not value:
@@ -62,7 +63,7 @@ class DeterministicSettings(LinkerSettings):
         # Check if flat list of strings
         if all(isinstance(v, str) for v in value):
             # Flat list -> wrap in outer list for single round (parallel mode)
-            return [[comparison(v) for v in value]]
+            return [[comparison(v, dialect="duckdb") for v in value]]
 
         # List of lists
         if all(isinstance(v, list) for v in value):
@@ -75,7 +76,10 @@ class DeterministicSettings(LinkerSettings):
                         f"Round {round_idx} must contain only strings, "
                         f"got: {[type(c).__name__ for c in round_comparisons]}"
                     )
-            return [[comparison(c) for c in round_comps] for round_comps in value]
+            return [
+                [comparison(c, dialect="duckdb") for c in round_comps]
+                for round_comps in value
+            ]
 
         raise ValueError(
             "comparisons must be a string, list of strings, or list of lists of strings"
@@ -85,8 +89,10 @@ class DeterministicSettings(LinkerSettings):
 class DeterministicLinker(Linker):
     """A deterministic linker that links based on a set of boolean conditions.
 
-    Supports both parallel matching (single round) and sequential matching
-    (multiple rounds where matched records are removed after each round).
+    Uses DuckDB as the SQL backend, enabling rich SQL operations while maintaining
+    a Polars DataFrame interface. Supports both parallel matching (single round)
+    and sequential matching (multiple rounds where matched records are removed
+    after each round).
     """
 
     settings: DeterministicSettings
@@ -102,18 +108,36 @@ class DeterministicLinker(Linker):
         If comparisons is a nested list, applies each round sequentially,
         removing matched records from the pool after each round.
         """
+        con: duckdb.DuckDBPyConnection = duckdb.connect(":memory:")
+        try:
+            all_matches: list[pl.DataFrame] = self._execute_rounds(con, left, right)
+            return self._finalise_results(all_matches)
+        finally:
+            con.close()
+
+    def _execute_rounds(
+        self, con: duckdb.DuckDBPyConnection, left: pl.DataFrame, right: pl.DataFrame
+    ) -> list[pl.DataFrame]:
+        """Execute all matching rounds sequentially.
+
+        Args:
+            con: DuckDB connection to use
+            left: Left dataframe to match
+            right: Right dataframe to match
+
+        Returns:
+            List of match results from each round
+        """
         all_matches: list[pl.DataFrame] = []
         remaining_left: pl.DataFrame = left
         remaining_right: pl.DataFrame = right
 
-        # Iterate through rounds
-        for round_idx, round_comparisons in enumerate(self.settings.comparisons):
+        for round_comparisons in self.settings.comparisons:
             if remaining_left.is_empty() or remaining_right.is_empty():
                 break
 
-            # Apply all comparisons in this round (parallel/OR logic)
             round_matches: pl.DataFrame = self._link_round(
-                remaining_left, remaining_right, round_comparisons, round_idx
+                con, remaining_left, remaining_right, round_comparisons
             )
 
             if not round_matches.is_empty():
@@ -140,47 +164,61 @@ class DeterministicLinker(Linker):
                     how="anti",
                 )
 
-        return self._finalise_results(all_matches)
+        return all_matches
 
     def _link_round(
         self,
+        con: duckdb.DuckDBPyConnection,
         left: pl.DataFrame,
         right: pl.DataFrame,
         comparisons: list[str],
-        round_idx: int,
     ) -> pl.DataFrame:
-        """Apply all comparisons in a round using OR logic.
+        """Apply all comparisons in a round using OR logic via DuckDB.
 
         All comparisons within a round are applied to the same datasets
-        and results are unioned together.
-        """
-        left_pl: pl.LazyFrame = left.lazy()  # noqa: F841
-        right_pl: pl.LazyFrame = right.lazy()  # noqa: F841
+        and results are unioned together using DuckDB for maximum SQL flexibility.
 
+        Args:
+            con: DuckDB connection to use for this round
+            left: Left dataframe to match
+            right: Right dataframe to match
+            comparisons: List of SQL comparison conditions
+
+        Returns:
+            DataFrame of matched pairs with probability
+        """
+        # Register dataframes with DuckDB (updates registration if already exists)
+        con.register("left_df", left)
+        con.register("right_df", right)
+
+        # Build subqueries for each comparison
         subqueries: list[str] = []
-        for comp_idx, condition in enumerate(comparisons):
+        for condition in comparisons:
             subquery: str = f"""
                 SELECT
-                    l_{round_idx}_{comp_idx}.{self.settings.left_id} AS left_id,
-                    r_{round_idx}_{comp_idx}.{self.settings.right_id} AS right_id,
+                    l.{self.settings.left_id} AS left_id,
+                    r.{self.settings.right_id} AS right_id,
                     1.0 AS probability
-                FROM left_pl l_{round_idx}_{comp_idx}
-                INNER JOIN right_pl r_{round_idx}_{comp_idx}
+                FROM left_df l
+                INNER JOIN right_df r
                     ON {condition}
             """
             subqueries.append(subquery)
 
+        # Union all comparisons and get distinct results
         union_query: str = " UNION ALL ".join(subqueries)
-
         final_query: str = f"""
             SELECT DISTINCT 
-                final.left_id, 
-                final.right_id, 
-                final.probability
-            FROM ({union_query}) as final
+                left_id, 
+                right_id, 
+                probability
+            FROM ({union_query})
         """
 
-        return pl.sql(final_query).collect()
+        # Execute query and convert to Polars DataFrame
+        result: pl.DataFrame = con.execute(final_query).pl()
+
+        return result
 
     def _finalise_results(self, all_matches: list[pl.DataFrame]) -> pl.DataFrame:
         """Combine matches from all rounds and ensure correct schema."""
