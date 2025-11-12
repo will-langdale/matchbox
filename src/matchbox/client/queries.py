@@ -1,6 +1,7 @@
 """Definition of model inputs."""
 
-from typing import TYPE_CHECKING, Any, Literal, Self, TypeAlias
+from enum import StrEnum
+from typing import TYPE_CHECKING, Any, Self
 
 import duckdb
 import polars as pl
@@ -27,7 +28,13 @@ else:
     Model = Any
     Source = Any
 
-CacheMode: TypeAlias = Literal["off", "raw", "clean"]
+
+class CacheMode(StrEnum):
+    """Settings determining what query data gets cached."""
+
+    OFF = "off"
+    RAW = "raw"
+    CLEAN = "clean"
 
 
 class Query:
@@ -77,7 +84,7 @@ class Query:
         self.combine_type = combine_type
         self.threshold = threshold
         self.cleaning = cleaning
-        self._cache_mode: CacheMode = "off"
+        self._cache_mode: CacheMode = CacheMode.OFF
 
     @property
     def config(self) -> QueryConfig:
@@ -123,7 +130,7 @@ class Query:
             cleaning=config.cleaning,
         )
 
-    def set_cache_mode(self, mode: CacheMode = "off") -> Self:
+    def set_cache_mode(self, mode: CacheMode = CacheMode.OFF) -> Self:
         """Configures caching behaviour of query operations.
 
         * If "off" (default), doesn't cache anything
@@ -140,10 +147,10 @@ class Query:
         self.raw_data = None
         self.data = None
 
-        if self._cache_mode in ["raw", "clean"]:
+        if self._cache_mode in [CacheMode.RAW, CacheMode.CLEAN]:
             self.raw_data = raw_data
 
-        if self._cache_mode == "clean":
+        if self._cache_mode == CacheMode.CLEAN:
             self.data = data
 
     def run(
@@ -332,42 +339,6 @@ def _clean(
 
     Returns:
         Cleaned polars dataframe
-
-    Examples:
-        Column passthrough behaviour:
-
-        ```python
-        data = pl.DataFrame(
-            {
-                "id": [1, 2, 3],
-                "name": ["John", "Jane", "Bob"],
-                "age": [25, 30, 35],
-                "city": ["London", "Hull", "Stratford-upon-Avon"],
-            }
-        )
-        cleaning_dict = {
-            "full_name": "name"  # Only references 'name' column
-        }
-        result = clean(data, cleaning_dict)
-        # Result columns: id, full_name
-        ```
-
-        Special columns (leaf_id) handling:
-
-        ```python
-        data = pl.DataFrame(
-            {
-                "id": [1, 2, 3],
-                "leaf_id": ["a", "b", "c"],
-                "value": [10, 20, 30],
-                "status": ["active", "inactive", "pending"],
-            }
-        )
-        cleaning_dict = {"processed_value": "value * 2"}
-        result = clean(data, cleaning_dict)
-        # Result columns: id, leaf_id, processed_value
-        # 'id' and 'leaf_id' always included automatically
-        ```
     """
     if cleaning_dict is None:
         return data
