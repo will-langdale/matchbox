@@ -8,7 +8,7 @@ from respx import MockRouter
 from sqlalchemy import Engine
 from sqlglot.errors import ParseError
 
-from matchbox.client.queries import Query, _clean
+from matchbox.client.queries import CacheMode, Query, _clean
 from matchbox.common.arrow import (
     SCHEMA_QUERY,
     SCHEMA_QUERY_WITH_LEAVES,
@@ -50,10 +50,9 @@ def test_init_query() -> None:
     )
 
 
-def test_query_multiple_runs(
-    sqlite_warehouse: Engine, matchbox_api: MockRouter
-) -> None:
-    """Can run a query multiple times and clean separately."""
+def test_query_caching(sqlite_warehouse: Engine, matchbox_api: MockRouter) -> None:
+    """Can cache and re-use raw and clean data."""
+    # Set up mocks
     source = (
         source_from_tuple(
             data_tuple=({"col1": " a "}, {"col1": " b "}),
@@ -86,17 +85,90 @@ def test_query_multiple_runs(
         )
     )
 
+    # By default, query caches nothing
     query.run()
     assert query_route.call_count == 1
+    assert query.data is None
+    assert query.raw_data is None
 
-    # Re-running works
-    query.run()
+    # With no cache to reuse, must re-fetch
+    query.run(reuse_cache=True)
     assert query_route.call_count == 2
+
+    # Can cache raw data
+    query.set_cache_mode(CacheMode.RAW).run()
+    assert query_route.call_count == 3
+    assert query.data is None
+    assert query.raw_data is not None
+    # Could re-use values from cache
+    query.run(reuse_cache=True)
+    assert query_route.call_count == 3  # unchanged
+    assert query.data is None
+    assert query.raw_data is not None
+
+    # Can also cache clean data
+    query.set_cache_mode(CacheMode.CLEAN).run()
+    assert query_route.call_count == 4
+    assert query.data is not None
+    assert query.raw_data is not None
+    # Could re-use values from cache
+    query.run(reuse_cache=True)
+    assert query_route.call_count == 4  # unchanged
+    assert query.data is not None
+    assert query.raw_data is not None
+
+    # Even if we reuse cache, cache gets cleared
+    query.set_cache_mode(CacheMode.OFF).run(reuse_cache=True)
+    assert query.data is None
+    assert query.raw_data is None
+
+
+def test_update_cleaning(sqlite_warehouse: Engine, matchbox_api: MockRouter) -> None:
+    """Can iterate on cleaning functions with caching."""
+    # Set up mocks
+    source = (
+        source_from_tuple(
+            data_tuple=({"col1": " a "}, {"col1": " b "}),
+            data_keys=["0", "1"],
+            name="foo",
+            engine=sqlite_warehouse,
+        )
+        .write_to_location()
+        .source
+    )
+
+    query = Query(
+        source,
+        dag=source.dag,
+        cleaning={"col1": f"upper({source.f('col1')})"},
+    )
+
+    matchbox_api.get("/query").mock(
+        return_value=Response(
+            200,
+            content=table_to_buffer(
+                pa.Table.from_pylist(
+                    [
+                        {"key": "0", "id": 1},
+                        {"key": "1", "id": 2},
+                    ],
+                    schema=SCHEMA_QUERY,
+                )
+            ).read(),
+        )
+    )
 
     new_cleaning = {"col1": f"trim(upper({source.f('col1')}))"}
 
+    # Run a query a first time without caching
+    query.run()
+
+    # Can't change cleaning if data wasn't cached
     with pytest.raises(RuntimeError, match="raw data"):
         query.clean(new_cleaning)
+
+    # Let's try again, caching this time
+    cleaned1 = query.set_cache_mode(CacheMode.CLEAN).run()
 
     cleaned1_expected = pl.DataFrame(
         [
@@ -104,25 +176,35 @@ def test_query_multiple_runs(
             {"id": 2, "col1": " B "},
         ]
     )
-    cleaned1 = query.run(cache_raw=True)
+
     assert_frame_equal(
-        cleaned1,
-        cleaned1_expected,
-        check_column_order=False,
-        check_row_order=False,
+        cleaned1, cleaned1_expected, check_column_order=False, check_row_order=False
     )
+
+    # Now we can iterate on the cleaning
+    assert query.data is not None
+    assert query.raw_data is not None
+    cleaned2 = query.clean(cleaning=new_cleaning)
+    # "clean" caching mode retains the data
+    assert query.data is not None
+    # "raw" mode clears clean data from cache
+    query.set_cache_mode(CacheMode.RAW).clean(cleaning=new_cleaning)
+    assert query.raw_data is not None
+    assert query.data is None
+    # "off" mode clears cache completely
+    query.set_cache_mode(CacheMode.OFF).clean(cleaning=new_cleaning)
+    assert query.raw_data is None
+    assert query.data is None
+
+    # New cleaning took effect
     cleaned2_expected = pl.DataFrame(
         [
             {"id": 1, "col1": "A"},
             {"id": 2, "col1": "B"},
         ]
     )
-    cleaned2 = query.clean(cleaning=new_cleaning)
     assert_frame_equal(
-        cleaned2,
-        cleaned2_expected,
-        check_column_order=False,
-        check_row_order=False,
+        cleaned2, cleaned2_expected, check_column_order=False, check_row_order=False
     )
     assert query.config.cleaning == new_cleaning
 
