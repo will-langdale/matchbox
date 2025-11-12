@@ -11,7 +11,7 @@ from matchbox.client._settings import settings
 from matchbox.client.models import dedupers, linkers
 from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
-from matchbox.client.queries import Query
+from matchbox.client.queries import CacheMode, Query
 from matchbox.client.results import Results
 from matchbox.common.dtos import (
     ModelConfig,
@@ -231,7 +231,7 @@ class Model:
             cache_queries: Whether to cache query results on first run and re-use them
                 subsequently.
         """
-        cache_mode = "clean" if cache_queries else "off"
+        cache_mode = CacheMode.CLEAN if cache_queries else CacheMode.OFF
         left_df = self.left_query.set_cache_mode(cache_mode).run(
             return_leaf_id=for_validation,
             batch_size=settings.batch_size,

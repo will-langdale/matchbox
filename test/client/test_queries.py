@@ -8,7 +8,7 @@ from respx import MockRouter
 from sqlalchemy import Engine
 from sqlglot.errors import ParseError
 
-from matchbox.client.queries import Query, _clean
+from matchbox.client.queries import CacheMode, Query, _clean
 from matchbox.common.arrow import (
     SCHEMA_QUERY,
     SCHEMA_QUERY_WITH_LEAVES,
@@ -96,7 +96,7 @@ def test_query_caching(sqlite_warehouse: Engine, matchbox_api: MockRouter) -> No
     assert query_route.call_count == 2
 
     # Can cache raw data
-    query.set_cache_mode("raw").run()
+    query.set_cache_mode(CacheMode.RAW).run()
     assert query_route.call_count == 3
     assert query.data is None
     assert query.raw_data is not None
@@ -107,7 +107,7 @@ def test_query_caching(sqlite_warehouse: Engine, matchbox_api: MockRouter) -> No
     assert query.raw_data is not None
 
     # Can also cache clean data
-    query.set_cache_mode("clean").run()
+    query.set_cache_mode(CacheMode.CLEAN).run()
     assert query_route.call_count == 4
     assert query.data is not None
     assert query.raw_data is not None
@@ -118,7 +118,7 @@ def test_query_caching(sqlite_warehouse: Engine, matchbox_api: MockRouter) -> No
     assert query.raw_data is not None
 
     # Even if we reuse cache, cache gets cleared
-    query.set_cache_mode("off").run(reuse_cache=True)
+    query.set_cache_mode(CacheMode.OFF).run(reuse_cache=True)
     assert query.data is None
     assert query.raw_data is None
 
@@ -168,7 +168,7 @@ def test_update_cleaning(sqlite_warehouse: Engine, matchbox_api: MockRouter) -> 
         query.clean(new_cleaning)
 
     # Let's try again, caching this time
-    cleaned1 = query.set_cache_mode("clean").run()
+    cleaned1 = query.set_cache_mode(CacheMode.CLEAN).run()
 
     cleaned1_expected = pl.DataFrame(
         [
@@ -188,11 +188,11 @@ def test_update_cleaning(sqlite_warehouse: Engine, matchbox_api: MockRouter) -> 
     # "clean" caching mode retains the data
     assert query.data is not None
     # "raw" mode clears clean data from cache
-    query.set_cache_mode("raw").clean(cleaning=new_cleaning)
+    query.set_cache_mode(CacheMode.RAW).clean(cleaning=new_cleaning)
     assert query.raw_data is not None
     assert query.data is None
     # "off" mode clears cache completely
-    query.set_cache_mode("off").clean(cleaning=new_cleaning)
+    query.set_cache_mode(CacheMode.OFF).clean(cleaning=new_cleaning)
     assert query.raw_data is None
     assert query.data is None
 
