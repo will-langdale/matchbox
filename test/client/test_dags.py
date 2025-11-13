@@ -224,30 +224,6 @@ def test_dag_name_clash(sqlite_warehouse: Engine) -> None:
     assert dag.graph[linker.name] == [foo.name, bar.name]
 
 
-@patch.object(Source, "run")
-@patch.object(Model, "run")
-@patch.object(Source, "sync")
-@patch.object(Model, "sync")
-def test_dag_disconnected(
-    model_sync_mock: Mock,
-    source_sync_mock: Mock,
-    model_run_mock: Mock,
-    source_run_mock: Mock,
-    sqlite_warehouse: Engine,
-) -> None:
-    """Nodes cannot be disconnected when setting a default run."""
-    dag = TestkitDAG().dag
-
-    foo_tkit = source_factory(name="foo", engine=sqlite_warehouse)
-    bar_tkit = source_factory(name="bar", engine=sqlite_warehouse)
-
-    dag.source(**foo_tkit.into_dag())
-    dag.source(**bar_tkit.into_dag())
-
-    with pytest.raises(ValueError, match="disconnected"):
-        dag.set_default()
-
-
 def test_dag_final_steps(sqlite_warehouse: Engine) -> None:
     """Test final_steps property returns all apex nodes."""
     dag = TestkitDAG().dag
@@ -1142,9 +1118,7 @@ def test_dag_set_default_ok(
     # Create test data
     dag = TestkitDAG().dag
 
-    foo_tkit = source_factory(name="foo", engine=sqlite_warehouse)
-
-    dag.source(**foo_tkit.into_dag())
+    dag.source(**source_factory().into_dag())
 
     # Mock set mutable
     api_mutable = matchbox_api.patch(
@@ -1183,8 +1157,23 @@ def test_dag_set_default_ok(
 
 
 def test_dag_set_default_not_connected() -> None:
-    """Set default raises error when DAG is not connected."""
+    """Set default raises error when DAG is not connected to server."""
     dag = DAG(name="test_collection")
+    dag.source(**source_factory().into_dag())
 
     with pytest.raises(RuntimeError, match="has not been connected"):
+        dag.set_default()
+
+
+def test_dag_set_default_unreachable_nodes(sqlite_warehouse: Engine) -> None:
+    """Nodes cannot be unreachable from root when setting a default run."""
+    dag = TestkitDAG().dag
+
+    foo_tkit = source_factory(name="foo", engine=sqlite_warehouse)
+    bar_tkit = source_factory(name="bar", engine=sqlite_warehouse)
+
+    dag.source(**foo_tkit.into_dag())
+    dag.source(**bar_tkit.into_dag())
+
+    with pytest.raises(ValueError, match="unreachable"):
         dag.set_default()

@@ -146,7 +146,7 @@ class DAG:
         if len(steps) == 0:
             raise ValueError("No root node found, DAG might contain cycles")
         elif len(steps) > 1:
-            raise ValueError("Some models or sources are disconnected")
+            raise ValueError("Some models or sources are unreachable")
         else:
             return steps[0]
 
@@ -500,9 +500,6 @@ class DAG:
 
         Makes it immutable, then moves the default pointer to it.
         """
-        # prevents setting default if there's no run loaded
-        _ = self.run
-
         # prevents setting default if there's no single apex
         _ = self.final_step
 
