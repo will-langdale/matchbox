@@ -11,7 +11,7 @@ from matchbox.client._settings import settings
 from matchbox.client.models import dedupers, linkers
 from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
-from matchbox.client.queries import Query
+from matchbox.client.queries import CacheMode, Query
 from matchbox.client.results import Results
 from matchbox.common.dtos import (
     ModelConfig,
@@ -223,17 +223,24 @@ class Model:
         result = _handler.delete_resolution(path=self.resolution_path, certain=certain)
         return result.success
 
-    def run(self, for_validation: bool = False) -> Results:
+    def run(self, for_validation: bool = False, cache_queries: bool = False) -> Results:
         """Execute the model pipeline and return results.
 
         Args:
             for_validation: Whether to download and store extra data to explore and
                     score results.
+            cache_queries: Whether to cache query results on first run and re-use them
+                subsequently.
         """
         log_prefix = f"Run {self.name}"
         logger.info("Executing left query", prefix=log_prefix)
         left_df = self.left_query.run(
             return_leaf_id=for_validation, batch_size=settings.batch_size
+        cache_mode = CacheMode.CLEAN if cache_queries else CacheMode.OFF
+        left_df = self.left_query.set_cache_mode(cache_mode).run(
+            return_leaf_id=for_validation,
+            batch_size=settings.batch_size,
+            reuse_cache=cache_queries,
         )
         right_df = None
 
@@ -241,6 +248,10 @@ class Model:
             logger.info("Executing right query", prefix=log_prefix)
             right_df = self.right_query.run(
                 return_leaf_id=for_validation, batch_size=settings.batch_size
+            right_df = self.right_query.set_cache_mode(cache_mode).run(
+                return_leaf_id=for_validation,
+                batch_size=settings.batch_size,
+                reuse_cache=cache_queries,
             )
 
             self.model_instance.prepare(left_df, right_df)
