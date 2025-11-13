@@ -219,6 +219,7 @@ class Model:
 
     def delete(self, certain: bool = False) -> bool:
         """Delete the model from the database."""
+        logger.info(f"Deleting {self.name}")
         result = _handler.delete_resolution(path=self.resolution_path, certain=certain)
         return result.success
 
@@ -231,6 +232,8 @@ class Model:
             cache_queries: Whether to cache query results on first run and re-use them
                 subsequently.
         """
+        log_prefix = f"Run {self.name}"
+        logger.info("Executing left query", prefix=log_prefix)
         cache_mode = CacheMode.CLEAN if cache_queries else CacheMode.OFF
         left_df = self.left_query.set_cache_mode(cache_mode).run(
             return_leaf_id=for_validation,
@@ -240,6 +243,7 @@ class Model:
         right_df = None
 
         if self.config.type == ModelType.LINKER:
+            logger.info("Executing right query", prefix=log_prefix)
             right_df = self.right_query.set_cache_mode(cache_mode).run(
                 return_leaf_id=for_validation,
                 batch_size=settings.batch_size,
