@@ -500,7 +500,7 @@ class DAG:
 
         Makes it immutable, then moves the default pointer to it.
         """
-        # prevents setting default if there's no single apex
+        # Trigger error if there isn't a single root
         _ = self.final_step
 
         # tries to get apex, error if it doesn't exist
