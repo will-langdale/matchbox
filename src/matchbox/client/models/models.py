@@ -234,8 +234,6 @@ class Model:
         """
         log_prefix = f"Run {self.name}"
         logger.info("Executing left query", prefix=log_prefix)
-        left_df = self.left_query.run(
-            return_leaf_id=for_validation, batch_size=settings.batch_size
         cache_mode = CacheMode.CLEAN if cache_queries else CacheMode.OFF
         left_df = self.left_query.set_cache_mode(cache_mode).run(
             return_leaf_id=for_validation,
@@ -246,8 +244,6 @@ class Model:
 
         if self.config.type == ModelType.LINKER:
             logger.info("Executing right query", prefix=log_prefix)
-            right_df = self.right_query.run(
-                return_leaf_id=for_validation, batch_size=settings.batch_size
             right_df = self.right_query.set_cache_mode(cache_mode).run(
                 return_leaf_id=for_validation,
                 batch_size=settings.batch_size,
