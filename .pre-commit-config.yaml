@@ -10,14 +10,6 @@ repos:
       types_or: [python, pyi]
       pass_filenames: false
 
-    # Check for secrets
-    - id: trufflehog
-      name: TruffleHog
-      description: "Detect secrets in your data."
-      entry: bash -c "docker run -v "$(pwd):/repo" -i --rm trufflesecurity/trufflehog:latest git file:///repo  --since-commit HEAD --branch $(git branch --show-current) --fail"
-      language: system
-      stages: ["pre-commit", "pre-push"]
-
     # Verify MkDocs build
     - id: mkdocs
       name: mkdocs
@@ -33,3 +25,12 @@ repos:
       entry: just migrate check
       language: system
       pass_filenames: false
+
+# Mandatory internal hooks
+- repo: https://github.com/uktrade/github-standards
+  rev: v0.0.17  # update periodically with pre-commit autoupdate
+  hooks:
+    - id: run-security-scan
+      verbose: false
+    - id: run-personal-data-scan
+      verbose: false
