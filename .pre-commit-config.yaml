@@ -9,7 +9,7 @@ repos:
       language: system
       types_or: [python, pyi]
       pass_filenames: false
-      stages: [commit]
+      stages: [pre-commit]
 
     # Verify MkDocs build
     - id: mkdocs
@@ -18,7 +18,7 @@ repos:
       entry: uv run mkdocs build --strict
       language: system
       pass_filenames: false
-      stages: [commit]
+      stages: [pre-commit]
 
     # Check for missing migrations
     - id: alembic
@@ -27,7 +27,7 @@ repos:
       entry: just migrate check
       language: system
       pass_filenames: false
-      stages: [commit]
+      stages: [pre-commit]
 
 # Mandatory internal hooks
 - repo: https://github.com/uktrade/github-standards
