@@ -120,7 +120,7 @@ class MatchboxServerSettings(BaseSettings):
     task_runner: Literal["api", "celery"]
     redis_uri: str | None
     uploads_expiry_minutes: int | None
-    authorisation: bool = False
+    authorisation: bool = True
     public_key: SecretStr | None = Field(default=None)
     log_level: LogLevelType = "INFO"
 
