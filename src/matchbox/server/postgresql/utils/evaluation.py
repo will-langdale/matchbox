@@ -236,12 +236,26 @@ def sample(n: int, resolution_path: ModelResolutionPath, user_id: int) -> Table:
             .where(Contains.root.in_(sampled_cluster_ids))
             .subquery()
         )
+
+        # The same leaf can be reused to represent rows across different sources
+        # We only want to retrieve info for sources upstream of resolution
+        source_resolution_ids = [
+            res.resolution_id
+            for res in resolution_orm.ancestors
+            if res.type == "source"
+        ]
+        source_resolutions = (
+            select(Resolutions.name, Resolutions.resolution_id)
+            .where(Resolutions.resolution_id.in_(source_resolution_ids))
+            .subquery()
+        )
+
         enrich_stmt = (
             select(
                 source_clusters.c.root,
                 source_clusters.c.leaf,
                 ClusterSourceKey.key,
-                Resolutions.name.label("source"),
+                source_resolutions.c.name.label("source"),
             )
             .select_from(source_clusters)
             .join(
@@ -253,8 +267,8 @@ def sample(n: int, resolution_path: ModelResolutionPath, user_id: int) -> Table:
                 SourceConfigs.source_config_id == ClusterSourceKey.source_config_id,
             )
             .join(
-                Resolutions,
-                Resolutions.resolution_id == SourceConfigs.resolution_id,
+                source_resolutions,
+                source_resolutions.c.resolution_id == SourceConfigs.resolution_id,
             )
         )
 

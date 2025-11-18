@@ -496,17 +496,17 @@ def create_alt_dedupe_scenario(
     return dag_testkit
 
 
-@register_scenario("convergent")
-def create_convergent_scenario(
+@register_scenario("convergent_partial")
+def create_convergent_partial_scenario(
     backend: MatchboxDBAdapter,
     warehouse_engine: Engine,
     n_entities: int = 10,
     seed: int = 42,
     **kwargs: Any,
 ) -> TestkitDAG:
-    """Create a convergent TestkitDAG scenario.
+    """Create a TestkitDAG scenario with convergent sources.
 
-    This is where two SourceConfigs index almost identically. TestkitDAG contains two
+    This is where two sources index almost identically. TestkitDAG contains two
     indexed sources with repetition, and two naive dedupe models that haven't yet
     had their results inserted.
     """
@@ -573,6 +573,35 @@ def create_convergent_scenario(
 
         # Add to DAG
         dag_testkit.add_model(model_testkit)
+
+    return dag_testkit
+
+
+@register_scenario("convergent")
+def create_convergent_scenario(
+    backend: MatchboxDBAdapter,
+    warehouse_engine: Engine,
+    n_entities: int = 10,
+    seed: int = 42,
+    **kwargs: Any,
+) -> TestkitDAG:
+    """Create a TestkitDAG scenario with convergent sources, deduped.
+
+    This is where two sources index almost identically. TestkitDAG contains two
+    indexed sources with repetition, and two naive dedupe models, all inserted.
+    """
+    dag_testkit = create_convergent_partial_scenario(
+        backend, warehouse_engine, n_entities, seed, **kwargs
+    )
+    for model_testkit in dag_testkit.models.values():
+        backend.create_resolution(
+            resolution=model_testkit.fake_run().model.to_resolution(),
+            path=model_testkit.resolution_path,
+        )
+        backend.insert_model_data(
+            path=model_testkit.resolution_path,
+            results=model_testkit.probabilities.to_arrow(),
+        )
 
     return dag_testkit
 
