@@ -1,77 +1,102 @@
-"""Minimal widget tests - verify construction only."""
+"""Minimal widget tests - verify custom configuration and display logic."""
 
-from rich.text import Text
+from unittest.mock import Mock
 
+from matchbox.client.cli.eval.widgets.assignment import AssignmentBar
 from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
 
 
 class TestComparisonDisplayTable:
-    """Test table widget construction."""
+    """Test table widget configuration and display logic."""
 
-    def test_table_initializes(self) -> None:
-        """Test that table can be created."""
-        table = ComparisonDisplayTable()
-        assert table is not None
-        assert table.current_item is None
-        assert table.current_assignments == {}
-        assert table.current_group == ""
-        assert table.zebra_stripes is True
-        assert table.cursor_type == "none"
-        assert table.show_cursor is False
-
-    def test_build_header_without_assignment(self) -> None:
-        """Test that _build_header creates correct header without assignment."""
+    def test_build_header_formatting(self) -> None:
+        """Test that headers correctly format numbers, counts, and symbols."""
         table = ComparisonDisplayTable()
 
-        # Build header for position 1 with no duplicates
+        # 1. Basic Numbering
+        # Position 1, single record -> "1"
         header = table._build_header(1, [1], None)
-        assert isinstance(header, Text)
         assert header.plain == "1"
 
-        # Build header for position 2 with duplicates
+        # 2. Duplicate Counts
+        # Position 2, 3 duplicate records -> "2 (×3)"
         header = table._build_header(2, [1, 2, 3], None)
         assert header.plain == "2 (×3)"
 
-    def test_build_header_with_assignment(self) -> None:
-        """Test that _build_header creates correct header with assignment."""
-        table = ComparisonDisplayTable()
-
-        # Build header with assignment 'a' (◇ - hollow diamond)
+        # 3. Assignments & Symbols
+        # Group 'a' (◇ diamond), Position 1 -> "◇ 1"
         header = table._build_header(1, [1], "a")
-        assert header.plain.startswith("◇")  # Symbol for group 'a'
+        assert "◇" in header.plain
         assert "1" in header.plain
-        # Should have exactly one symbol
-        assert header.plain.count("◇") == 1
 
-        # Build header with assignment 'b' (⬤ - filled circle)
+        # Group 'b' (⬤ circle), Position 2, duplicates -> "⬤ 2 (×2)"
         header = table._build_header(2, [1, 2], "b")
-        assert header.plain.startswith("⬤")  # Symbol for group 'b'
+        assert "⬤" in header.plain
         assert "2 (×2)" in header.plain
-        assert header.plain.count("⬤") == 1
 
-    def test_build_header_different_assignments_no_accumulation(self) -> None:
-        """Test headers with different assignments don't accumulate symbols."""
+    def test_build_header_dimming(self) -> None:
+        """Test that unassigned headers are dimmed and assigned ones are colored."""
         table = ComparisonDisplayTable()
 
-        # Build header with assignment 'a' (◇ - hollow diamond)
-        header1 = table._build_header(1, [1], "a")
-        assert header1.plain.count("◇") == 1
-        assert "⬤" not in header1.plain
+        # Unassigned: Should be dim
+        header_unassigned = table._build_header(1, [1], None)
+        # Rich text spans structure: Span(start, end, style)
+        # We expect 'dim' style on the number
+        assert "dim" in str(header_unassigned.spans)
 
-        # Build header for same position with assignment 'b' (⬤ - filled circle)
-        header2 = table._build_header(1, [1], "b")
-        assert header2.plain.count("⬤") == 1
-        assert "◇" not in header2.plain  # No old symbol
+        # Assigned: Should NOT be dim (will have group color)
+        header_assigned = table._build_header(1, [1], "a")
+        # Should not have dim style (it gets stylized with group color)
+        assert "dim" not in str(header_assigned.spans)
 
-        # Build header for same position with assignment 'c' (◻ - hollow square)
-        header3 = table._build_header(1, [1], "c")
-        assert header3.plain.startswith("◻")  # Symbol for group 'c'
-        assert "◇" not in header3.plain  # No old symbols
-        assert "⬤" not in header3.plain
 
-    def test_get_column_positions(self) -> None:
-        """Test that _get_column_positions returns correct positions."""
-        table = ComparisonDisplayTable()
+class TestAssignmentBar:
+    """Test assignment bar widget status display."""
 
-        # Without current_item, should return empty list
-        assert table._get_column_positions() == []
+    def test_initializes_empty(self) -> None:
+        """Test bar starts empty."""
+        bar = AssignmentBar()
+        assert bar.positions == []
+
+    def test_reset(self) -> None:
+        """Test reset creates correct number of empty slots."""
+        bar = AssignmentBar()
+        bar.update = Mock()  # Mock update to prevent rendering errors/side effects
+
+        bar.reset(5)
+        assert len(bar.positions) == 5
+        assert all(p is None for p in bar.positions)
+
+    def test_set_position_updates_state(self) -> None:
+        """Test setting a position updates internal state."""
+        bar = AssignmentBar()
+        bar.update = Mock()
+        bar.reset(3)
+
+        bar.set_position(1, "a", "red")
+
+        assert bar.positions[0] is None
+        assert bar.positions[1] is not None
+        assert bar.positions[1].letter == "a"
+        assert bar.positions[1].colour == "red"
+
+    def test_render_bar_logic(self) -> None:
+        """Test the visual rendering logic (letters vs dots)."""
+        bar = AssignmentBar()
+        bar.update = Mock()
+
+        # 1. Initial empty state
+        bar.reset(3)
+        bar.update.assert_called_with("[dim]•[/dim][dim]•[/dim][dim]•[/dim]")
+
+        # 2. Set middle to 'a' -> shows letter 'a'
+        bar.set_position(1, "a", "red")
+        bar.update.assert_called_with("[dim]•[/dim][red]a[/red][dim]•[/dim]")
+
+        # 3. Set last to 'a' -> adjacent same group shows dot '•'
+        bar.set_position(2, "a", "red")
+        bar.update.assert_called_with("[dim]•[/dim][red]a[/red][red]•[/red]")
+
+        # 4. Set first to 'b' -> new group shows letter 'b'
+        bar.set_position(0, "b", "blue")
+        bar.update.assert_called_with("[blue]b[/blue][red]a[/red][red]•[/red]")

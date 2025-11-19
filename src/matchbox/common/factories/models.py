@@ -52,11 +52,11 @@ T = TypeVar("T", bound=Hashable)
 class MockDeduper(Deduper):
     """Mock deduper that does nothing."""
 
-    def prepare(self, left: pl.DataFrame) -> None:
+    def prepare(self, data: pl.DataFrame) -> None:
         """Mock prepare method."""
         return self
 
-    def dedupe(self, left: pl.DataFrame) -> pl.DataFrame:
+    def dedupe(self, data: pl.DataFrame) -> pl.DataFrame:
         """Mock dedupe method."""
         return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_RESULTS))
 
@@ -850,6 +850,7 @@ def model_factory(
         model_settings=model_settings,
         left_query=left_query,
         right_query=right_query,
+        truth=min(prob_range),
     )
 
     # ==== Entity and probability generation ====
@@ -885,6 +886,7 @@ def model_factory(
         if right_entities
         else None,
         probabilities=probabilities,
+        _threshold=model._truth,
     )
 
 
@@ -964,6 +966,7 @@ def query_to_model_factory(
         model_settings=model_settings,
         left_query=left_query,
         right_query=right_query,
+        truth=min(prob_range),
     )
 
     # Generate probabilities
@@ -987,4 +990,5 @@ def query_to_model_factory(
         if right_clusters
         else None,
         probabilities=probabilities,
+        _threshold=model._truth,
     )

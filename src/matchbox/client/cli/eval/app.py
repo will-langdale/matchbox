@@ -14,7 +14,8 @@ from textual.widgets import Footer, Label
 from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.client.cli.eval.modals import HelpModal, NoSamplesModal
-from matchbox.client.cli.eval.widgets.styling import get_display_text
+from matchbox.client.cli.eval.widgets.assignment import AssignmentBar
+from matchbox.client.cli.eval.widgets.styling import get_group_style
 from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
 from matchbox.client.dags import DAG
 from matchbox.client.eval import EvaluationItem, create_judgement, get_samples
@@ -102,7 +103,6 @@ class EntityResolutionApp(App):
     status: reactive[tuple[str, str]] = reactive(("○ Ready", "dim"))
     current_item: reactive[EvaluationItem | None] = reactive(None)
     current_assignments: reactive[dict[int, str]] = reactive({}, init=False)
-    _current_group_for_display: str = ""
 
     sample_limit: int
     resolution: ModelResolutionPath
@@ -121,6 +121,7 @@ class EntityResolutionApp(App):
         num_samples: int = 5,
         dag: DAG | None = None,
         show_help: bool = False,
+        scroll_debounce_delay: float | None = 0.3,
     ) -> None:
         """Initialise the entity resolution app.
 
@@ -130,6 +131,8 @@ class EntityResolutionApp(App):
             user: Username for authentication (overrides settings)
             dag: Pre-loaded DAG with warehouse location attached
             show_help: Whether to show help on start
+            scroll_debounce_delay: Delay before updating column headers after scroll.
+                Set to None to disable debouncing (useful for tests).
         """
         super().__init__()
 
@@ -139,18 +142,22 @@ class EntityResolutionApp(App):
         self.dag = dag
         self.resolution = dag.get_model(resolution).resolution_path
         self.show_help = show_help
+        self._scroll_debounce_delay = scroll_debounce_delay
 
     # Lifecycle methods
     def compose(self) -> ComposeResult:
         """Compose the main application UI."""
         yield Vertical(
             Horizontal(
-                Label(id="status-left"),
+                Label("-", id="current-group-label"),
+                AssignmentBar(id="assignment-bar"),
                 Label(id="status-right"),
                 id="status-bar",
                 classes="status-bar",
             ),
-            ComparisonDisplayTable(id="record-table"),
+            ComparisonDisplayTable(
+                id="record-table", scroll_debounce_delay=self._scroll_debounce_delay
+            ),
             id="main-container",
         )
         yield Footer()
@@ -191,98 +198,66 @@ class EntityResolutionApp(App):
         if current := self.queue.current:
             current.assignments = new_assignments
 
+        # Update assignment bar
+        _, colour = get_group_style(message.group)
+        assignment_bar = self.query_one("#assignment-bar", AssignmentBar)
+        assignment_bar.set_position(message.column_idx, message.group.upper(), colour)
+
     def on_comparison_display_table_current_group_changed(
         self, message: ComparisonDisplayTable.CurrentGroupChanged
     ) -> None:
-        """Update status bar when table's current group changes."""
-        # Store for status bar display (underlines current group)
-        self._current_group_for_display = message.group
-        self._update_status_labels()
+        """Update current group label when table's current group changes."""
+        # Update current group label
+        if message.group:
+            _, colour = get_group_style(message.group)
+            label_text = f"[{colour}]{message.group.upper()}[/{colour}]"
+        else:
+            label_text = "-"
+        self.query_one("#current-group-label", Label).update(label_text)
 
     # Reactive watchers
-    def watch_status(self, new_value: tuple[str, str]) -> None:
+    def watch_status(self) -> None:
         """React to status changes."""
         self._update_status_labels()
 
     def watch_current_item(self, item: EvaluationItem | None) -> None:
-        """React to item changes - propagate to table."""
+        """React to item changes - propagate to table and reset assignment bar."""
         table = self.query_one(ComparisonDisplayTable)
         table.current_item = item
 
+        # Reset assignment bar for new item
+        if item:
+            unique_record_groups = item.get_unique_record_groups()
+            num_columns = len(unique_record_groups)
+            assignment_bar = self.query_one("#assignment-bar", AssignmentBar)
+            assignment_bar.reset(num_columns)
+
+            # Load existing assignments into the bar
+            if self.current_assignments:
+                for col_idx, group in self.current_assignments.items():
+                    _, colour = get_group_style(group)
+                    assignment_bar.set_position(col_idx, group.upper(), colour)
+
+        # Reset current group label
+        self.query_one("#current-group-label", Label).update("-")
+
     def watch_current_assignments(self, assignments: dict[int, str]) -> None:
-        """React to assignment changes - propagate to table and update status."""
+        """React to assignment changes - propagate to table."""
         table = self.query_one(ComparisonDisplayTable)
         table.current_assignments = assignments
-        self._update_status_labels()
 
     # Private methods
     def _load_current_item(self) -> None:
         """Load current queue item into the display."""
         current = self.queue.current
         if current:
-            self._current_group_for_display = ""
-
             # Set reactive properties (will propagate to table via watchers)
-            self.current_item = current.item
             self.current_assignments = current.assignments.copy()
+            self.current_item = current.item
 
     def _update_status_labels(self) -> None:
-        """Update both status bar labels."""
-        self.query_one("#status-left", Label).update(self._build_status_left())
+        """Update right status label."""
         self.query_one("#status-right", Label).update(self._build_status_right())
-
-    def _compute_group_counts(self) -> dict[str, int]:
-        """Compute group counts for current entity."""
-        if not self.current_item:
-            return {}
-
-        counts = {}
-        unique_record_groups = self.current_item.get_unique_record_groups()
-
-        for display_col_index, group in self.current_assignments.items():
-            if display_col_index >= len(unique_record_groups):
-                continue
-            duplicate_group_size = len(unique_record_groups[display_col_index])
-            counts[group] = counts.get(group, 0) + duplicate_group_size
-
-        if (
-            self._current_group_for_display
-            and self._current_group_for_display not in counts
-        ):
-            counts[self._current_group_for_display] = 0
-
-        assigned_display_cols = set(self.current_assignments.keys())
-        unassigned_leaf_count = 0
-        for display_col_index in range(len(unique_record_groups)):
-            if display_col_index in assigned_display_cols:
-                continue
-            duplicate_group = unique_record_groups[display_col_index]
-            unassigned_leaf_count += len(duplicate_group)
-
-        if unassigned_leaf_count > 0:
-            counts["unassigned"] = unassigned_leaf_count
-
-        return counts
-
-    def _build_status_left(self) -> str:
-        """Build left status text with groups."""
-        if self.queue.total_count == 0:
-            return "[yellow]No samples to evaluate[/]"
-
-        group_counts = self._compute_group_counts()
-        if not group_counts:
-            return "[dim]No groups assigned[/]"
-
-        group_parts = []
-        for group, count in group_counts.items():
-            display_text, colour = get_display_text(group, count)
-
-            if group == self._current_group_for_display:
-                group_parts.append(f"[bold {colour} underline]{display_text}[/]")
-            else:
-                group_parts.append(f"[bold {colour}]{display_text}[/]")
-
-        return "  ".join(group_parts)
 
     def _build_status_right(self) -> str:
         """Build right status text with status indicator."""
@@ -412,13 +387,18 @@ class EntityResolutionApp(App):
     async def action_clear(self) -> None:
         """Clear current entity's group assignments."""
         if self.queue.current:
-            self._current_group_for_display = ""
-
             # Clear reactive assignments (will propagate to table)
             self.current_assignments = {}
 
             # Update queue item
             self.queue.current.assignments = {}
+
+            # Reset assignment bar and current group label
+            if self.current_item:
+                unique_record_groups = self.current_item.get_unique_record_groups()
+                assignment_bar = self.query_one("#assignment-bar", AssignmentBar)
+                assignment_bar.reset(len(unique_record_groups))
+            self.query_one("#current-group-label", Label).update("-")
 
     async def action_show_help(self) -> None:
         """Show the help modal."""
