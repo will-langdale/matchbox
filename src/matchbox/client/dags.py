@@ -146,7 +146,7 @@ class DAG:
         if len(steps) == 0:
             raise ValueError("No root node found, DAG might contain cycles")
         elif len(steps) > 1:
-            raise ValueError("Some models or sources are disconnected")
+            raise ValueError("Some models or sources are unreachable")
         else:
             return steps[0]
 
@@ -442,7 +442,7 @@ class DAG:
     ) -> None:
         """Run entire DAG and send results to server."""
         # Determine order of execution steps
-        root_node = self.final_step.name
+        root_nodes = self.final_steps
 
         def depth_first(node: str, sequence: list) -> None:
             sequence.append(node)
@@ -451,7 +451,8 @@ class DAG:
                     depth_first(neighbour, sequence)
 
         inverse_sequence = []
-        depth_first(root_node, inverse_sequence)
+        for root_node in root_nodes:
+            depth_first(root_node.name, inverse_sequence)
         sequence = list(reversed(inverse_sequence))
 
         # Identify skipped nodes
@@ -499,6 +500,10 @@ class DAG:
 
         Makes it immutable, then moves the default pointer to it.
         """
+        # Trigger error if there isn't a single root
+        _ = self.final_step
+
+        # tries to get apex, error if it doesn't exist
         _handler.set_run_mutable(collection=self.name, run_id=self.run, mutable=False)
         _handler.set_run_default(collection=self.name, run_id=self.run, default=True)
 

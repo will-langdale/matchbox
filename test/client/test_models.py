@@ -53,12 +53,15 @@ def test_init_and_run_model(sqlite_warehouse: Engine, matchbox_api: MockRouter) 
     )
 
     # Mock API
-    matchbox_api.get("/query").mock(
+    query_endpoint = matchbox_api.get("/query").mock(
         side_effect=[
             # First query
             Response(200, content=table_to_buffer(foo.data).read()),
             Response(200, content=table_to_buffer(bar.data).read()),
-            # Second query (for validation)
+            # Second query (cached)
+            Response(200, content=table_to_buffer(foo.data).read()),
+            Response(200, content=table_to_buffer(bar.data).read()),
+            # Third query (for validation)
             Response(200, content=table_to_buffer(foo_leafy_data).read()),
             Response(200, content=table_to_buffer(bar_leafy_data).read()),
         ]
@@ -88,6 +91,15 @@ def test_init_and_run_model(sqlite_warehouse: Engine, matchbox_api: MockRouter) 
     model.run()
     assert model.results.left_root_leaf is None
     assert model.results.right_root_leaf is None
+
+    # When caching queries, the first ones still have to go through
+    old_query_count = query_endpoint.call_count
+    model.run(cache_queries=True)
+    assert query_endpoint.call_count > old_query_count
+    # Subsequent queries are cached
+    old_query_count = query_endpoint.call_count
+    model.run(cache_queries=True)
+    assert query_endpoint.call_count == old_query_count
 
     model.run(for_validation=True)
     assert model.results.left_root_leaf is not None

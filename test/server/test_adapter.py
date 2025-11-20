@@ -962,7 +962,7 @@ class TestMatchboxBackend:
 
     def test_model_results_shared_clusters(self) -> None:
         """Test that model results data can be inserted when clusters are shared."""
-        with self.scenario(self.backend, "convergent") as dag_testkit:
+        with self.scenario(self.backend, "convergent_partial") as dag_testkit:
             for model_testkit in dag_testkit.models.values():
                 self.backend.create_resolution(
                     path=model_testkit.resolution_path,
@@ -1255,9 +1255,11 @@ class TestMatchboxBackend:
                 user_id=user_id,
             )
 
-        with self.scenario(self.backend, "dedupe") as dag_testkit:
-            crn_testkit = dag_testkit.sources.get("crn")
-            naive_crn_testkit = dag_testkit.models.get("naive_test_crn")
+        # Convergent scenario allows testing we don't accidentally return metadata
+        # for sources that aren't relevant for a point of truth
+        with self.scenario(self.backend, "convergent") as dag_testkit:
+            source_testkit = dag_testkit.sources.get("foo_a")
+            model_testkit = dag_testkit.models.get("naive_test_foo_a")
 
             user_id = self.backend.login("alice")
 
@@ -1265,7 +1267,7 @@ class TestMatchboxBackend:
             # So if we sample from a source resolution, we get nothing
             user_id = self.backend.login("alice")
             samples_source = self.backend.sample_for_eval(
-                n=10, path=crn_testkit.resolution_path, user_id=user_id
+                n=10, path=source_testkit.resolution_path, user_id=user_id
             )
             assert len(samples_source) == 0
 
@@ -1273,18 +1275,18 @@ class TestMatchboxBackend:
             # Query backend to form expectations
             resolution_clusters = pl.from_arrow(
                 self.backend.query(
-                    source=crn_testkit.resolution_path,
-                    point_of_truth=naive_crn_testkit.resolution_path,
+                    source=source_testkit.resolution_path,
+                    point_of_truth=model_testkit.resolution_path,
                 )
             )
             source_clusters = pl.from_arrow(
-                self.backend.query(source=crn_testkit.resolution_path)
+                self.backend.query(source=source_testkit.resolution_path)
             )
             # We can request more than available
             assert len(resolution_clusters["id"].unique()) < 99
 
             samples_99 = self.backend.sample_for_eval(
-                n=99, path=naive_crn_testkit.resolution_path, user_id=user_id
+                n=99, path=model_testkit.resolution_path, user_id=user_id
             )
 
             assert samples_99.schema.equals(SCHEMA_EVAL_SAMPLES)
@@ -1293,7 +1295,7 @@ class TestMatchboxBackend:
             expected_sample = (
                 resolution_clusters.join(source_clusters, on="key", suffix="_source")
                 .rename({"id": "root", "id_source": "leaf"})
-                .with_columns(pl.lit("crn").alias("source"))
+                .with_columns(pl.lit("foo_a").alias("source"))
             )
 
             assert_frame_equal(
@@ -1307,16 +1309,20 @@ class TestMatchboxBackend:
             # We can request less than available
             assert len(resolution_clusters["id"].unique()) > 5
             samples_5 = self.backend.sample_for_eval(
-                n=5, path=naive_crn_testkit.resolution_path, user_id=user_id
+                n=5, path=model_testkit.resolution_path, user_id=user_id
             )
             assert len(samples_5["root"].unique()) == 5
 
             # If user has recent judgements, exclude clusters
             first_cluster_id = resolution_clusters["id"][0]
             first_cluster = resolution_clusters.filter(pl.col("id") == first_cluster_id)
-            first_cluster_leaves = first_cluster.join(
-                source_clusters, on="key", suffix="_source"
-            )["id_source"].to_list()
+            first_cluster_leaves = (
+                first_cluster.join(source_clusters, on="key", suffix="_source")[
+                    "id_source"
+                ]
+                .unique()  # multiple keys can map to same cluster
+                .to_list()
+            )
 
             self.backend.insert_judgement(
                 judgement=Judgement(
@@ -1327,7 +1333,7 @@ class TestMatchboxBackend:
             )
 
             samples_without_cluster = self.backend.sample_for_eval(
-                n=99, path=naive_crn_testkit.resolution_path, user_id=user_id
+                n=99, path=model_testkit.resolution_path, user_id=user_id
             )
             # Compared to the first query, we should have one fewer cluster
             assert len(samples_99["root"].unique()) - 1 == len(
@@ -1340,9 +1346,13 @@ class TestMatchboxBackend:
             # If a user has judged all available clusters, nothing is returned
             for cluster_id in resolution_clusters["id"].unique():
                 cluster = resolution_clusters.filter(pl.col("id") == cluster_id)
-                cluster_leaves = cluster.join(
-                    source_clusters, on="key", suffix="_source"
-                )["id_source"].to_list()
+                cluster_leaves = (
+                    cluster.join(source_clusters, on="key", suffix="_source")[
+                        "id_source"
+                    ]
+                    .unique()  # multiple keys can map to same cluster
+                    .to_list()
+                )
 
                 self.backend.insert_judgement(
                     judgement=Judgement(
@@ -1353,6 +1363,6 @@ class TestMatchboxBackend:
                 )
 
             samples_all_done = self.backend.sample_for_eval(
-                n=99, path=naive_crn_testkit.resolution_path, user_id=user_id
+                n=99, path=model_testkit.resolution_path, user_id=user_id
             )
             assert len(samples_all_done) == 0
