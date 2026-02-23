@@ -44,6 +44,7 @@ from matchbox.common.exceptions import (
     MatchboxCollectionNotFoundError,
     MatchboxResolutionAlreadyExists,
     MatchboxResolutionNotFoundError,
+    MatchboxResolutionNotQueriable,
     MatchboxRunNotFoundError,
 )
 from matchbox.server.base import (
@@ -319,7 +320,9 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             return set(session.execute(descendant_query).scalars().all())
 
     def get_lineage(
-        self, sources: list["SourceConfigs"] | None = None
+        self,
+        sources: list["SourceConfigs"] | None = None,
+        queryable_only: bool = False,
     ) -> list[tuple[int, int | None]]:
         """Returns lineage ordered by priority.
 
@@ -327,6 +330,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
         Args:
             sources: If provided, only return lineage paths that lead to these sources
+            queryable_only: If true, only include queryable resolution types
 
         Returns:
             List of tuples (resolution_id, source_config_id) ordered by priority.
@@ -338,12 +342,26 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
                     SourceConfigs.source_config_id,
                 )
                 .join(
+                    Resolutions,
+                    ResolutionFrom.parent == Resolutions.resolution_id,
+                )
+                .join(
                     SourceConfigs,
                     ResolutionFrom.parent == SourceConfigs.resolution_id,
                     isouter=True,
                 )
                 .where(ResolutionFrom.child == self.resolution_id)
             )
+
+            if queryable_only:
+                query = query.where(
+                    Resolutions.type.in_(
+                        [
+                            ResolutionType.SOURCE.value,
+                            ResolutionType.RESOLVER.value,
+                        ]
+                    )
+                )
 
             if sources:
                 # Filter by source configs
@@ -373,7 +391,14 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             )
 
             # Add self at beginning (highest priority - level 0)
-            return [(self.resolution_id, self_source_config_id)] + list(results)
+            lineage_self = []
+            if not queryable_only or self.type in {
+                ResolutionType.SOURCE.value,
+                ResolutionType.RESOLVER.value,
+            }:
+                lineage_self = [(self.resolution_id, self_source_config_id)]
+
+            return lineage_self + list(results)
 
     @classmethod
     def from_path(
@@ -489,6 +514,14 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
                 ),
                 session=session,
             )
+            if left_parent.type not in {
+                ResolutionType.SOURCE.value,
+                ResolutionType.RESOLVER.value,
+            }:
+                raise MatchboxResolutionNotQueriable(
+                    "Model resolutions must only depend on source or resolver "
+                    "resolutions."
+                )
             cls._create_closure_entries(session, resolution_orm, left_parent)
 
             if resolution.config.type == ModelType.LINKER:
@@ -500,6 +533,14 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
                     ),
                     session=session,
                 )
+                if right_parent.type not in {
+                    ResolutionType.SOURCE.value,
+                    ResolutionType.RESOLVER.value,
+                }:
+                    raise MatchboxResolutionNotQueriable(
+                        "Model resolutions must only depend on source or resolver "
+                        "resolutions."
+                    )
                 cls._create_closure_entries(session, resolution_orm, right_parent)
 
         elif resolution.resolution_type == ResolutionType.RESOLVER:
@@ -513,6 +554,10 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
                     ),
                     session=session,
                 )
+                if parent.type != ResolutionType.MODEL.value:
+                    raise MatchboxResolutionNotQueriable(
+                        "Resolver resolutions must only depend on model resolutions."
+                    )
                 cls._create_closure_entries(
                     session,
                     resolution_orm,

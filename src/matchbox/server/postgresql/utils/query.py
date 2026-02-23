@@ -23,7 +23,6 @@ from matchbox.server.postgresql.orm import (
     ClusterSourceKey,
     Contains,
     ResolutionClusters,
-    ResolutionFrom,
     Resolutions,
     SourceConfigs,
 )
@@ -88,120 +87,26 @@ def resolver_membership_subquery(
     return roots_query.union(leaves_query).subquery(alias)
 
 
-def _source_config_ids_for_resolution(
-    session: Session,
+def build_unified_query(
     resolution: Resolutions,
-) -> list[int]:
-    """Return all source config IDs represented beneath a resolution."""
-    if (
-        resolution.type == ResolutionType.SOURCE
-        and resolution.source_config is not None
-    ):
-        return [resolution.source_config.source_config_id]
-
-    source_rows = session.execute(
-        select(SourceConfigs.source_config_id)
-        .join(Resolutions, Resolutions.resolution_id == SourceConfigs.resolution_id)
-        .join(ResolutionFrom, ResolutionFrom.parent == Resolutions.resolution_id)
-        .where(
-            ResolutionFrom.child == resolution.resolution_id,
-            Resolutions.type == ResolutionType.SOURCE,
-        )
-        .distinct()
-    ).all()
-    return [int(source_config_id) for (source_config_id,) in source_rows]
-
-
-def _build_source_filter(
-    session: Session,
-    resolution: Resolutions,
-    sources: list[SourceConfigs] | None,
-) -> ColumnElement[bool]:
-    """Build the source filter used by unified query construction."""
-    if sources is not None:
-        source_config_ids = [source.source_config_id for source in sources]
-    else:
-        source_config_ids = _source_config_ids_for_resolution(session, resolution)
-
-    return ClusterSourceKey.source_config_id.in_(source_config_ids)
-
-
-def _projected_resolver_chain(
-    session: Session,
-    point_of_truth: Resolutions,
-) -> list[int]:
-    """Project a point-of-truth lineage onto queryable resolver resolutions."""
-    resolver_distance: dict[int, int] = {point_of_truth.resolution_id: 0}
-
-    ancestor_resolvers = session.execute(
-        select(ResolutionFrom.parent, ResolutionFrom.level)
-        .join(Resolutions, Resolutions.resolution_id == ResolutionFrom.parent)
-        .where(
-            ResolutionFrom.child == point_of_truth.resolution_id,
-            Resolutions.type == ResolutionType.RESOLVER,
-            Resolutions.upload_stage == UploadStage.COMPLETE,
-        )
-    ).all()
-    for resolver_id, level in ancestor_resolvers:
-        canonical_id = int(resolver_id)
-        canonical_level = int(level)
-        resolver_distance[canonical_id] = max(
-            resolver_distance.get(canonical_id, 0),
-            canonical_level,
-        )
-
-    model_lineage_rows = session.execute(
-        select(ResolutionFrom.parent, ResolutionFrom.level)
-        .join(Resolutions, Resolutions.resolution_id == ResolutionFrom.parent)
-        .where(
-            ResolutionFrom.child == point_of_truth.resolution_id,
-            Resolutions.type == ResolutionType.MODEL,
-        )
-    ).all()
-    if model_lineage_rows:
-        model_levels: dict[int, int] = {
-            int(model_id): int(level) for model_id, level in model_lineage_rows
-        }
-        model_ids = list(model_levels.keys())
-        projected_rows = session.execute(
-            select(ResolutionFrom.parent, ResolutionFrom.child)
-            .join(Resolutions, Resolutions.resolution_id == ResolutionFrom.child)
-            .where(
-                ResolutionFrom.parent.in_(model_ids),
-                ResolutionFrom.level == 1,
-                Resolutions.type == ResolutionType.RESOLVER,
-                Resolutions.upload_stage == UploadStage.COMPLETE,
-            )
-        ).all()
-
-        for model_id, resolver_id in projected_rows:
-            canonical_model_id = int(model_id)
-            canonical_resolver_id = int(resolver_id)
-            # Model depth from point-of-truth maps to resolver depth one step lower.
-            canonical_distance = max(model_levels[canonical_model_id] - 1, 0)
-            resolver_distance[canonical_resolver_id] = max(
-                resolver_distance.get(canonical_resolver_id, 0),
-                canonical_distance,
-            )
-
-    return [
-        resolver_id
-        for resolver_id, _ in sorted(
-            resolver_distance.items(),
-            key=lambda item: (item[1], item[0]),
-        )
-    ]
-
-
-def _resolver_projection_from_cluster_keys(
-    resolver_ids: list[int],
+    sources: list[SourceConfigs] | None = None,
+    level: Literal["leaf", "key"] = "leaf",
     *,
-    alias_prefix: str,
-) -> tuple[object, ColumnElement[int]]:
-    """Build resolver projection over source leaves with source-cluster fallback."""
+    alias_prefix: str = "resolver_assignments",
+    include_source_config_id: bool = False,
+) -> Select:
+    """Build a query that projects records to root IDs through the hierarchy."""
+    lineage = resolution.get_lineage(sources=sources, queryable_only=True)
+    resolver_ids: list[int] = []
+    source_config_ids: list[int] = []
+    for resolution_id, source_config_id in lineage:
+        if source_config_id is None:
+            resolver_ids.append(resolution_id)
+        else:
+            source_config_ids.append(source_config_id)
+
     from_clause = ClusterSourceKey
     projected_roots: list[ColumnElement[int]] = []
-
     for index, resolver_id in enumerate(resolver_ids):
         assignments = resolver_leaf_to_root_subquery(
             resolution_id=resolver_id,
@@ -215,56 +120,10 @@ def _resolver_projection_from_cluster_keys(
         )
         projected_roots.append(assignments.c.root_id)
 
-    root_column = (
+    root_projection: ColumnElement[int] = (
         func.coalesce(*projected_roots, ClusterSourceKey.cluster_id)
         if projected_roots
         else ClusterSourceKey.cluster_id
-    )
-    return from_clause, root_column
-
-
-def _build_root_projection(
-    session: Session,
-    resolution: Resolutions,
-    *,
-    alias_prefix: str,
-) -> tuple[object, ColumnElement[int]]:
-    """Build the root projection expression for a source or resolver resolution."""
-    if resolution.type == ResolutionType.SOURCE:
-        return ClusterSourceKey, ClusterSourceKey.cluster_id
-
-    if resolution.type == ResolutionType.RESOLVER:
-        resolver_ids = _projected_resolver_chain(
-            session=session,
-            point_of_truth=resolution,
-        )
-        return _resolver_projection_from_cluster_keys(
-            resolver_ids,
-            alias_prefix=alias_prefix,
-        )
-
-    raise MatchboxResolutionNotQueriable
-
-
-def build_unified_query(
-    session: Session,
-    resolution: Resolutions,
-    sources: list[SourceConfigs] | None = None,
-    level: Literal["leaf", "key"] = "leaf",
-    *,
-    alias_prefix: str = "resolver_assignments",
-    include_source_config_id: bool = False,
-) -> Select:
-    """Build a query that projects records to root IDs through the hierarchy."""
-    source_filter = _build_source_filter(
-        session=session,
-        resolution=resolution,
-        sources=sources,
-    )
-    from_clause, root_projection = _build_root_projection(
-        session=session,
-        resolution=resolution,
-        alias_prefix=alias_prefix,
     )
 
     selection: list[ColumnElement] = [
@@ -276,7 +135,11 @@ def build_unified_query(
     if include_source_config_id:
         selection.append(ClusterSourceKey.source_config_id.label("source_config_id"))
 
-    query_stmt = select(*selection).select_from(from_clause).where(source_filter)
+    query_stmt = (
+        select(*selection)
+        .select_from(from_clause)
+        .where(ClusterSourceKey.source_config_id.in_(source_config_ids))
+    )
 
     if level == "leaf":
         query_stmt = query_stmt.distinct()
@@ -285,14 +148,12 @@ def build_unified_query(
 
 
 def _build_target_cluster_cte(
-    session: Session,
     key: str,
     source_config_id: int,
     resolution: Resolutions,
 ) -> Select:
     """Build the target cluster query for a source key."""
     source_projection = build_unified_query(
-        session=session,
         resolution=resolution,
         level="key",
         alias_prefix="resolver_assignments_match_target",
@@ -312,14 +173,12 @@ def _build_target_cluster_cte(
 
 
 def _build_matching_leaves_cte(
-    session: Session,
     source_and_target_ids: list[int],
     resolution: Resolutions,
     cluster: int,
 ) -> Select:
     """Build the matching keys query for a resolved cluster."""
     full_projection = build_unified_query(
-        session=session,
         resolution=resolution,
         level="key",
         alias_prefix="resolver_assignments_match_all",
@@ -361,7 +220,6 @@ def query(
             raise MatchboxResolutionNotQueriable
 
         query_stmt = build_unified_query(
-            session=session,
             resolution=truth_resolution,
             sources=[source_config],
             level="key",
@@ -413,7 +271,6 @@ def match(
         ]
 
         target_cluster_query = _build_target_cluster_cte(
-            session=session,
             key=key,
             source_config_id=source_config.source_config_id,
             resolution=resolver_resolution,
@@ -438,7 +295,6 @@ def match(
 
         matched_rows = session.execute(
             _build_matching_leaves_cte(
-                session=session,
                 source_and_target_ids=source_and_target_ids,
                 resolution=resolver_resolution,
                 cluster=int(cluster),

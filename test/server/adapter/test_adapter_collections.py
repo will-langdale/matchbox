@@ -28,6 +28,7 @@ from matchbox.common.exceptions import (
     MatchboxResolutionAlreadyExists,
     MatchboxResolutionExistingData,
     MatchboxResolutionNotFoundError,
+    MatchboxResolutionNotQueriable,
     MatchboxResolutionUpdateError,
     MatchboxRunNotFoundError,
     MatchboxRunNotWriteable,
@@ -540,6 +541,15 @@ class TestMatchboxCollectionsBackend:
                 path=dedupe_2_testkit.resolution_path,
             )
 
+            for dedupe_testkit in (dedupe_1_testkit, dedupe_2_testkit):
+                resolver_path, resolver_resolution, _ = (
+                    canonical_resolver_artifacts_from_model_testkit(dedupe_testkit)
+                )
+                self.backend.create_resolution(
+                    resolution=resolver_resolution,
+                    path=resolver_path,
+                )
+
             assert self.backend.models.count() == models_count + 2
 
             # Test linker insertion
@@ -628,6 +638,73 @@ class TestMatchboxCollectionsBackend:
                 self.backend.update_resolution(
                     resolution=corrupt_resolution,
                     path=linker_testkit.resolution_path,
+                )
+
+    def test_insert_model_rejects_model_parent(self) -> None:
+        """Model parents must be source or resolver resolutions."""
+        with self.scenario(self.backend, "dedupe") as dag_testkit:
+            source_testkit = dag_testkit.sources.get("crn")
+            invalid_model = model_factory(
+                name="invalid_model_parent",
+                dag=dag_testkit.dag,
+                left_testkit=source_testkit,
+                true_entities=dag_testkit.source_to_linked["crn"].true_entities,
+            ).fake_run()
+
+            bad_parent = dag_testkit.models.get("naive_test_crn").name
+            invalid_config = ModelConfig.model_validate(
+                invalid_model.model.config.model_copy(
+                    update={
+                        "left_query": invalid_model.model.config.left_query.model_copy(
+                            update={
+                                "model_resolution": None,
+                                "resolver_resolution": bad_parent,
+                            }
+                        )
+                    }
+                )
+            )
+            invalid_resolution = Resolution.model_validate(
+                invalid_model.model.to_resolution().model_copy(
+                    update={"config": invalid_config}
+                )
+            )
+
+            with pytest.raises(
+                MatchboxResolutionNotQueriable,
+                match="source or resolver",
+            ):
+                self.backend.create_resolution(
+                    resolution=invalid_resolution,
+                    path=invalid_model.resolution_path,
+                )
+
+    def test_insert_resolver_rejects_non_model_input(self) -> None:
+        """Resolver inputs must be model resolutions."""
+        with self.scenario(self.backend, "dedupe") as dag_testkit:
+            invalid_resolver_path = ResolutionPath(
+                collection=dag_testkit.dag.name,
+                run=dag_testkit.dag.run,
+                name="resolver_invalid_parent",
+            )
+            invalid_resolver_resolution = Resolution(
+                description="Invalid resolver parent",
+                resolution_type="resolver",
+                config={
+                    "resolver_class": "Components",
+                    "inputs": ("crn",),
+                    "resolver_settings": "{}",
+                },
+                fingerprint=b"invalid_parent",
+            )
+
+            with pytest.raises(
+                MatchboxResolutionNotQueriable,
+                match="depend on model",
+            ):
+                self.backend.create_resolution(
+                    resolution=invalid_resolver_resolution,
+                    path=invalid_resolver_path,
                 )
 
     def test_model_results_basic(self) -> None:

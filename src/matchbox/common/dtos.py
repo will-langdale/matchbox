@@ -430,6 +430,29 @@ class QueryConfig(BaseModel):
     threshold: int | None = None
     cleaning: dict[str, str] | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalise_resolutions(cls, value: object) -> object:
+        """Normalise legacy model point-of-truth to canonical resolver naming."""
+        if not isinstance(value, dict):
+            return value
+
+        model_resolution = value.get("model_resolution")
+        resolver_resolution = value.get("resolver_resolution")
+        if model_resolution is None:
+            return value
+
+        canonical_resolver = f"resolver_{model_resolution}"
+        if resolver_resolution is None:
+            return value | {"resolver_resolution": canonical_resolver}
+
+        if resolver_resolution != canonical_resolver:
+            raise ValueError(
+                "model_resolution and resolver_resolution must match canonical "
+                "'resolver_<model_resolution>' naming."
+            )
+        return value
+
     @model_validator(mode="after")
     def validate_resolutions(self) -> Self:
         """Ensure that resolution settings are compatible."""
@@ -448,10 +471,10 @@ class QueryConfig(BaseModel):
     def dependencies(self) -> list[ResolutionName]:
         """Return all resolutions that this query needs."""
         deps = list(self.source_resolutions)
-        if self.resolver_resolution:
-            deps.append(self.resolver_resolution)
-        elif self.model_resolution:
+        if self.model_resolution:
             deps.append(self.model_resolution)
+        elif self.resolver_resolution:
+            deps.append(self.resolver_resolution)
 
         return deps
 
@@ -529,12 +552,20 @@ class ModelConfig(BaseModel):
     @property
     def parents(self) -> list[ResolutionName]:
         """Returns all resolution names directly input to this config."""
+
+        def parent_for_query(query: QueryConfig) -> ResolutionName:
+            if query.model_resolution:
+                return query.model_resolution
+            if query.resolver_resolution:
+                return query.resolver_resolution
+            return query.source_resolutions[0]
+
         if self.right_query:
             return [
-                self.left_query.point_of_truth,
-                self.right_query.point_of_truth,
+                parent_for_query(self.left_query),
+                parent_for_query(self.right_query),
             ]
-        return [self.left_query.point_of_truth]
+        return [parent_for_query(self.left_query)]
 
     def stable_hash(self) -> str:
         """Return deterministic hash for this config."""
