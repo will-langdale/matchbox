@@ -8,6 +8,12 @@ from pyarrow import Table
 from pyarrow.parquet import read_table
 
 from matchbox.client._handler.main import CLIENT, http_retry, url_params
+from matchbox.client._handler.shim import (
+    canonical_resolver_path_for_model,
+    canonical_resolver_resolution_for_model,
+    project_run_for_legacy_dag,
+    resolver_upload_from_model_results,
+)
 from matchbox.client._settings import settings
 from matchbox.common.arrow import (
     table_to_buffer,
@@ -22,6 +28,8 @@ from matchbox.common.dtos import (
     PermissionType,
     Resolution,
     ResolutionPath,
+    ResolutionType,
+    ResolverResolutionPath,
     ResourceOperationStatus,
     Run,
     RunID,
@@ -150,7 +158,8 @@ def get_run(collection: CollectionName, run_id: RunID) -> Run:
     logger.debug("Retrieving", prefix=log_prefix)
 
     res = CLIENT.get(f"/collections/{collection}/runs/{run_id}")
-    return Run.model_validate(res.json())
+    run = Run.model_validate(res.json())
+    return project_run_for_legacy_dag(run)
 
 
 @http_retry
@@ -206,6 +215,43 @@ def set_run_default(
 # Resolution management
 
 
+def _set_data_raw(path: ResolutionPath, data: pl.DataFrame | Table) -> str:
+    """Upload resolution data without compatibility side effects."""
+    log_prefix = f"Resolution {path}"
+    logger.debug("Uploading results", prefix=log_prefix)
+
+    data_arrow = data.to_arrow() if isinstance(data, pl.DataFrame) else data
+    buffer = table_to_buffer(table=data_arrow)
+
+    # Initialise upload
+    logger.debug("Uploading data", prefix=log_prefix)
+    metadata_res = CLIENT.post(
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data",
+        files={"file": ("data.parquet", buffer, "application/octet-stream")},
+    )
+
+    upload_id = ResourceOperationStatus.model_validate(metadata_res.json()).details
+
+    # Poll until complete with retry/timeout configuration
+    stage = UploadStage.PROCESSING
+    while stage == UploadStage.PROCESSING:
+        status_res = CLIENT.get(
+            f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data/status",
+            params=url_params({"upload_id": upload_id}),
+        )
+        info = UploadInfo.model_validate(status_res.json())
+        stage = info.stage
+        logger.debug(f"Uploading data: {stage}", prefix=log_prefix)
+
+        if stage == UploadStage.READY:
+            raise MatchboxServerFileError(info.error)
+
+        time.sleep(settings.retry_delay)
+
+    logger.debug("Finished", prefix=log_prefix)
+    return upload_id
+
+
 @http_retry
 def create_resolution(
     resolution: Resolution,
@@ -255,40 +301,33 @@ def get_resolution(path: ResolutionPath) -> Resolution | None:
 
 @profile_time(kwarg="path")
 @http_retry
-def set_data(path: ResolutionPath, data: pl.DataFrame | Table) -> None:
-    """Upload source hashes or model results to server."""
-    log_prefix = f"Resolution {path}"
-    logger.debug("Uploading results", prefix=log_prefix)
-
+def set_data(path: ResolutionPath, data: pl.DataFrame | Table) -> str:
+    """Upload data and ensure implicit resolver materialisation for models."""
     data_arrow = data.to_arrow() if isinstance(data, pl.DataFrame) else data
-    buffer = table_to_buffer(table=data_arrow)
+    upload_id = _set_data_raw(path=path, data=data_arrow)
+    model_columns = {"left_id", "right_id", "probability"}
+    if not model_columns.issubset(set(data_arrow.column_names)):
+        return upload_id
 
-    # Initialise upload
-    logger.debug("Uploading data", prefix=log_prefix)
-    metadata_res = CLIENT.post(
-        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data",
-        files={"file": ("data.parquet", buffer, "application/octet-stream")},
+    resolution = get_resolution(path=path)
+    if resolution is None or resolution.resolution_type != ResolutionType.MODEL:
+        return upload_id
+
+    threshold = int(resolution.truth) if resolution.truth is not None else 100
+    model_path = ModelResolutionPath.model_validate(path.model_dump())
+    resolver_upload = resolver_upload_from_model_results(
+        results=data_arrow,
+        threshold=threshold,
     )
-
-    upload_id = ResourceOperationStatus.model_validate(metadata_res.json()).details
-
-    # Poll until complete with retry/timeout configuration
-    stage = UploadStage.PROCESSING
-    while stage == UploadStage.PROCESSING:
-        status_res = CLIENT.get(
-            f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data/status",
-            params=url_params({"upload_id": upload_id}),
-        )
-        info = UploadInfo.model_validate(status_res.json())
-        stage = info.stage
-        logger.debug(f"Uploading data: {stage}", prefix=log_prefix)
-
-        if stage == UploadStage.READY:
-            raise MatchboxServerFileError(info.error)
-
-        time.sleep(settings.retry_delay)
-
-    logger.debug("Finished", prefix=log_prefix)
+    resolver_path = canonical_resolver_path_for_model(model_path)
+    resolver_resolution = canonical_resolver_resolution_for_model(
+        model_path=model_path,
+        resolver_upload=resolver_upload,
+        threshold=threshold,
+    )
+    create_resolution(resolution=resolver_resolution, path=resolver_path)
+    _set_data_raw(path=resolver_path, data=resolver_upload)
+    return upload_id
 
 
 @http_retry
@@ -314,12 +353,41 @@ def get_results(path: ModelResolutionPath) -> Table:
     return read_table(buffer)
 
 
+@profile_time(kwarg="path")
+@http_retry
+def get_resolver_data(path: ResolverResolutionPath) -> Table:
+    """Get resolver assignments from Matchbox."""
+    log_prefix = f"Resolver {path}"
+    logger.debug("Retrieving assignments", prefix=log_prefix)
+
+    res = CLIENT.get(
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data"
+    )
+    buffer = BytesIO(res.content)
+    return read_table(buffer)
+
+
+@profile_time(kwarg="path")
+@http_retry
+def get_resolver_mapping(path: ResolverResolutionPath, upload_id: str) -> Table:
+    """Get resolver upload mapping from Matchbox."""
+    log_prefix = f"Resolver {path}"
+    logger.debug("Retrieving upload mapping", prefix=log_prefix)
+
+    res = CLIENT.get(
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data/mapping",
+        params={"upload_id": upload_id},
+    )
+    buffer = BytesIO(res.content)
+    return read_table(buffer)
+
+
 @http_retry
 def delete_resolution(
-    path: ModelResolutionPath, certain: bool = False
+    path: ResolutionPath, certain: bool = False
 ) -> ResourceOperationStatus:
     """Delete a resolution in Matchbox."""
-    log_prefix = f"Model {path}"
+    log_prefix = f"Resolution {path}"
     logger.debug("Deleting", prefix=log_prefix)
 
     res = CLIENT.delete(

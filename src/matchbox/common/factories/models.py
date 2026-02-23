@@ -24,11 +24,16 @@ from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.models.models import Model
 from matchbox.client.queries import Query
 from matchbox.client.results import ModelResults
-from matchbox.common.arrow import SCHEMA_RESULTS
+from matchbox.common.arrow import SCHEMA_RESOLVER_UPLOAD, SCHEMA_RESULTS
 from matchbox.common.dtos import (
     ModelResolutionName,
     ModelResolutionPath,
     ModelType,
+    Resolution,
+    ResolutionType,
+    ResolverConfig,
+    ResolverResolutionPath,
+    ResolverType,
     SourceResolutionName,
 )
 from matchbox.common.factories.entities import (
@@ -44,6 +49,7 @@ from matchbox.common.factories.sources import (
     SourceTestkitParameters,
     linked_sources_factory,
 )
+from matchbox.common.hash import hash_arrow_table
 from matchbox.common.transform import DisjointSet, graph_results
 
 T = TypeVar("T", bound=Hashable)
@@ -651,6 +657,94 @@ class ModelTestkit(BaseModel):
         """Initialize the query lookup table."""
         self.threshold = 0
         return self
+
+
+def resolver_upload_from_model_testkit(model_tkit: ModelTestkit) -> pl.DataFrame:
+    """Return canonical resolver upload rows from a model testkit.
+
+    Output columns:
+    - client_cluster_id: UInt64
+    - node_id: UInt64
+    """
+    node_ids = set(model_tkit.left_clusters.keys())
+    if model_tkit.right_clusters is not None:
+        node_ids.update(model_tkit.right_clusters.keys())
+
+    left_ids = [int(node_id) for node_id in model_tkit.probabilities["left_id"]]
+    right_ids = [int(node_id) for node_id in model_tkit.probabilities["right_id"]]
+
+    components = DisjointSet[int]()
+    for node_id in node_ids:
+        components.add(node_id)
+
+    for left_id, right_id, probability in zip(
+        left_ids,
+        right_ids,
+        model_tkit.probabilities["probability"],
+        strict=True,
+    ):
+        if probability >= model_tkit.threshold:
+            components.union(left_id, right_id)
+
+    rows: list[tuple[int, int]] = []
+    for component in components.get_components():
+        ordered_nodes = sorted(component)
+        if not ordered_nodes:
+            continue
+        client_cluster_id = ordered_nodes[0]
+        rows.extend((client_cluster_id, node_id) for node_id in ordered_nodes)
+
+    if not rows:
+        return pl.DataFrame(schema=pl.Schema(SCHEMA_RESOLVER_UPLOAD))
+
+    return pl.DataFrame(
+        rows,
+        orient="row",
+        schema=pl.Schema(SCHEMA_RESOLVER_UPLOAD),
+    )
+
+
+def canonical_resolver_path_for_model(
+    model_path: ModelResolutionPath,
+) -> ResolverResolutionPath:
+    """Return the canonical resolver path for a model path."""
+    return ResolverResolutionPath(
+        collection=model_path.collection,
+        run=model_path.run,
+        name=f"resolver_{model_path.name}",
+    )
+
+
+def build_canonical_resolver_resolution(
+    model_tkit: ModelTestkit,
+    resolver_upload: pl.DataFrame,
+) -> Resolution:
+    """Build canonical Components resolver metadata for a model testkit."""
+    threshold = int(model_tkit.threshold)
+    return Resolution(
+        description=f"Resolver for {model_tkit.name}",
+        resolution_type=ResolutionType.RESOLVER,
+        config=ResolverConfig(
+            type=ResolverType.COMPONENTS,
+            resolver_class="Components",
+            resolver_settings=json.dumps({"thresholds": {model_tkit.name: threshold}}),
+            inputs=(model_tkit.name,),
+        ),
+        fingerprint=hash_arrow_table(resolver_upload.to_arrow()),
+    )
+
+
+def canonical_resolver_artifacts_from_model_testkit(
+    model_tkit: ModelTestkit,
+) -> tuple[ResolverResolutionPath, Resolution, pl.DataFrame]:
+    """Return canonical resolver path, resolution DTO and upload payload."""
+    resolver_upload = resolver_upload_from_model_testkit(model_tkit)
+    resolver_path = canonical_resolver_path_for_model(model_tkit.resolution_path)
+    resolver_resolution = build_canonical_resolver_resolution(
+        model_tkit=model_tkit,
+        resolver_upload=resolver_upload,
+    )
+    return resolver_path, resolver_resolution, resolver_upload
 
 
 def _testkit_to_query(testkit: SourceTestkit | ModelTestkit) -> Query:

@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import Engine
 from test.fixtures.db import BACKENDS
 
+from matchbox.client.queries import Query
 from matchbox.common.datatypes import DataTypes
 from matchbox.common.dtos import (
     DefaultGroup,
@@ -14,6 +15,7 @@ from matchbox.common.dtos import (
     ModelConfig,
     PermissionGrant,
     PermissionType,
+    QueryCombineType,
     Resolution,
     ResolutionPath,
     SourceConfig,
@@ -31,7 +33,12 @@ from matchbox.common.exceptions import (
     MatchboxRunNotWriteable,
 )
 from matchbox.common.factories.entities import diff_results, query_to_cluster_entities
-from matchbox.common.factories.models import model_factory
+from matchbox.common.factories.models import (
+    canonical_resolver_artifacts_from_model_testkit,
+    canonical_resolver_path_for_model,
+    model_factory,
+    query_to_model_factory,
+)
 from matchbox.common.factories.scenarios import setup_scenario
 from matchbox.common.factories.sources import SourceTestkit
 from matchbox.server.base import MatchboxDBAdapter
@@ -565,7 +572,7 @@ class TestMatchboxCollectionsBackend:
                 old_resolution.config.model_copy(
                     update={
                         "left_query": old_resolution.config.left_query.model_copy(
-                            update={"threshold": 99}
+                            update={"combine_type": QueryCombineType.SET_AGG}
                         )
                     }
                 )
@@ -574,7 +581,6 @@ class TestMatchboxCollectionsBackend:
                 old_resolution.model_copy(
                     update={
                         "description": "updated",
-                        "truth": 33,
                         "config": updated_config,
                     }
                 )
@@ -589,8 +595,10 @@ class TestMatchboxCollectionsBackend:
                 linker_testkit.resolution_path
             )
             assert linker_retrieved.description == "updated"
-            assert linker_retrieved.truth == 33
-            assert linker_retrieved.config.left_query.threshold == 99
+            assert (
+                linker_retrieved.config.left_query.combine_type
+                == QueryCombineType.SET_AGG
+            )
 
             # We cannot change a model's inputs
             rewired_config = ModelConfig.model_validate(
@@ -627,6 +635,9 @@ class TestMatchboxCollectionsBackend:
         with self.scenario(self.backend, "dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
             naive_crn_testkit = dag_testkit.models.get("naive_test_crn")
+            naive_crn_resolver_path = canonical_resolver_path_for_model(
+                naive_crn_testkit.resolution_path
+            )
 
             # Query returns the same results as the testkit, showing
             # that processing was performed accurately.
@@ -634,7 +645,7 @@ class TestMatchboxCollectionsBackend:
             # marked as complete)
             res = self.backend.query(
                 source=crn_testkit.resolution_path,
-                point_of_truth=naive_crn_testkit.resolution_path,
+                point_of_truth=naive_crn_resolver_path,
             )
             res_clusters = query_to_cluster_entities(
                 data=res,
@@ -680,12 +691,15 @@ class TestMatchboxCollectionsBackend:
         with self.scenario(self.backend, "probabilistic_dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
             prob_crn_testkit = dag_testkit.models.get("probabilistic_test_crn")
+            prob_crn_resolver_path = canonical_resolver_path_for_model(
+                prob_crn_testkit.resolution_path
+            )
 
             # Query returns the same results as the testkit, showing
             # that processing was performed accurately
             res = self.backend.query(
                 source=crn_testkit.resolution_path,
-                point_of_truth=prob_crn_testkit.resolution_path,
+                point_of_truth=prob_crn_resolver_path,
             )
             res_clusters = query_to_cluster_entities(
                 data=res,
@@ -714,8 +728,16 @@ class TestMatchboxCollectionsBackend:
         """Can insert and retrieve empty model results"""
         with self.scenario(self.backend, "index") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
-            model_testkit = model_factory(
-                model_type="deduper", dag=crn_testkit.source.dag
+            linked = dag_testkit.source_to_linked["crn"]
+            source_query = self.backend.query(source=crn_testkit.resolution_path)
+            model_testkit = query_to_model_factory(
+                left_query=Query(crn_testkit.source, dag=dag_testkit.dag),
+                left_data=source_query,
+                left_keys={crn_testkit.name: "key"},
+                true_entities=tuple(linked.true_entities),
+                name="empty_test_crn",
+                description="Empty dedupe test model",
+                prob_range=(1.0, 1.0),
             )
             model_testkit.probabilities = model_testkit.probabilities.head(0)
             model_testkit.fake_run()
@@ -729,15 +751,38 @@ class TestMatchboxCollectionsBackend:
                 results=model_testkit.model.results.probabilities.to_arrow(),
             )
 
-            # Querying from deduper with no results is the same as querying from source
-            # (That we can query also implies that resolution marked as complete)
-            source_query = self.backend.query(source=crn_testkit.resolution_path)
-            dedupe_query = self.backend.query(
-                source=crn_testkit.resolution_path,
-                point_of_truth=model_testkit.resolution_path,
+            model_resolver_path, resolver_resolution, resolver_upload = (
+                canonical_resolver_artifacts_from_model_testkit(model_testkit)
+            )
+            self.backend.create_resolution(
+                resolution=resolver_resolution,
+                path=model_resolver_path,
+            )
+            self.backend.insert_resolver_data(
+                path=model_resolver_path,
+                data=resolver_upload.to_arrow(),
             )
 
-            assert source_query == dedupe_query
+            # Querying from deduper with no results is the same as querying from source
+            # (That we can query also implies that resolution marked as complete)
+            dedupe_query = self.backend.query(
+                source=crn_testkit.resolution_path,
+                point_of_truth=model_resolver_path,
+            )
+
+            source_entities = query_to_cluster_entities(
+                data=source_query,
+                keys={crn_testkit.name: "key"},
+            )
+            dedupe_entities = query_to_cluster_entities(
+                data=dedupe_query,
+                keys={crn_testkit.name: "key"},
+            )
+            identical, report = diff_results(
+                expected=list(source_entities),
+                actual=list(dedupe_entities),
+            )
+            assert identical, report
 
     def test_model_results_shared_clusters(self) -> None:
         """Test that model results data can be inserted when clusters are shared."""
