@@ -33,7 +33,6 @@ from matchbox.common.dtos import (
     ResolutionType,
     ResolverConfig,
     ResolverResolutionPath,
-    ResolverType,
     SourceResolutionName,
 )
 from matchbox.common.factories.entities import (
@@ -725,7 +724,6 @@ def build_canonical_resolver_resolution(
         description=f"Resolver for {model_tkit.name}",
         resolution_type=ResolutionType.RESOLVER,
         config=ResolverConfig(
-            type=ResolverType.COMPONENTS,
             resolver_class="Components",
             resolver_settings=json.dumps({"thresholds": {model_tkit.name: threshold}}),
             inputs=(model_tkit.name,),

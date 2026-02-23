@@ -541,16 +541,9 @@ class ModelConfig(BaseModel):
         return stable_hash_dict(self.model_dump(mode="json"))
 
 
-class ResolverType(StrEnum):
-    """Enumeration of supported resolver methodology types."""
-
-    COMPONENTS = "components"
-
-
 class ResolverConfig(BaseModel):
     """Configuration for resolver that combines model and resolver outputs."""
 
-    type: ResolverType
     resolver_class: str
     resolver_settings: str
     inputs: tuple[ResolutionName, ...]

@@ -30,7 +30,6 @@ from matchbox.common.dtos import (
     ResolutionName,
     ResolutionPath,
     ResolutionType,
-    ResolverType,
     RunID,
     UploadStage,
 )
@@ -53,10 +52,6 @@ from matchbox.server.base import (
 )
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
-
-_RESOLVER_CLASS_TO_TYPE: dict[str, ResolverType] = {
-    "Components": ResolverType.COMPONENTS,
-}
 
 
 class Collections(CountMixin, MBDB.MatchboxBase):
@@ -903,13 +898,7 @@ class ResolverConfigs(CountMixin, MBDB.MatchboxBase):
 
     def to_dto(self) -> CommonResolverConfig:
         """Convert ORM resolver config to a matchbox.common ResolverConfig object."""
-        resolver_type = _RESOLVER_CLASS_TO_TYPE.get(self.resolver_class)
-        if resolver_type is None:
-            raise ValueError(
-                f"Unknown resolver_class in resolver_configs: {self.resolver_class!r}"
-            )
         return CommonResolverConfig(
-            type=resolver_type,
             resolver_class=self.resolver_class,
             resolver_settings=self.resolver_settings,
             inputs=tuple(self.inputs),

@@ -19,7 +19,6 @@ from matchbox.common.dtos import (
     ResolutionType,
     ResolverConfig,
     ResolverResolutionPath,
-    ResolverType,
     Run,
 )
 from matchbox.common.hash import hash_arrow_table
@@ -146,7 +145,6 @@ def canonical_resolver_resolution_for_model(
         description=f"Resolver for {model_path.name}",
         resolution_type=ResolutionType.RESOLVER,
         config=ResolverConfig(
-            type=ResolverType.COMPONENTS,
             resolver_class="Components",
             resolver_settings=json.dumps(
                 {"thresholds": {str(model_path.name): threshold}}
