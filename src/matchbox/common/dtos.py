@@ -1,6 +1,5 @@
 """Data transfer objects for Matchbox API."""
 
-import hashlib
 import json
 import re
 import textwrap
@@ -26,12 +25,6 @@ from pydantic import (
 from matchbox.common.datatypes import DataTypes
 from matchbox.common.exceptions import MatchboxExceptionType, MatchboxNameError
 from matchbox.common.hash import base64_to_hash, hash_to_base64
-
-
-def stable_hash_dict(payload: dict[str, Any]) -> str:
-    """Return a deterministic hash for a JSON-serialisable payload."""
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def validate_matchbox_name(value: str) -> str:
@@ -405,10 +398,6 @@ class SourceConfig(BaseModel):
             return self.qualify_field(name, fields)
         return [self.qualify_field(name, field_name) for field_name in fields]
 
-    def stable_hash(self) -> str:
-        """Return deterministic hash for this config."""
-        return stable_hash_dict(self.model_dump(mode="json"))
-
 
 class QueryCombineType(StrEnum):
     """Enumeration of ways to combine multiple rows having the same matchbox ID."""
@@ -487,10 +476,6 @@ class QueryConfig(BaseModel):
             return self.model_resolution
         return self.source_resolutions[0]
 
-    def stable_hash(self) -> str:
-        """Return deterministic hash for this config."""
-        return stable_hash_dict(self.model_dump(mode="json"))
-
 
 class ModelType(StrEnum):
     """Enumeration of supported model types."""
@@ -567,10 +552,6 @@ class ModelConfig(BaseModel):
             ]
         return [parent_for_query(self.left_query)]
 
-    def stable_hash(self) -> str:
-        """Return deterministic hash for this config."""
-        return stable_hash_dict(self.model_dump(mode="json"))
-
 
 class ResolverConfig(BaseModel):
     """Configuration for resolver that combines model and resolver outputs."""
@@ -605,10 +586,6 @@ class ResolverConfig(BaseModel):
     def parents(self) -> list[ResolutionName]:
         """Returns all resolution names directly input to this config."""
         return list(self.inputs)
-
-    def stable_hash(self) -> str:
-        """Return deterministic hash for this config."""
-        return stable_hash_dict(self.model_dump(mode="json"))
 
 
 class Match(BaseModel):

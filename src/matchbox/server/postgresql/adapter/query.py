@@ -2,11 +2,7 @@
 
 from typing import TYPE_CHECKING, Any
 
-from matchbox.common.dtos import (
-    Match,
-    ResolverResolutionPath,
-    SourceResolutionPath,
-)
+from matchbox.common.dtos import Match, ResolverResolutionPath, SourceResolutionPath
 from matchbox.server.postgresql.utils.query import match, query
 
 if TYPE_CHECKING:
