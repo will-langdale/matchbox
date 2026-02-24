@@ -413,6 +413,7 @@ class QueryConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     source_resolutions: tuple[SourceResolutionName, ...]
+    # TODO: remove shim in Resolution PR2
     model_resolution: ModelResolutionName | None = None
     resolver_resolution: ResolverResolutionName | None = None
     combine_type: QueryCombineType = QueryCombineType.CONCAT
@@ -423,6 +424,7 @@ class QueryConfig(BaseModel):
     @classmethod
     def normalise_resolutions(cls, value: object) -> object:
         """Normalise legacy model point-of-truth to canonical resolver naming."""
+        # TODO: remove shim in Resolution PR2
         if not isinstance(value, dict):
             return value
 
@@ -459,6 +461,7 @@ class QueryConfig(BaseModel):
     @property
     def dependencies(self) -> list[ResolutionName]:
         """Return all resolutions that this query needs."""
+        # TODO: remove shim in Resolution PR2
         deps = list(self.source_resolutions)
         if self.model_resolution:
             deps.append(self.model_resolution)
@@ -470,6 +473,7 @@ class QueryConfig(BaseModel):
     @property
     def point_of_truth(self) -> ResolutionName:
         """Return path of resolution that will be used as point of truth."""
+        # TODO: remove shim in Resolution PR2
         if self.resolver_resolution:
             return self.resolver_resolution
         if self.model_resolution:
@@ -538,6 +542,7 @@ class ModelConfig(BaseModel):
     def parents(self) -> list[ResolutionName]:
         """Returns all resolution names directly input to this config."""
 
+        # TODO: remove shim in Resolution PR2
         def parent_for_query(query: QueryConfig) -> ResolutionName:
             if query.model_resolution:
                 return query.model_resolution
@@ -558,7 +563,7 @@ class ResolverConfig(BaseModel):
 
     resolver_class: str
     resolver_settings: str
-    inputs: tuple[ResolutionName, ...]
+    inputs: tuple[ModelResolutionName, ...]
 
     @model_validator(mode="after")
     def validate_inputs(self) -> Self:
@@ -578,12 +583,12 @@ class ResolverConfig(BaseModel):
         return value
 
     @property
-    def dependencies(self) -> list[ResolutionName]:
+    def dependencies(self) -> list[ModelResolutionName]:
         """Return all resolutions that this resolver needs."""
         return list(self.inputs)
 
     @property
-    def parents(self) -> list[ResolutionName]:
+    def parents(self) -> list[ModelResolutionName]:
         """Returns all resolution names directly input to this config."""
         return list(self.inputs)
 

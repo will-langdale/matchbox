@@ -6,6 +6,7 @@ This module isolates temporary model-era compatibility logic:
 - upload-time implicit resolver synthesis from model edge results.
 """
 
+# TODO: remove shim in Resolution PR2
 import json
 
 import pyarrow as pa
