@@ -74,6 +74,7 @@ def upgrade() -> None:
     )
     op.drop_column("resolution_clusters", "probability", schema="mb")
 
+    # Create resolver_configs directly with final column names and types.
     op.create_table(
         "resolver_configs",
         sa.Column(
@@ -83,37 +84,14 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("resolution_id", sa.BIGINT(), nullable=False),
-        sa.Column("strategy", sa.TEXT(), nullable=False),
+        sa.Column("resolver_class", sa.TEXT(), nullable=False),
         sa.Column("inputs", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column(
-            "thresholds", postgresql.JSONB(astext_type=sa.Text()), nullable=False
-        ),
+        sa.Column("resolver_settings", sa.TEXT(), nullable=False),
         sa.ForeignKeyConstraint(
             ["resolution_id"], ["mb.resolutions.resolution_id"], ondelete="CASCADE"
         ),
         sa.PrimaryKeyConstraint("resolver_config_id"),
         sa.UniqueConstraint("resolution_id", name="resolver_configs_resolution_key"),
-        schema="mb",
-    )
-
-    op.alter_column(
-        "resolver_configs",
-        "strategy",
-        new_column_name="resolver_class",
-        schema="mb",
-    )
-    op.alter_column(
-        "resolver_configs",
-        "thresholds",
-        new_column_name="resolver_settings",
-        schema="mb",
-    )
-    op.alter_column(
-        "resolver_configs",
-        "resolver_settings",
-        existing_type=postgresql.JSONB(astext_type=sa.Text()),
-        type_=sa.TEXT(),
-        postgresql_using="resolver_settings::text",
         schema="mb",
     )
     op.execute(
