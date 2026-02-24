@@ -1,6 +1,7 @@
 """ORM classes for the Matchbox PostgreSQL database."""
 
 import json
+import textwrap
 from typing import Any, Optional
 
 from sqlalchemy import (
@@ -233,7 +234,7 @@ class ResolutionFrom(CountMixin, MBDB.MatchboxBase):
 
 
 class Resolutions(CountMixin, MBDB.MatchboxBase):
-    """Table of resolution points corresponding to models, and sources.
+    """Table of resolution points corresponding to models, resolvers and sources.
 
     Models produce edges and resolvers produce cluster assignments.
     """
@@ -275,11 +276,17 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         back_populates="proposed_by",
         passive_deletes=True,
     )
-    children: Mapped[list["Resolutions"]] = relationship(
+    parents: Mapped[list["Resolutions"]] = relationship(
         secondary=ResolutionFrom.__table__,
-        primaryjoin="Resolutions.resolution_id == ResolutionFrom.parent",
-        secondaryjoin="Resolutions.resolution_id == ResolutionFrom.child",
-        backref="parents",
+        primaryjoin=textwrap.dedent("""\
+            and_(
+                Resolutions.resolution_id == ResolutionFrom.child,
+                ResolutionFrom.level == 1
+            )
+        """),
+        secondaryjoin="Resolutions.resolution_id == ResolutionFrom.parent",
+        viewonly=True,
+        order_by="ResolutionFrom.parent",
     )
     run: Mapped["Runs"] = relationship(back_populates="resolutions")
 
@@ -894,8 +901,7 @@ class ResolverConfigs(CountMixin, MBDB.MatchboxBase):
         nullable=False,
     )
     resolver_class: Mapped[str] = mapped_column(TEXT, nullable=False)
-    inputs: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
-    resolver_settings: Mapped[str] = mapped_column(TEXT, nullable=False)
+    resolver_settings: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
     resolver_resolution: Mapped["Resolutions"] = relationship(
         back_populates="resolver_config"
@@ -913,7 +919,6 @@ class ResolverConfigs(CountMixin, MBDB.MatchboxBase):
         """Create a ResolverConfigs instance from a Resolution DTO object."""
         return cls(
             resolver_class=config.resolver_class,
-            inputs=list(config.inputs),
             resolver_settings=config.resolver_settings,
         )
 
@@ -922,7 +927,7 @@ class ResolverConfigs(CountMixin, MBDB.MatchboxBase):
         return CommonResolverConfig(
             resolver_class=self.resolver_class,
             resolver_settings=self.resolver_settings,
-            inputs=tuple(self.inputs),
+            inputs=tuple(r.name for r in self.resolver_resolution.parents),
         )
 
 
@@ -1251,7 +1256,4 @@ class ResolutionClusters(CountMixin, MBDB.MatchboxBase):
         back_populates="resolution_clusters"
     )
 
-    __table_args__ = (
-        Index("ix_resolution_clusters_resolution", "resolution_id"),
-        Index("ix_resolution_clusters_cluster", "cluster_id"),
-    )
+    __table_args__ = (Index("ix_resolution_clusters_resolution", "resolution_id"),)

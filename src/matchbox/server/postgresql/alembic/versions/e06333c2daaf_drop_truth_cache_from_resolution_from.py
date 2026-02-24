@@ -59,13 +59,6 @@ def upgrade() -> None:
         unique=False,
         schema="mb",
     )
-    op.create_index(
-        "ix_resolution_clusters_cluster",
-        "resolution_clusters",
-        ["cluster_id"],
-        unique=False,
-        schema="mb",
-    )
     op.drop_constraint(
         op.f("valid_probability"),
         "resolution_clusters",
@@ -85,8 +78,11 @@ def upgrade() -> None:
         ),
         sa.Column("resolution_id", sa.BIGINT(), nullable=False),
         sa.Column("resolver_class", sa.TEXT(), nullable=False),
-        sa.Column("inputs", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("resolver_settings", sa.TEXT(), nullable=False),
+        sa.Column(
+            "resolver_settings",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(
             ["resolution_id"], ["mb.resolutions.resolution_id"], ondelete="CASCADE"
         ),
@@ -102,7 +98,7 @@ def upgrade() -> None:
     op.execute(
         "UPDATE mb.resolver_configs "
         "SET resolver_settings = "
-        "jsonb_build_object('thresholds', resolver_settings::jsonb)::text"
+        "jsonb_build_object('thresholds', resolver_settings)"
     )
 
     # Preserve closure-table threshold semantics before removing resolutions.truth.
@@ -124,36 +120,6 @@ def downgrade() -> None:
         "resolution_from",
         sa.Column("truth_cache", sa.SMALLINT(), autoincrement=False, nullable=True),
         schema="mb",
-    )
-    op.execute(
-        "UPDATE mb.resolver_configs "
-        "SET resolver_settings = "
-        "coalesce((resolver_settings::jsonb -> 'thresholds')::text, '{}'::jsonb::text)"
-    )
-    op.alter_column(
-        "resolver_configs",
-        "resolver_settings",
-        existing_type=sa.TEXT(),
-        type_=postgresql.JSONB(astext_type=sa.Text()),
-        postgresql_using="resolver_settings::jsonb",
-        schema="mb",
-    )
-    op.alter_column(
-        "resolver_configs",
-        "resolver_settings",
-        new_column_name="thresholds",
-        schema="mb",
-    )
-    op.alter_column(
-        "resolver_configs",
-        "resolver_class",
-        new_column_name="strategy",
-        schema="mb",
-    )
-    op.execute(
-        "UPDATE mb.resolver_configs "
-        "SET strategy = 'union' "
-        "WHERE strategy = 'Components'"
     )
 
     op.drop_constraint(
@@ -178,13 +144,9 @@ def downgrade() -> None:
         schema="mb",
     )
 
+    # resolver_configs is dropped entirely; no need to alter its columns.
     op.drop_table("resolver_configs", schema="mb")
 
-    op.drop_index(
-        "ix_resolution_clusters_cluster",
-        table_name="resolution_clusters",
-        schema="mb",
-    )
     op.drop_index(
         "ix_resolution_clusters_resolution",
         table_name="resolution_clusters",
