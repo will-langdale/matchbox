@@ -15,7 +15,6 @@ from sqlalchemy import (
     Identity,
     Index,
     UniqueConstraint,
-    func,
     select,
     text,
 )
@@ -583,41 +582,17 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         )
 
     @staticmethod
-    def _upsert_closure_entry(
-        session: Session,
-        parent_id: int,
-        child_id: int,
-        level: int,
-    ) -> None:
-        """Insert or update closure table entry with shortest known level."""
-        session.execute(
-            insert(ResolutionFrom)
-            .values(
-                parent=parent_id,
-                child=child_id,
-                level=level,
-            )
-            .on_conflict_do_update(
-                index_elements=[ResolutionFrom.parent, ResolutionFrom.child],
-                set_={
-                    "level": func.least(ResolutionFrom.level, level),
-                },
-            )
-        )
-
-    @staticmethod
     def _create_closure_entries(
-        session: Session,
-        child: "Resolutions",
-        parent: "Resolutions",
+        session: Session, child: "Resolutions", parent: "Resolutions"
     ) -> None:
         """Create closure table entries for a parent-child relationship."""
-        # Direct relationship.
-        Resolutions._upsert_closure_entry(
-            session=session,
-            parent_id=parent.resolution_id,
-            child_id=child.resolution_id,
-            level=1,
+        # Direct relationship
+        session.add(
+            ResolutionFrom(
+                parent=parent.resolution_id,
+                child=child.resolution_id,
+                level=1,
+            )
         )
 
         # Transitive closure
@@ -632,11 +607,12 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         )
 
         for ancestor in ancestors:
-            Resolutions._upsert_closure_entry(
-                session=session,
-                parent_id=ancestor.parent,
-                child_id=child.resolution_id,
-                level=ancestor.level + 1,
+            session.add(
+                ResolutionFrom(
+                    parent=ancestor.parent,
+                    child=child.resolution_id,
+                    level=ancestor.level + 1,
+                )
             )
 
 
