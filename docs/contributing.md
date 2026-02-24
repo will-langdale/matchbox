@@ -16,9 +16,9 @@ Generate dummy public/private keys and a JWT for local testing. The below will a
 ```shell
 uv run test/scripts/authorisation.py keygen > /tmp/keys.json
 
-echo "MB__DEV__PRIVATE_KEY=\"$(jq -r '.private_key' /tmp/keys.json)\"" >> .env
+echo "MB__DEV__PRIVATE_KEY=$(jq  '.private_key | gsub("\n"; "\\n")' /tmp/keys.json)" >> .env
 
-echo "MB__SERVER__PUBLIC_KEY=\"$(jq -r '.public_key' /tmp/keys.json)\"" >> .env
+echo "MB__SERVER__PUBLIC_KEY=$(jq  '.public_key | gsub("\n"; "\\n")' /tmp/keys.json)" >> .env
 
 echo "MB__CLIENT__JWT=$(jq -r .private_key /tmp/keys.json | \
     uv run test/scripts/authorisation.py jwt \
