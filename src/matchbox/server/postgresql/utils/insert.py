@@ -14,7 +14,8 @@ from sqlalchemy.dialects.postgresql import (
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import TableClause
 
-from matchbox.common.arrow import SCHEMA_RESOLVER_MAPPING
+from matchbox.common.arrow import SCHEMA_CLUSTERS
+from matchbox.common.db import QueryReturnType, sql_to_df
 from matchbox.common.dtos import (
     ModelResolutionPath,
     ResolutionType,
@@ -38,7 +39,7 @@ from matchbox.server.postgresql.orm import (
     Resolutions,
     SourceConfigs,
 )
-from matchbox.server.postgresql.utils.db import ingest_to_temporary_table
+from matchbox.server.postgresql.utils.db import compile_sql, ingest_to_temporary_table
 
 
 def insert_hashes(
@@ -235,17 +236,17 @@ def insert_model_edges(
 
 
 def _compute_resolver_hashes(
-    incoming_assignments: TableClause,
+    incoming_cluster_assignments: TableClause,
     session: Session,
 ) -> pa.Table:
-    """Expand assignment nodes to leaves and compute deterministic cluster hashes.
+    """Expand cluster assignments to leaves and compute deterministic cluster hashes.
 
-    Each uploaded assignment maps a ``client_cluster_id`` to a ``node_id``. A
-    node may itself be a parent cluster (with children in ``Contains``), or a
-    leaf cluster with no children. This function:
+    Each uploaded assignment maps a ``client_cluster_id`` to a
+    ``server_cluster_id``. A server cluster may itself be a parent cluster (with
+    children in ``Contains``), or a leaf cluster with no children. This function:
 
-    1. Expands each node to its leaf-level cluster IDs via an outer join on
-        ``Contains``. Nodes with no children resolve to themselves.
+    1. Expands each server cluster to its leaf-level cluster IDs via an outer
+        join on ``Contains``. Clusters with no children resolve to themselves.
     2. Groups the leaf hashes per client cluster, sorted for determinism.
     3. Computes a single composite hash per client cluster in Python.
 
@@ -254,25 +255,27 @@ def _compute_resolver_hashes(
     violations when inserting into ``Contains``.
 
     Args:
-        incoming_assignments: Temporary table with (client_cluster_id, node_id).
+        incoming_cluster_assignments: Temporary table with
+            (client_cluster_id, server_cluster_id).
         session: Active SQLAlchemy session (must share the temp table's connection).
 
     Returns:
         Arrow table with columns (client_cluster_id: int64, cluster_hash: binary).
     """
-    # Expand each node_id to its constituent leaves
+    # Expand each server_cluster_id to its constituent leaves
     expanded_leaves = (
         select(
-            incoming_assignments.c.client_cluster_id,
-            func.coalesce(Contains.leaf, incoming_assignments.c.node_id).label(
-                "leaf_id"
-            ),
+            incoming_cluster_assignments.c.client_cluster_id,
+            func.coalesce(
+                Contains.leaf,
+                incoming_cluster_assignments.c.server_cluster_id,
+            ).label("leaf_id"),
         )
         .distinct()
         .select_from(
-            incoming_assignments.outerjoin(
+            incoming_cluster_assignments.outerjoin(
                 Contains,
-                Contains.root == incoming_assignments.c.node_id,
+                Contains.root == incoming_cluster_assignments.c.server_cluster_id,
             )
         )
         .subquery("expanded_leaves")
@@ -312,30 +315,32 @@ def _compute_resolver_hashes(
 
 def insert_resolver_clusters(
     path: ResolverResolutionPath,
-    assignments: pa.Table,
+    cluster_assignments: pa.Table,
     batch_size: int,
 ) -> pa.Table:
-    """Write resolver cluster assignments and return a client-to-cluster ID mapping.
+    """Write resolver cluster assignments and return a client-to-server mapping.
 
     The function proceeds in three phases:
 
     1. Validate: check fingerprint, ensure no prior data, short-circuit
         if the upload is empty
     2. Compute hashes: ingest assignments to a temp table, expand each
-        node to its leaves, and derive a deterministic cluster hash per client
+        server cluster to its leaves, and derive a deterministic cluster hash per client
         cluster (Python round-trip via ``_compute_resolver_hashes``)
     3. Insert everything: with both temp tables live in one session,
         materialise new ``Clusters`` rows, then insert ``Contains`` and
         ``ResolutionClusters`` membership rows, and return the mapping
 
     Args:
-        path: The resolver resolution path to upload assignments for
-        assignments: Arrow table with (client_cluster_id, node_id) columns
+        path: The resolver resolution path to upload cluster assignments for
+        cluster_assignments: Arrow table with
+            (client_cluster_id, server_cluster_id) columns
         batch_size: Batch size for temporary table ingestion
 
     Returns:
-        Arrow table mapping client_cluster_id → cluster_id (the canonical
-        Matchbox cluster IDs), conforming to ``SCHEMA_RESOLVER_MAPPING``
+        Arrow table with (client_cluster_id, server_cluster_id), where
+        ``server_cluster_id`` is the canonical Matchbox cluster ID,
+        conforming to ``SCHEMA_CLUSTERS``
 
     Raises:
         MatchboxResolutionNotFoundError: If the resolution doesn't exist
@@ -343,8 +348,11 @@ def insert_resolver_clusters(
         MatchboxResolutionExistingData: If clusters already exist for this resolver
     """
     log_prefix = f"Resolver {path.name}"
-    fingerprint = hash_arrow_table(assignments)
-    assignment_data = assignments.select(["client_cluster_id", "node_id"])
+    fingerprint = hash_arrow_table(cluster_assignments)
+    cluster_assignment_data = cluster_assignments.select(
+        ["client_cluster_id", "server_cluster_id"]
+    )
+    mapping: pa.Table
 
     # 1) Validate
 
@@ -365,10 +373,10 @@ def insert_resolver_clusters(
         if existing > 0:
             raise MatchboxResolutionExistingData
 
-        if assignment_data.num_rows == 0:
+        if cluster_assignment_data.num_rows == 0:
             return pa.Table.from_pydict(
-                {"client_cluster_id": [], "cluster_id": []},
-                schema=SCHEMA_RESOLVER_MAPPING,
+                {"client_cluster_id": [], "server_cluster_id": []},
+                schema=SCHEMA_CLUSTERS,
             )
 
         resolution_id = resolution.resolution_id
@@ -382,29 +390,33 @@ def insert_resolver_clusters(
         ingest_to_temporary_table(
             table_name="resolver_assignments",
             schema_name="mb",
-            column_types={"client_cluster_id": BIGINT(), "node_id": BIGINT()},
-            data=assignment_data,
+            column_types={
+                "client_cluster_id": BIGINT(),
+                "server_cluster_id": BIGINT(),
+            },
+            data=cluster_assignment_data,
             max_chunksize=batch_size,
-        ) as incoming_assignments,
+        ) as incoming_cluster_assignments,
         MBDB.get_session() as session,
     ):
-        # Expand nodes → leaves → deterministic hash per client cluster
-        hash_data = _compute_resolver_hashes(incoming_assignments, session)
+        # Expand server clusters → leaves → deterministic hash per client cluster
+        hash_data = _compute_resolver_hashes(incoming_cluster_assignments, session)
 
         # Leaf expansion subquery
         expanded_leaves = (
             select(
-                incoming_assignments.c.client_cluster_id,
-                func.coalesce(Contains.leaf, incoming_assignments.c.node_id).label(
-                    "leaf_id"
-                ),
+                incoming_cluster_assignments.c.client_cluster_id,
+                func.coalesce(
+                    Contains.leaf,
+                    incoming_cluster_assignments.c.server_cluster_id,
+                ).label("leaf_id"),
             )
             .distinct()
             .select_from(
-                # Nodes with no children in Contains resolve to themselves
-                incoming_assignments.outerjoin(
+                # Clusters with no children in Contains resolve to themselves
+                incoming_cluster_assignments.outerjoin(
                     Contains,
-                    Contains.root == incoming_assignments.c.node_id,
+                    Contains.root == incoming_cluster_assignments.c.server_cluster_id,
                 )
             )
             .subquery("expanded_leaves")
@@ -499,16 +511,21 @@ def insert_resolver_clusters(
                     )
                 )
 
+                session.commit()
+
                 # Mapping
                 # Read back the client→canonical mapping
-                mapping_rows = session.execute(
-                    select(
-                        cluster_map.c.client_cluster_id,
-                        cluster_map.c.cluster_id,
-                    ).order_by(cluster_map.c.client_cluster_id)
-                ).all()
+                mapping_query = select(
+                    cluster_map.c.client_cluster_id,
+                    cluster_map.c.cluster_id.label("server_cluster_id"),
+                ).order_by(cluster_map.c.client_cluster_id)
 
-                session.commit()
+                with MBDB.get_adbc_connection() as connection:
+                    mapping = sql_to_df(
+                        stmt=compile_sql(mapping_query),
+                        connection=connection,
+                        return_type=QueryReturnType.ARROW,
+                    )
 
             except Exception:
                 session.rollback()
@@ -522,16 +539,4 @@ def insert_resolver_clusters(
         ResolutionClusters.__table__.fullname,
     )
 
-    if not mapping_rows:
-        return pa.Table.from_pydict(
-            {"client_cluster_id": [], "cluster_id": []},
-            schema=SCHEMA_RESOLVER_MAPPING,
-        )
-
-    return pa.table(
-        {
-            "client_cluster_id": [int(cid) for cid, _ in mapping_rows],
-            "cluster_id": [int(cid) for _, cid in mapping_rows],
-        },
-        schema=SCHEMA_RESOLVER_MAPPING,
-    )
+    return mapping

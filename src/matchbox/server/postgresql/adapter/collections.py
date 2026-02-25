@@ -1,10 +1,10 @@
 """Collections PostgreSQL mixin for Matchbox server."""
 
-import pyarrow as pa
 from psycopg.errors import LockNotAvailable
 from pyarrow import Table
 from sqlalchemy import CursorResult, delete, select, update
 
+from matchbox.common.arrow import SCHEMA_CLUSTERS
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import (
     Collection,
@@ -391,11 +391,11 @@ class MatchboxPostgresCollectionsMixin:
         self.unlock_resolution_data(path=path, complete=True)
 
     def insert_resolver_data(self, path: ResolverResolutionPath, data: Table) -> Table:
-        """Insert resolver assignments and return mapping table."""
+        """Insert resolver cluster assignments and return mapping table."""
         self._check_writeable(path)
         mapping = insert_resolver_clusters(
             path=path,
-            assignments=data,
+            cluster_assignments=data,
             batch_size=self.settings.batch_size,
         )
         self.unlock_resolution_data(path=path, complete=True)
@@ -423,21 +423,14 @@ class MatchboxPostgresCollectionsMixin:
                 alias="assignments",
             )
             ordered_query = select(
-                assignments_query.c.cluster_id,
-                assignments_query.c.node_id,
+                assignments_query.c.root_id.label("client_cluster_id"),
+                assignments_query.c.leaf_id.label("server_cluster_id"),
             ).order_by(
-                assignments_query.c.cluster_id,
-                assignments_query.c.node_id,
+                assignments_query.c.root_id,
+                assignments_query.c.leaf_id,
             )
 
         with MBDB.get_adbc_connection() as conn:
             stmt = compile_sql(ordered_query)
             res = sql_to_df(stmt=stmt, connection=conn, return_type="arrow")
-            return res.cast(
-                pa.schema(
-                    [
-                        ("cluster_id", pa.uint64()),
-                        ("node_id", pa.uint64()),
-                    ]
-                )
-            )
+            return res.cast(SCHEMA_CLUSTERS)

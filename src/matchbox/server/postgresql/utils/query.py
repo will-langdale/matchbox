@@ -68,16 +68,16 @@ def resolver_membership_subquery(
     resolution_id: int,
     alias: str = "resolver_membership",
 ) -> Subquery:
-    """Build ``cluster_id``/``node_id`` membership rows for a resolver."""
+    """Build ``root_id``/``leaf_id`` membership rows for a resolver."""
     roots_query = select(
-        ResolutionClusters.cluster_id.label("cluster_id"),
-        ResolutionClusters.cluster_id.label("node_id"),
+        ResolutionClusters.cluster_id.label("root_id"),
+        ResolutionClusters.cluster_id.label("leaf_id"),
     ).where(ResolutionClusters.resolution_id == resolution_id)
 
     leaves_query = (
         select(
-            ResolutionClusters.cluster_id.label("cluster_id"),
-            Contains.leaf.label("node_id"),
+            ResolutionClusters.cluster_id.label("root_id"),
+            Contains.leaf.label("leaf_id"),
         )
         .select_from(ResolutionClusters)
         .join(Contains, Contains.root == ResolutionClusters.cluster_id)

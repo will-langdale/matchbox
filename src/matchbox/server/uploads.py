@@ -16,8 +16,8 @@ from fastapi import UploadFile
 from pyarrow import parquet as pq
 
 from matchbox.common.arrow import (
+    SCHEMA_CLUSTERS,
     SCHEMA_INDEX,
-    SCHEMA_RESOLVER_UPLOAD,
     SCHEMA_RESULTS,
     table_to_buffer,
 )
@@ -237,7 +237,7 @@ def process_upload(
         elif resolution.resolution_type == ResolutionType.RESOLVER:
             mapping = backend.insert_resolver_data(
                 path=resolution_path,
-                data=pa.Table.from_batches(batches, schema=SCHEMA_RESOLVER_UPLOAD),
+                data=pa.Table.from_batches(batches, schema=SCHEMA_CLUSTERS),
             )
             mapping_buffer: BytesIO = table_to_buffer(mapping)
             s3_client.put_object(

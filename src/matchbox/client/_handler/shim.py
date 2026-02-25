@@ -12,7 +12,7 @@ import json
 import pyarrow as pa
 from pyarrow import Table
 
-from matchbox.common.arrow import SCHEMA_RESOLVER_UPLOAD
+from matchbox.common.arrow import SCHEMA_CLUSTERS
 from matchbox.common.dtos import (
     ModelResolutionPath,
     Resolution,
@@ -90,18 +90,18 @@ def resolver_upload_from_model_results(
     threshold: int,
 ) -> Table:
     """Build canonical resolver upload rows from model edge results."""
-    node_ids: set[int] = set()
-    left_ids = [int(node_id) for node_id in results["left_id"].to_pylist()]
-    right_ids = [int(node_id) for node_id in results["right_id"].to_pylist()]
+    server_cluster_ids: set[int] = set()
+    left_ids = [int(cluster_id) for cluster_id in results["left_id"].to_pylist()]
+    right_ids = [int(cluster_id) for cluster_id in results["right_id"].to_pylist()]
     probabilities = [
         int(probability) for probability in results["probability"].to_pylist()
     ]
 
     components = DisjointSet[int]()
-    node_ids.update(left_ids)
-    node_ids.update(right_ids)
-    for node_id in node_ids:
-        components.add(node_id)
+    server_cluster_ids.update(left_ids)
+    server_cluster_ids.update(right_ids)
+    for server_cluster_id in server_cluster_ids:
+        components.add(server_cluster_id)
 
     for left_id, right_id, probability in zip(
         left_ids, right_ids, probabilities, strict=True
@@ -111,28 +111,31 @@ def resolver_upload_from_model_results(
 
     rows: list[tuple[int, int]] = []
     for component in components.get_components():
-        ordered_nodes = sorted(component)
-        if not ordered_nodes:
+        ordered_server_cluster_ids = sorted(component)
+        if not ordered_server_cluster_ids:
             continue
-        client_cluster_id = ordered_nodes[0]
-        rows.extend((client_cluster_id, node_id) for node_id in ordered_nodes)
+        client_cluster_id = ordered_server_cluster_ids[0]
+        rows.extend(
+            (client_cluster_id, server_cluster_id)
+            for server_cluster_id in ordered_server_cluster_ids
+        )
 
     if not rows:
         return pa.table(
             {
                 "client_cluster_id": pa.array([], type=pa.uint64()),
-                "node_id": pa.array([], type=pa.uint64()),
+                "server_cluster_id": pa.array([], type=pa.uint64()),
             },
-            schema=SCHEMA_RESOLVER_UPLOAD,
+            schema=SCHEMA_CLUSTERS,
         )
 
-    client_cluster_ids, all_node_ids = zip(*rows, strict=True)
+    client_cluster_ids, all_server_cluster_ids = zip(*rows, strict=True)
     return pa.table(
         {
             "client_cluster_id": pa.array(client_cluster_ids, type=pa.uint64()),
-            "node_id": pa.array(all_node_ids, type=pa.uint64()),
+            "server_cluster_id": pa.array(all_server_cluster_ids, type=pa.uint64()),
         },
-        schema=SCHEMA_RESOLVER_UPLOAD,
+        schema=SCHEMA_CLUSTERS,
     )
 
 

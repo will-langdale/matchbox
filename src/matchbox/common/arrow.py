@@ -33,21 +33,13 @@ SCHEMA_RESULTS: Final[pa.Schema] = pa.schema(
 )
 """Data transfer schema for the results of a deduplication or linking process."""
 
-SCHEMA_RESOLVER_UPLOAD: Final[pa.Schema] = pa.schema(
+SCHEMA_CLUSTERS: Final[pa.Schema] = pa.schema(
     [
         ("client_cluster_id", pa.uint64()),
-        ("node_id", pa.uint64()),
+        ("server_cluster_id", pa.uint64()),
     ]
 )
-"""Data transfer schema for uploading resolver cluster assignments."""
-
-SCHEMA_RESOLVER_MAPPING: Final[pa.Schema] = pa.schema(
-    [
-        ("client_cluster_id", pa.uint64()),
-        ("cluster_id", pa.uint64()),
-    ]
-)
-"""Data transfer schema for downloading resolver cluster ID mappings."""
+"""Data transfer schema for resolver cluster assignments."""
 
 
 SCHEMA_JUDGEMENTS: Final[pa.Schema] = pa.schema(

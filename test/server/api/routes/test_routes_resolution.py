@@ -1,10 +1,12 @@
+from io import BytesIO
 from unittest.mock import Mock, patch
 
 import pyarrow as pa
 import pytest
 from fastapi.testclient import TestClient
+from pyarrow import parquet as pq
 
-from matchbox.common.arrow import table_to_buffer
+from matchbox.common.arrow import SCHEMA_CLUSTERS, table_to_buffer
 from matchbox.common.dtos import (
     CRUDOperation,
     ErrorResponse,
@@ -19,7 +21,10 @@ from matchbox.common.exceptions import (
     MatchboxLockError,
     MatchboxResolutionNotFoundError,
 )
-from matchbox.common.factories.models import model_factory
+from matchbox.common.factories.models import (
+    model_factory,
+    resolver_upload_from_model_testkit,
+)
 from matchbox.common.factories.sources import source_factory
 from matchbox.server.uploads import resolver_mapping_key
 
@@ -381,23 +386,21 @@ def test_get_results(
 def test_get_results_resolver(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
 ) -> None:
+    testkit = model_factory().fake_run()
+    resolver_data = resolver_upload_from_model_testkit(testkit).to_arrow()
+
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution = Mock(
         return_value=Mock(resolution_type=ResolutionType.RESOLVER)
     )
-    mock_backend.get_resolver_data = Mock(
-        return_value=pa.table(
-            {
-                "cluster_id": pa.array([1, 1], type=pa.uint64()),
-                "node_id": pa.array([1, 2], type=pa.uint64()),
-            }
-        )
-    )
+    mock_backend.get_resolver_data = Mock(return_value=resolver_data)
 
     response = test_client.get("/collections/default/runs/1/resolutions/resolver/data")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/octet-stream"
+    result_table = pq.read_table(BytesIO(response.content))
+    assert result_table.schema.equals(SCHEMA_CLUSTERS)
     mock_backend.get_resolver_data.assert_called_once()
 
 
@@ -412,7 +415,7 @@ def test_get_resolver_mapping(
         pa.table(
             {
                 "client_cluster_id": pa.array([1], type=pa.uint64()),
-                "cluster_id": pa.array([10], type=pa.uint64()),
+                "server_cluster_id": pa.array([10], type=pa.uint64()),
             }
         )
     ).read()

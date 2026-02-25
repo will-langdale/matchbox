@@ -54,6 +54,7 @@ def _materialise_model_and_resolver(
     add_to_dag: bool = True,
 ) -> ResolverResolutionPath:
     """Create model + resolver resolutions and upload their data."""
+    # TODO: remove shim in Resolution PR2
     backend.create_resolution(
         resolution=model_tkit.fake_run().model.to_resolution(),
         path=model_tkit.resolution_path,

@@ -16,8 +16,8 @@ from pyarrow import ArrowInvalid
 from pyarrow import parquet as pq
 
 from matchbox.common.arrow import (
+    SCHEMA_CLUSTERS,
     SCHEMA_INDEX,
-    SCHEMA_RESOLVER_UPLOAD,
     SCHEMA_RESULTS,
     table_to_buffer,
 )
@@ -534,7 +534,7 @@ def set_data(
         elif resolution.resolution_type == ResolutionType.MODEL:
             expected_schema = SCHEMA_RESULTS
         elif resolution.resolution_type == ResolutionType.RESOLVER:
-            expected_schema = SCHEMA_RESOLVER_UPLOAD
+            expected_schema = SCHEMA_CLUSTERS
         else:
             raise RuntimeError("Unsupported resolution type.")
 
