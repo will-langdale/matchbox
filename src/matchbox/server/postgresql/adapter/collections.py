@@ -390,8 +390,7 @@ class MatchboxPostgresCollectionsMixin:
         )
         self.unlock_resolution_data(path=path, complete=True)
 
-    def insert_resolver_data(self, path: ResolverResolutionPath, data: Table) -> Table:
-        """Insert resolver assignments and return client-to-server mapping."""
+    def insert_resolver_data(self, path: ResolverResolutionPath, data: Table) -> Table:  # noqa: D102
         self._check_writeable(path)
         mapping = insert_resolver_clusters(
             path=path,

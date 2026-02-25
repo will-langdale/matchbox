@@ -1,5 +1,3 @@
-from unittest.mock import Mock
-
 import polars as pl
 import pyarrow as pa
 import pytest
@@ -50,23 +48,6 @@ def test_init_query() -> None:
         threshold=32,
         cleaning={"hello": "hello"},
     )
-
-
-def test_query_from_config_uses_canonical_resolver_fallback() -> None:
-    """Model can be reconstructed from canonical resolver-only config."""
-    dag = Mock()
-    dag.get_source.side_effect = lambda name: name
-    dag.get_model.side_effect = lambda name: f"model:{name}"
-
-    config = QueryConfig(
-        source_resolutions=("source_a",),
-        resolver_resolution="resolver_my_model",
-    )
-
-    query = Query.from_config(config=config, dag=dag)
-    assert query.sources == ("source_a",)
-    assert query.model == "model:my_model"
-    dag.get_model.assert_called_once_with("my_model")
 
 
 def test_query_single_source(

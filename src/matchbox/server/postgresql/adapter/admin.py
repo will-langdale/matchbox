@@ -386,7 +386,7 @@ class MatchboxPostgresAdminMixin:
                 select(EvalJudgements.endorsed_cluster_id.label("cluster_id")),
                 select(EvalJudgements.shown_cluster_id.label("cluster_id")),
                 select(ClusterSourceKey.cluster_id),
-                select(ResolutionClusters.cluster_id.label("cluster_id")),
+                select(ResolutionClusters.cluster_id),
                 select(ModelEdges.left_id.label("cluster_id")),
                 select(ModelEdges.right_id.label("cluster_id")),
             ).cte("union_all_cte")

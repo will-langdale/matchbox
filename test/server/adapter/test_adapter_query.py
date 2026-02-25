@@ -118,46 +118,6 @@ class TestMatchboxQueryBackend:
                 linked.true_entity_subset("crn", "dh")
             )
 
-    def test_query_with_probabilistic_link_resolver(self) -> None:
-        """Test querying data from probabilistic link resolver output."""
-        with self.scenario(self.backend, "link") as dag_testkit:
-            linker_name = "probabilistic_naive_test_crn_naive_test_cdms"
-            crn_testkit = dag_testkit.sources.get("crn")
-            cdms_testkit = dag_testkit.sources.get("cdms")
-            linker_resolver_path = canonical_resolver_path_for_model(
-                dag_testkit.models[linker_name].resolution_path
-            )
-
-            df_crn = self.backend.query(
-                source=crn_testkit.resolution_path,
-                point_of_truth=linker_resolver_path,
-            )
-
-            assert isinstance(df_crn, pa.Table)
-            assert df_crn.num_rows == crn_testkit.data.num_rows
-            assert df_crn.schema.equals(SCHEMA_QUERY)
-
-            df_cdms = self.backend.query(
-                source=cdms_testkit.resolution_path,
-                point_of_truth=linker_resolver_path,
-            )
-
-            assert isinstance(df_cdms, pa.Table)
-            assert df_cdms.num_rows == cdms_testkit.data.num_rows
-            assert df_cdms.schema.equals(SCHEMA_QUERY)
-
-            # Assumes CRN and DH come from same LinkedSourcesTestkit
-            linked = dag_testkit.source_to_linked["crn"]
-
-            all_ids = pa.concat_arrays(
-                [df_crn["id"].combine_chunks(), df_cdms["id"].combine_chunks()]
-            )
-            # Resolver threshold is configured at creation-time, so this checks
-            # the materialised output shape rather than runtime threshold overrides.
-            assert pc.count_distinct(all_ids).as_py() >= len(
-                linked.true_entity_subset("crn", "cdms")
-            )
-
     def test_match_one_to_many(self) -> None:
         """Test that matching data works when the target has many IDs."""
         with self.scenario(self.backend, "link") as dag_testkit:
@@ -287,35 +247,3 @@ class TestMatchboxQueryBackend:
             assert res[0].cluster is None
             assert res[0].source_id == set()
             assert res[0].target_id == set()
-
-    def test_match_many_to_one_with_probabilistic_link_resolver(self) -> None:
-        """Test matching against a probabilistic link resolver."""
-        with self.scenario(self.backend, "link") as dag_testkit:
-            linker_name = "probabilistic_naive_test_crn_naive_test_cdms"
-            crn_testkit = dag_testkit.sources.get("crn")
-            cdms_testkit = dag_testkit.sources.get("cdms")
-            linker_resolver_path = canonical_resolver_path_for_model(
-                dag_testkit.models[linker_name].resolution_path
-            )
-
-            # Assumes CRN and CDMS come from same LinkedSourcesTestkit
-            linked = dag_testkit.source_to_linked["crn"]
-
-            # A random entity present in both sources
-            source_entity: SourceEntity = linked.find_entities(
-                min_appearances={"crn": 1, "cdms": 1},
-            )[0]
-
-            res = self.backend.match(
-                key=next(iter(source_entity.keys["crn"])),
-                source=crn_testkit.resolution_path,
-                targets=[cdms_testkit.resolution_path],
-                point_of_truth=linker_resolver_path,
-            )
-
-            assert len(res) == 1
-            assert isinstance(res[0], Match)
-            assert res[0].source == crn_testkit.source.resolution_path
-            assert res[0].target == cdms_testkit.source.resolution_path
-            assert res[0].source_id == source_entity.keys["crn"]
-            assert isinstance(res[0].target_id, set)

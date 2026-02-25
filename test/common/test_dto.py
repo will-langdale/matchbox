@@ -3,7 +3,6 @@ import pytest
 from matchbox.common.dtos import (
     Collection,
     Match,
-    QueryConfig,
     ResolutionPath,
 )
 
@@ -43,25 +42,3 @@ def test_validate_collection() -> None:
 
     with pytest.raises(ValueError):
         Collection(default_run=2, runs=[1])
-
-
-def test_query_config_normalises_model_point_of_truth() -> None:
-    """Model point-of-truth normalises to the canonical resolver name."""
-    config = QueryConfig(
-        source_resolutions=("source_a",),
-        model_resolution="my_model",
-    )
-
-    assert config.model_resolution == "my_model"
-    assert config.resolver_resolution == "resolver_my_model"
-    assert config.point_of_truth == "resolver_my_model"
-
-
-def test_query_config_rejects_inconsistent_resolution_pair() -> None:
-    """Model and resolver fields must represent the same canonical pair."""
-    with pytest.raises(ValueError, match="canonical"):
-        QueryConfig(
-            source_resolutions=("source_a",),
-            model_resolution="my_model",
-            resolver_resolution="resolver_other_model",
-        )

@@ -113,6 +113,8 @@ def test_model_sync(matchbox_api: MockRouter) -> None:
     # Resolution doesn't yet exist
     resolution_get_calls = {"count": 0}
 
+    # TODO: remove shim in Resolution PR2
+    # will be done with a resolver_factory
     def model_resolution_response(_: object) -> Response:
         resolution_get_calls["count"] += 1
         if resolution_get_calls["count"] <= 2:
