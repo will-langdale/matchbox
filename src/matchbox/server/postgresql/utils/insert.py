@@ -8,11 +8,11 @@ from sqlalchemy.dialects.postgresql import (
     BYTEA,
     SMALLINT,
     TEXT,
-    aggregate_order_by,
     insert,
 )
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import TableClause
+from sqlalchemy.sql.selectable import Subquery
 
 from matchbox.common.dtos import (
     ModelResolutionPath,
@@ -233,11 +233,35 @@ def insert_model_edges(
     logger.info("Model edge insert complete!", prefix=log_prefix)
 
 
+def _build_expanded_leaves_subquery(
+    incoming_cluster_assignments: TableClause,
+) -> Subquery:
+    """Expand child assignments to leaf-level cluster IDs per parent cluster."""
+    return (
+        select(
+            incoming_cluster_assignments.c.parent_id,
+            func.coalesce(
+                Contains.leaf,
+                incoming_cluster_assignments.c.child_id,
+            ).label("leaf_id"),
+        )
+        .distinct()
+        .select_from(
+            # Clusters with no children in Contains resolve to themselves
+            incoming_cluster_assignments.outerjoin(
+                Contains,
+                Contains.root == incoming_cluster_assignments.c.child_id,
+            )
+        )
+        .subquery("expanded_leaves")
+    )
+
+
 def _compute_resolver_hashes(
     incoming_cluster_assignments: TableClause,
     session: Session,
 ) -> pa.Table:
-    """Expand cluster assignments to leaves and compute deterministic cluster hashes.
+    """Expand cluster assignments to leaves and compute cluster hashes.
 
     Each uploaded assignment maps a parent_id to a child_id. A child cluster
     may itself be a parent cluster (with children in Contains), or a leaf cluster
@@ -245,7 +269,7 @@ def _compute_resolver_hashes(
 
     1. Expands each child cluster to its leaf-level cluster IDs via an outer
         join on Contains. Clusters with no children resolve to themselves.
-    2. Groups the leaf hashes per parent cluster, sorted for determinism.
+    2. Groups the leaf hashes per parent cluster.
     3. Computes a single composite hash per parent cluster in Python.
 
     Uses an **inner join** to Clusters when fetching hashes, so unknown
@@ -261,34 +285,13 @@ def _compute_resolver_hashes(
         Arrow table with columns (parent_id: int64, cluster_hash: binary).
     """
     # Expand each child_id to its constituent leaves
-    expanded_leaves = (
-        select(
-            incoming_cluster_assignments.c.parent_id,
-            func.coalesce(
-                Contains.leaf,
-                incoming_cluster_assignments.c.child_id,
-            ).label("leaf_id"),
-        )
-        .distinct()
-        .select_from(
-            incoming_cluster_assignments.outerjoin(
-                Contains,
-                Contains.root == incoming_cluster_assignments.c.child_id,
-            )
-        )
-        .subquery("expanded_leaves")
-    )
+    expanded_leaves = _build_expanded_leaves_subquery(incoming_cluster_assignments)
 
-    # Group leaf hashes per parent_id, sorted for deterministic hashing
+    # Group leaf hashes per parent_id
     rows = session.execute(
         select(
             expanded_leaves.c.parent_id,
-            func.array_agg(
-                aggregate_order_by(
-                    Clusters.cluster_hash,
-                    Clusters.cluster_hash,
-                )
-            ).label("leaf_hashes"),
+            func.array_agg(Clusters.cluster_hash).label("leaf_hashes"),
         )
         .select_from(
             expanded_leaves.join(
@@ -297,10 +300,9 @@ def _compute_resolver_hashes(
             )
         )
         .group_by(expanded_leaves.c.parent_id)
-        .order_by(expanded_leaves.c.parent_id)
     ).all()
 
-    # Compute a single composite hash per parent cluster from sorted leaves
+    # Compute a single composite hash per parent cluster from leaf hashes
     return pa.table(
         {
             "parent_id": [int(r[0]) for r in rows],
@@ -323,7 +325,7 @@ def insert_resolver_clusters(
     1. Validate: check fingerprint, ensure no prior data, short-circuit
         if the upload is empty
     2. Compute hashes: ingest assignments to a temp table, expand each
-        child cluster to its leaves, and derive a deterministic cluster hash per parent
+        child cluster to its leaves, and derive a cluster hash per parent
         cluster (Python round-trip via _compute_resolver_hashes)
     3. Insert everything: with both temp tables live in one session,
         materialise new Clusters rows, then insert Contains and
@@ -386,28 +388,11 @@ def insert_resolver_clusters(
         ) as incoming_cluster_assignments,
         MBDB.get_session() as session,
     ):
-        # Expand child clusters → leaves → deterministic hash per parent cluster
+        # Expand child clusters → leaves → hash per parent cluster
         hash_data = _compute_resolver_hashes(incoming_cluster_assignments, session)
 
         # Leaf expansion subquery
-        expanded_leaves = (
-            select(
-                incoming_cluster_assignments.c.parent_id,
-                func.coalesce(
-                    Contains.leaf,
-                    incoming_cluster_assignments.c.child_id,
-                ).label("leaf_id"),
-            )
-            .distinct()
-            .select_from(
-                # Clusters with no children in Contains resolve to themselves
-                incoming_cluster_assignments.outerjoin(
-                    Contains,
-                    Contains.root == incoming_cluster_assignments.c.child_id,
-                )
-            )
-            .subquery("expanded_leaves")
-        )
+        expanded_leaves = _build_expanded_leaves_subquery(incoming_cluster_assignments)
 
         # 3) Insert everything
         with ingest_to_temporary_table(
