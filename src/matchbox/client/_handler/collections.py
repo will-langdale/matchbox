@@ -367,21 +367,6 @@ def get_resolver_data(path: ResolverResolutionPath) -> Table:
     return read_table(buffer)
 
 
-@profile_time(kwarg="path")
-@http_retry
-def get_resolver_mapping(path: ResolverResolutionPath, upload_id: str) -> Table:
-    """Get resolver upload mapping from Matchbox."""
-    log_prefix = f"Resolver {path}"
-    logger.debug("Retrieving upload mapping", prefix=log_prefix)
-
-    res = CLIENT.get(
-        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data/mapping",
-        params={"upload_id": upload_id},
-    )
-    buffer = BytesIO(res.content)
-    return read_table(buffer)
-
-
 @http_retry
 def delete_resolution(
     path: ResolutionPath, certain: bool = False

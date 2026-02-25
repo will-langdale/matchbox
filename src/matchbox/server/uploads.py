@@ -3,7 +3,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Generator
 from functools import partial
-from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
@@ -19,7 +18,6 @@ from matchbox.common.arrow import (
     SCHEMA_CLUSTERS,
     SCHEMA_INDEX,
     SCHEMA_RESULTS,
-    table_to_buffer,
 )
 from matchbox.common.dtos import (
     ResolutionPath,
@@ -110,11 +108,6 @@ def settings_to_upload_tracker(settings: MatchboxServerSettings) -> UploadTracke
             )
         case _:
             raise RuntimeError("Unsupported task runner.")
-
-
-def resolver_mapping_key(upload_id: str) -> str:
-    """Get cache key for resolver mapping upload artefact."""
-    return f"{upload_id}.mapping.parquet"
 
 
 # -- S3 functions --
@@ -235,15 +228,9 @@ def process_upload(
                 results=pa.Table.from_batches(batches, schema=SCHEMA_RESULTS),
             )
         elif resolution.resolution_type == ResolutionType.RESOLVER:
-            mapping = backend.insert_resolver_data(
+            backend.insert_resolver_data(
                 path=resolution_path,
                 data=pa.Table.from_batches(batches, schema=SCHEMA_CLUSTERS),
-            )
-            mapping_buffer: BytesIO = table_to_buffer(mapping)
-            s3_client.put_object(
-                Bucket=bucket,
-                Key=resolver_mapping_key(upload_id),
-                Body=mapping_buffer.getvalue(),
             )
         else:
             raise RuntimeError("Unsupported resolution type.")

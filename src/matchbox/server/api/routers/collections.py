@@ -57,7 +57,6 @@ from matchbox.server.uploads import (
     file_to_s3,
     process_upload,
     process_upload_celery,
-    resolver_mapping_key,
 )
 
 router = APIRouter(prefix="/collections", tags=["collection"])
@@ -660,43 +659,3 @@ def get_results(
 
     buffer = table_to_buffer(res)
     return ParquetResponse(buffer.getvalue())
-
-
-@router.get(
-    "/{collection}/runs/{run_id}/resolutions/{resolution}/data/mapping",
-    responses={
-        400: {"model": ErrorResponse},
-        401: {"model": ErrorResponse},
-        403: {"model": ErrorResponse},
-        404: {"model": ErrorResponse},
-    },
-    dependencies=[Depends(RequireCollectionRead)],
-    summary="Get resolver upload mapping",
-    description=("Download resolver client ID to server ID mapping as parquet."),
-)
-def get_resolver_mapping(
-    backend: BackendDependency,
-    collection: CollectionName,
-    run_id: RunID,
-    resolution: ResolutionName,
-    upload_id: Annotated[str, Query()],
-) -> ParquetResponse:
-    """Download resolver upload mapping as parquet file."""
-    resolution_dto = backend.get_resolution(
-        path=ResolutionPath(collection=collection, run=run_id, name=resolution)
-    )
-    if resolution_dto.resolution_type != ResolutionType.RESOLVER:
-        raise MatchboxServerFileError(
-            message="Mapping is only available for resolver uploads."
-        )
-
-    client = backend.settings.datastore.get_client()
-    bucket = backend.settings.datastore.cache_bucket_name
-    key = resolver_mapping_key(upload_id)
-    try:
-        response = client.get_object(Bucket=bucket, Key=key)
-        return ParquetResponse(response["Body"].read())
-    except Exception as e:
-        raise MatchboxServerFileError(
-            message=f"Could not retrieve mapping for upload_id={upload_id}: {e}"
-        ) from e

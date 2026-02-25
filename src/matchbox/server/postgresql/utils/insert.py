@@ -14,8 +14,6 @@ from sqlalchemy.dialects.postgresql import (
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import TableClause
 
-from matchbox.common.arrow import SCHEMA_CLUSTERS_MAPPING
-from matchbox.common.db import QueryReturnType, sql_to_df
 from matchbox.common.dtos import (
     ModelResolutionPath,
     ResolutionType,
@@ -39,7 +37,7 @@ from matchbox.server.postgresql.orm import (
     Resolutions,
     SourceConfigs,
 )
-from matchbox.server.postgresql.utils.db import compile_sql, ingest_to_temporary_table
+from matchbox.server.postgresql.utils.db import ingest_to_temporary_table
 
 
 def insert_hashes(
@@ -317,8 +315,8 @@ def insert_resolver_clusters(
     path: ResolverResolutionPath,
     cluster_assignments: pa.Table,
     batch_size: int,
-) -> pa.Table:
-    """Write resolver cluster assignments and return a client-to-server mapping.
+) -> None:
+    """Write resolver cluster assignments.
 
     The function proceeds in three phases:
 
@@ -329,18 +327,13 @@ def insert_resolver_clusters(
         cluster (Python round-trip via _compute_resolver_hashes)
     3. Insert everything: with both temp tables live in one session,
         materialise new Clusters rows, then insert Contains and
-        ResolutionClusters membership rows, and return the mapping
+        ResolutionClusters membership rows
 
     Args:
         path: The resolver resolution path to upload cluster assignments for
         cluster_assignments: Arrow table conforming to SCHEMA_CLUSTERS, having
             (parent_id, child_id) columns
         batch_size: Batch size for temporary table ingestion
-
-    Returns:
-        Arrow table with (client_id, server_id), where server_id is
-        the canonical Matchbox cluster ID, conforming to
-        SCHEMA_CLUSTERS_MAPPING.
 
     Raises:
         MatchboxResolutionNotFoundError: If the resolution doesn't exist
@@ -350,7 +343,6 @@ def insert_resolver_clusters(
     log_prefix = f"Resolver {path.name}"
     fingerprint = hash_arrow_table(cluster_assignments)
     cluster_assignment_data = cluster_assignments.select(["parent_id", "child_id"])
-    mapping: pa.Table
 
     # 1) Validate
 
@@ -372,10 +364,7 @@ def insert_resolver_clusters(
             raise MatchboxResolutionExistingData
 
         if cluster_assignment_data.num_rows == 0:
-            return pa.Table.from_pydict(
-                {"client_id": [], "server_id": []},
-                schema=SCHEMA_CLUSTERS_MAPPING,
-            )
+            return
 
         resolution_id = resolution.resolution_id
 
@@ -507,22 +496,7 @@ def insert_resolver_clusters(
                         ]
                     )
                 )
-
                 session.commit()
-
-                # Mapping
-                # Read back the client→server mapping
-                mapping_query = select(
-                    cluster_map.c.parent_id.label("client_id"),
-                    cluster_map.c.cluster_id.label("server_id"),
-                ).order_by(cluster_map.c.parent_id)
-
-                with MBDB.get_adbc_connection() as connection:
-                    mapping = sql_to_df(
-                        stmt=compile_sql(mapping_query),
-                        connection=connection,
-                        return_type=QueryReturnType.ARROW,
-                    ).cast(SCHEMA_CLUSTERS_MAPPING)
 
             except Exception:
                 session.rollback()
@@ -535,5 +509,3 @@ def insert_resolver_clusters(
         Contains.__table__.fullname,
         ResolutionClusters.__table__.fullname,
     )
-
-    return mapping
