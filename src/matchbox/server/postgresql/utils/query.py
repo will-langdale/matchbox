@@ -68,7 +68,7 @@ def resolver_membership_subquery(
     resolution_id: int,
     alias: str = "resolver_membership",
 ) -> Subquery:
-    """Build ``root_id``/``leaf_id`` membership rows for a resolver."""
+    """Build root_id/leaf_id membership rows for a resolver."""
     roots_query = select(
         ResolutionClusters.cluster_id.label("root_id"),
         ResolutionClusters.cluster_id.label("leaf_id"),

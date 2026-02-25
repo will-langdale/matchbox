@@ -241,18 +241,18 @@ def _compute_resolver_hashes(
 ) -> pa.Table:
     """Expand cluster assignments to leaves and compute deterministic cluster hashes.
 
-    Each uploaded assignment maps a ``client_cluster_id`` to a
-    ``server_cluster_id``. A server cluster may itself be a parent cluster (with
-    children in ``Contains``), or a leaf cluster with no children. This function:
+    Each uploaded assignment maps a client_cluster_id to a
+    server_cluster_id. A server cluster may itself be a parent cluster (with
+    children in Contains), or a leaf cluster with no children. This function:
 
     1. Expands each server cluster to its leaf-level cluster IDs via an outer
-        join on ``Contains``. Clusters with no children resolve to themselves.
+        join on Contains. Clusters with no children resolve to themselves.
     2. Groups the leaf hashes per client cluster, sorted for determinism.
     3. Computes a single composite hash per client cluster in Python.
 
-    Uses an **inner join** to ``Clusters`` when fetching hashes, so unknown
+    Uses an **inner join** to Clusters when fetching hashes, so unknown
     leaf IDs are silently dropped here. They will surface later as FK
-    violations when inserting into ``Contains``.
+    violations when inserting into Contains.
 
     Args:
         incoming_cluster_assignments: Temporary table with
@@ -326,10 +326,10 @@ def insert_resolver_clusters(
         if the upload is empty
     2. Compute hashes: ingest assignments to a temp table, expand each
         server cluster to its leaves, and derive a deterministic cluster hash per client
-        cluster (Python round-trip via ``_compute_resolver_hashes``)
+        cluster (Python round-trip via _compute_resolver_hashes)
     3. Insert everything: with both temp tables live in one session,
-        materialise new ``Clusters`` rows, then insert ``Contains`` and
-        ``ResolutionClusters`` membership rows, and return the mapping
+        materialise new Clusters rows, then insert Contains and
+        ResolutionClusters membership rows, and return the mapping
 
     Args:
         path: The resolver resolution path to upload cluster assignments for
@@ -339,8 +339,8 @@ def insert_resolver_clusters(
 
     Returns:
         Arrow table with (client_cluster_id, server_cluster_id), where
-        ``server_cluster_id`` is the canonical Matchbox cluster ID,
-        conforming to ``SCHEMA_CLUSTERS``
+        server_cluster_id is the canonical Matchbox cluster ID,
+        conforming to SCHEMA_CLUSTERS
 
     Raises:
         MatchboxResolutionNotFoundError: If the resolution doesn't exist
