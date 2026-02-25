@@ -35,11 +35,19 @@ SCHEMA_RESULTS: Final[pa.Schema] = pa.schema(
 
 SCHEMA_CLUSTERS: Final[pa.Schema] = pa.schema(
     [
-        ("client_cluster_id", pa.uint64()),
-        ("server_cluster_id", pa.uint64()),
+        ("parent_id", pa.uint64()),
+        ("child_id", pa.uint64()),
     ]
 )
 """Data transfer schema for resolver cluster assignments."""
+
+SCHEMA_CLUSTERS_MAPPING: Final[pa.Schema] = pa.schema(
+    [
+        ("client_id", pa.uint64()),
+        ("server_id", pa.uint64()),
+    ]
+)
+"""Data transfer schema for resolver upload ID mappings."""
 
 
 SCHEMA_JUDGEMENTS: Final[pa.Schema] = pa.schema(

@@ -672,9 +672,7 @@ def get_results(
     },
     dependencies=[Depends(RequireCollectionRead)],
     summary="Get resolver upload mapping",
-    description=(
-        "Download resolver client cluster to backend cluster mapping as parquet."
-    ),
+    description=("Download resolver client ID to server ID mapping as parquet."),
 )
 def get_resolver_mapping(
     backend: BackendDependency,

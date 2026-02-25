@@ -452,6 +452,7 @@ class QueryConfig(BaseModel):
         if len(self.source_resolutions) > 1 and not (
             self.resolver_resolution or self.model_resolution
         ):
+            # TODO: remove shim in Resolution PR2
             raise ValueError(
                 "A model or resolver resolution must be set if querying from multiple "
                 "sources."

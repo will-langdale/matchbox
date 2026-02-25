@@ -662,8 +662,8 @@ def resolver_upload_from_model_testkit(model_tkit: ModelTestkit) -> pl.DataFrame
     """Return canonical resolver upload rows from a model testkit.
 
     Output columns:
-    - client_cluster_id: UInt64
-    - server_cluster_id: UInt64
+    - parent_id: UInt64
+    - child_id: UInt64
     """
     # TODO: remove shim in Resolution PR2
     server_cluster_ids = set(model_tkit.left_clusters.keys())
@@ -691,11 +691,8 @@ def resolver_upload_from_model_testkit(model_tkit: ModelTestkit) -> pl.DataFrame
         ordered_server_cluster_ids = sorted(component)
         if not ordered_server_cluster_ids:
             continue
-        client_cluster_id = ordered_server_cluster_ids[0]
-        rows.extend(
-            (client_cluster_id, server_cluster_id)
-            for server_cluster_id in ordered_server_cluster_ids
-        )
+        parent_id = ordered_server_cluster_ids[0]
+        rows.extend((parent_id, child_id) for child_id in ordered_server_cluster_ids)
 
     if not rows:
         return pl.DataFrame(schema=pl.Schema(SCHEMA_CLUSTERS))

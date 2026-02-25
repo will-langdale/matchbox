@@ -85,6 +85,7 @@ class Query:
     @property
     def config(self) -> QueryConfig:
         """The query configuration for the current DAG."""
+        # TODO: remove shim in Resolution PR2
         model_resolution = self.model.name if self.model else None
         resolver_resolution = (
             f"resolver_{model_resolution}" if model_resolution is not None else None

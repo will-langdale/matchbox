@@ -4,7 +4,7 @@ from psycopg.errors import LockNotAvailable
 from pyarrow import Table
 from sqlalchemy import CursorResult, delete, select, update
 
-from matchbox.common.arrow import SCHEMA_CLUSTERS
+from matchbox.common.arrow import SCHEMA_CLUSTERS, SCHEMA_CLUSTERS_MAPPING
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import (
     Collection,
@@ -391,13 +391,13 @@ class MatchboxPostgresCollectionsMixin:
         self.unlock_resolution_data(path=path, complete=True)
 
     def insert_resolver_data(self, path: ResolverResolutionPath, data: Table) -> Table:
-        """Insert resolver cluster assignments and return mapping table."""
+        """Insert resolver assignments and return client-to-server mapping."""
         self._check_writeable(path)
         mapping = insert_resolver_clusters(
             path=path,
             cluster_assignments=data,
             batch_size=self.settings.batch_size,
-        )
+        ).cast(SCHEMA_CLUSTERS_MAPPING)
         self.unlock_resolution_data(path=path, complete=True)
         return mapping
 
@@ -423,8 +423,8 @@ class MatchboxPostgresCollectionsMixin:
                 alias="assignments",
             )
             ordered_query = select(
-                assignments_query.c.root_id.label("client_cluster_id"),
-                assignments_query.c.leaf_id.label("server_cluster_id"),
+                assignments_query.c.root_id.label("parent_id"),
+                assignments_query.c.leaf_id.label("child_id"),
             ).order_by(
                 assignments_query.c.root_id,
                 assignments_query.c.leaf_id,

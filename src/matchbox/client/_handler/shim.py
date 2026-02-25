@@ -114,26 +114,23 @@ def resolver_upload_from_model_results(
         ordered_server_cluster_ids = sorted(component)
         if not ordered_server_cluster_ids:
             continue
-        client_cluster_id = ordered_server_cluster_ids[0]
-        rows.extend(
-            (client_cluster_id, server_cluster_id)
-            for server_cluster_id in ordered_server_cluster_ids
-        )
+        parent_id = ordered_server_cluster_ids[0]
+        rows.extend((parent_id, child_id) for child_id in ordered_server_cluster_ids)
 
     if not rows:
         return pa.table(
             {
-                "client_cluster_id": pa.array([], type=pa.uint64()),
-                "server_cluster_id": pa.array([], type=pa.uint64()),
+                "parent_id": pa.array([], type=pa.uint64()),
+                "child_id": pa.array([], type=pa.uint64()),
             },
             schema=SCHEMA_CLUSTERS,
         )
 
-    client_cluster_ids, all_server_cluster_ids = zip(*rows, strict=True)
+    parent_ids, child_ids = zip(*rows, strict=True)
     return pa.table(
         {
-            "client_cluster_id": pa.array(client_cluster_ids, type=pa.uint64()),
-            "server_cluster_id": pa.array(all_server_cluster_ids, type=pa.uint64()),
+            "parent_id": pa.array(parent_ids, type=pa.uint64()),
+            "child_id": pa.array(child_ids, type=pa.uint64()),
         },
         schema=SCHEMA_CLUSTERS,
     )

@@ -613,7 +613,7 @@ class MatchboxDBAdapter(ABC):
 
     @abstractmethod
     def insert_resolver_data(self, path: ResolverResolutionPath, data: Table) -> Table:
-        """Inserts resolver cluster assignments and returns client-to-server mapping."""
+        """Insert resolver assignments and return client-to-server mapping."""
         ...
 
     @abstractmethod

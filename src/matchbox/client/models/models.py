@@ -167,6 +167,7 @@ class Model:
     def sources(self) -> set[SourceResolutionName]:
         """Set of source names upstream of this node."""
 
+        # TODO: remove shim in Resolution PR2
         def query_parent_name(query: Query) -> ResolutionName:
             config = query.config
             if config.model_resolution:

@@ -6,7 +6,11 @@ import pytest
 from fastapi.testclient import TestClient
 from pyarrow import parquet as pq
 
-from matchbox.common.arrow import SCHEMA_CLUSTERS, table_to_buffer
+from matchbox.common.arrow import (
+    SCHEMA_CLUSTERS,
+    SCHEMA_CLUSTERS_MAPPING,
+    table_to_buffer,
+)
 from matchbox.common.dtos import (
     CRUDOperation,
     ErrorResponse,
@@ -414,9 +418,10 @@ def test_get_resolver_mapping(
     mapping_bytes = table_to_buffer(
         pa.table(
             {
-                "client_cluster_id": pa.array([1], type=pa.uint64()),
-                "server_cluster_id": pa.array([10], type=pa.uint64()),
-            }
+                "client_id": pa.array([1], type=pa.uint64()),
+                "server_id": pa.array([10], type=pa.uint64()),
+            },
+            schema=SCHEMA_CLUSTERS_MAPPING,
         )
     ).read()
     object_body = Mock()
