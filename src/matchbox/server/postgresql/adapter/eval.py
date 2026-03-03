@@ -222,6 +222,10 @@ class MatchboxPostgresEvaluationMixin(_MixinBase):
         cluster_features_stmt = (
             select(
                 ResolutionClusters.cluster_id,
+                # Practically our client explicitly avoids showing the same cluster to
+                # a user more than oce, so conflicting decisions over time shouldn't be
+                # possible. However, the ORM doesn't enforce this, so we take only the
+                # latest decision here
                 func.max(user_judgements.c.timestamp).label("latest_ts"),
             )
             .join(

@@ -199,19 +199,22 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
+    # Restore truth_cache to resolution_from before re-adding truth to resolutions
     op.add_column(
         "resolution_from",
         sa.Column("truth_cache", sa.SMALLINT(), autoincrement=False, nullable=True),
         schema="mb",
     )
 
+    # Remove resolver type from the constraint before deleting resolver rows,
+    # otherwise the DELETE would violate the check
     op.drop_constraint(
         "resolution_type_constraints",
         "resolutions",
         schema="mb",
         type_="check",
     )
-    # Downgrading to a schema without resolver type, so remove resolver rows first.
+    # Downgrading to a schema without resolver type, so remove resolver rows first
     # Cascades clear resolver lineage, resolver_configs, and resolution_clusters
     # The paired model resolutions are left intact but will have no cluster
     # associations
@@ -224,6 +227,7 @@ def downgrade() -> None:
         schema="mb",
     )
 
+    # Restore truth column. Value is lost and will be NULL on downgrade.
     op.add_column(
         "resolutions",
         sa.Column("truth", sa.SMALLINT(), autoincrement=False, nullable=True),
@@ -233,11 +237,8 @@ def downgrade() -> None:
     # resolver_configs is dropped entirely. No need to alter its columns
     op.drop_table("resolver_configs", schema="mb")
 
-    op.drop_index(
-        "ix_resolution_clusters_resolution",
-        table_name="resolution_clusters",
-        schema="mb",
-    )
+    # Restore probability column on resolution_clusters, defaulting existing
+    # rows to 100 before tightening the constraint to NOT NULL
     op.add_column(
         "resolution_clusters",
         sa.Column("probability", sa.SMALLINT(), autoincrement=False, nullable=True),
@@ -259,6 +260,14 @@ def downgrade() -> None:
         "probability >= 0 AND probability <= 100",
         schema="mb",
     )
+
+    # Rename resolution_clusters back to probabilities
+    # PostgreSQL does not rename indexes on table rename, so drop and recreate
+    op.drop_index(
+        "ix_resolution_clusters_resolution",
+        table_name="resolution_clusters",
+        schema="mb",
+    )
     op.rename_table("resolution_clusters", "probabilities", schema="mb")
     op.create_index(
         op.f("ix_probabilities_resolution"),
@@ -268,6 +277,8 @@ def downgrade() -> None:
         schema="mb",
     )
 
+    # Rename model_edges back to results
+    # PostgreSQL does not rename indexes on table rename, so drop and recreate
     op.drop_index("ix_model_edges_resolution", table_name="model_edges", schema="mb")
     op.rename_table("model_edges", "results", schema="mb")
     op.create_index(
