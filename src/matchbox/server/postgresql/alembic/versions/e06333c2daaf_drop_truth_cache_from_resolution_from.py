@@ -34,7 +34,7 @@ def upgrade() -> None:
         schema="mb",
     )
 
-    # Keep existing model edge rows by renaming the results table.
+    # Keep existing model edge rows by renaming the results table
     op.rename_table("results", "model_edges", schema="mb")
     op.drop_index(op.f("ix_results_resolution"), table_name="model_edges", schema="mb")
     op.create_index(
@@ -90,26 +90,109 @@ def upgrade() -> None:
         sa.UniqueConstraint("resolution_id", name="resolver_configs_resolution_key"),
         schema="mb",
     )
+
+    # For each existing model resolution, create a paired resolver resolution
+    # Models keep their model_edges but lose their resolution_clusters, which move
+    # to the new resolver
+    # The resolver builds its Components settings from the threshold stored in
+    # resolutions.truth (read here before the column is dropped)
+    #
+    # upload_stage is supplied explicitly because the READY default is ORM-level only
+    # and will not fire on a raw SQL INSERT
+    #
+    # Fingerprint is set to 32 zero bytes -- a sentinel that will never match a real
+    # upload hash, so all clients will be forced to re-upload and replace it. 32 bytes
+    # matches the SHA-256 output of matchbox.common.hash.HASH_FUNC
     op.execute(
-        "UPDATE mb.resolver_configs "
-        "SET resolver_class = 'Components' "
-        "WHERE resolver_class = 'union'"
-    )
-    op.execute(
-        "UPDATE mb.resolver_configs "
-        "SET resolver_settings = "
-        "jsonb_build_object('thresholds', resolver_settings)"
+        """
+        INSERT INTO mb.resolutions (
+            name, 
+            type, 
+            description, 
+            fingerprint, 
+            run_id, 
+            upload_stage
+        )
+        SELECT
+            r.name || '_resolver',
+            'resolver',
+            'Resolver for ' || r.name,
+            decode(repeat('00', 32), 'hex'),
+            r.run_id,
+            'READY'
+        FROM mb.resolutions r
+        WHERE r.type = 'model'
+        """
     )
 
-    # Preserve closure-table threshold semantics before removing resolutions.truth.
     op.execute(
         """
-        UPDATE mb.resolution_from rf
-        SET truth_cache = COALESCE(rf.truth_cache, r.truth)
-        FROM mb.resolutions r
-        WHERE rf.parent = r.resolution_id
+        INSERT INTO mb.resolver_configs (
+            resolution_id, 
+            resolver_class, 
+            resolver_settings
+        )
+        SELECT
+            resolver.resolution_id,
+            'Components',
+            jsonb_build_object(
+                'thresholds', jsonb_build_object(model.name, model.truth)
+            )
+        FROM mb.resolutions model
+        JOIN mb.resolutions resolver
+            ON resolver.name = model.name || '_resolver'
+            AND resolver.run_id = model.run_id
+        WHERE model.type = 'model'
         """
     )
+
+    # Move cluster associations from the model to its paired resolver
+    op.execute(
+        """
+        UPDATE mb.resolution_clusters rc
+        SET resolution_id = resolver.resolution_id
+        FROM mb.resolutions model
+        JOIN mb.resolutions resolver
+            ON resolver.name = model.name || '_resolver'
+            AND resolver.run_id = model.run_id
+        WHERE rc.resolution_id = model.resolution_id
+            AND model.type = 'model'
+        """
+    )
+
+    # Add the resolver into the closure table
+    # First the direct model -> resolver edge, then all transitive ancestors so
+    # the closure table remains complete
+    op.execute(
+        """
+        INSERT INTO mb.resolution_from (parent, child, level)
+        SELECT
+            model.resolution_id,
+            resolver.resolution_id,
+            1
+        FROM mb.resolutions model
+        JOIN mb.resolutions resolver
+            ON resolver.name = model.name || '_resolver'
+            AND resolver.run_id = model.run_id
+        WHERE model.type = 'model'
+        """
+    )
+    op.execute(
+        """
+        INSERT INTO mb.resolution_from (parent, child, level)
+        SELECT
+            rf.parent,
+            resolver.resolution_id,
+            rf.level + 1
+        FROM mb.resolution_from rf
+        JOIN mb.resolutions model ON model.resolution_id = rf.child
+        JOIN mb.resolutions resolver
+            ON resolver.name = model.name || '_resolver'
+            AND resolver.run_id = model.run_id
+        WHERE model.type = 'model'
+        """
+    )
+
     op.drop_column("resolutions", "truth", schema="mb")
     op.drop_column("resolution_from", "truth_cache", schema="mb")
 
@@ -129,7 +212,10 @@ def downgrade() -> None:
         type_="check",
     )
     # Downgrading to a schema without resolver type, so remove resolver rows first.
-    # Cascades clear resolver lineage and resolver-scoped tables.
+    # Cascades clear resolver lineage, resolver_configs, and resolution_clusters
+    # The paired model resolutions are left intact but will have no cluster
+    # associations
+    # This split is not reversible
     op.execute("DELETE FROM mb.resolutions WHERE type = 'resolver'")
     op.create_check_constraint(
         "resolution_type_constraints",
@@ -144,7 +230,7 @@ def downgrade() -> None:
         schema="mb",
     )
 
-    # resolver_configs is dropped entirely; no need to alter its columns.
+    # resolver_configs is dropped entirely. No need to alter its columns
     op.drop_table("resolver_configs", schema="mb")
 
     op.drop_index(
