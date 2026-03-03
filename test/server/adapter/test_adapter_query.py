@@ -217,7 +217,7 @@ class TestMatchboxQueryBackend:
             assert res[0].source == crn_testkit.source.resolution_path
             assert res[0].target == dh_testkit.source.resolution_path
             assert res[0].cluster is not None
-            assert source_entity.keys["crn"].issubset(res[0].source_id)
+            assert res[0].source_id == source_entity.keys["crn"]
             assert res[0].target_id == source_entity.keys.get("dh", set())
 
     def test_match_none_to_none(self) -> None:
