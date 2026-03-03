@@ -14,7 +14,11 @@ from celery.utils.log import get_task_logger
 from fastapi import UploadFile
 from pyarrow import parquet as pq
 
-from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
+from matchbox.common.arrow import (
+    SCHEMA_CLUSTERS,
+    SCHEMA_INDEX,
+    SCHEMA_MODEL_EDGES,
+)
 from matchbox.common.dtos import (
     ResolutionPath,
     ResolutionType,
@@ -218,11 +222,18 @@ def process_upload(
                 path=resolution_path,
                 data_hashes=pa.Table.from_batches(batches, schema=SCHEMA_INDEX),
             )
-        else:
+        elif resolution.resolution_type == ResolutionType.MODEL:
             backend.insert_model_data(
                 path=resolution_path,
-                results=pa.Table.from_batches(batches, schema=SCHEMA_RESULTS),
+                results=pa.Table.from_batches(batches, schema=SCHEMA_MODEL_EDGES),
             )
+        elif resolution.resolution_type == ResolutionType.RESOLVER:
+            backend.insert_resolver_data(
+                path=resolution_path,
+                data=pa.Table.from_batches(batches, schema=SCHEMA_CLUSTERS),
+            )
+        else:
+            raise RuntimeError("Unsupported resolution type.")
 
     except Exception as e:
         # After failure, signal to clients they can try again

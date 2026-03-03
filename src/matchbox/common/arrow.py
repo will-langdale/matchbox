@@ -24,7 +24,7 @@ SCHEMA_INDEX: Final[pa.Schema] = pa.schema(
 )
 """Data transfer schema for data to be indexed in Matchbox."""
 
-SCHEMA_RESULTS: Final[pa.Schema] = pa.schema(
+SCHEMA_MODEL_EDGES: Final[pa.Schema] = pa.schema(
     [
         ("left_id", pa.uint64()),
         ("right_id", pa.uint64()),
@@ -32,6 +32,14 @@ SCHEMA_RESULTS: Final[pa.Schema] = pa.schema(
     ]
 )
 """Data transfer schema for the results of a deduplication or linking process."""
+
+SCHEMA_CLUSTERS: Final[pa.Schema] = pa.schema(
+    [
+        ("parent_id", pa.uint64()),
+        ("child_id", pa.uint64()),
+    ]
+)
+"""Data transfer schema for resolver cluster assignments."""
 
 
 SCHEMA_JUDGEMENTS: Final[pa.Schema] = pa.schema(

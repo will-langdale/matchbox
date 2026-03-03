@@ -1,13 +1,16 @@
+from io import BytesIO
 from unittest.mock import Mock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from pyarrow import parquet as pq
 
-from matchbox.common.arrow import table_to_buffer
+from matchbox.common.arrow import SCHEMA_CLUSTERS, table_to_buffer
 from matchbox.common.dtos import (
     CRUDOperation,
     ErrorResponse,
     ResolutionPath,
+    ResolutionType,
     ResourceOperationStatus,
     UploadInfo,
     UploadStage,
@@ -17,7 +20,10 @@ from matchbox.common.exceptions import (
     MatchboxLockError,
     MatchboxResolutionNotFoundError,
 )
-from matchbox.common.factories.models import model_factory
+from matchbox.common.factories.models import (
+    model_factory,
+    resolver_upload_from_model_testkit,
+)
 from matchbox.common.factories.sources import source_factory
 
 
@@ -361,6 +367,9 @@ def test_get_results(
 ) -> None:
     testkit = model_factory()
     test_client, mock_backend, _ = api_client_and_mocks
+    mock_backend.get_resolution = Mock(
+        return_value=Mock(resolution_type=ResolutionType.MODEL)
+    )
     mock_backend.get_model_data = Mock(return_value=testkit.probabilities.to_arrow())
 
     response = test_client.get(
@@ -369,6 +378,43 @@ def test_get_results(
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/octet-stream"
+    mock_backend.get_model_data.assert_called_once()
+
+
+def test_get_results_resolver(
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+) -> None:
+    testkit = model_factory().fake_run()
+    resolver_data = resolver_upload_from_model_testkit(testkit).to_arrow()
+
+    test_client, mock_backend, _ = api_client_and_mocks
+    mock_backend.get_resolution = Mock(
+        return_value=Mock(resolution_type=ResolutionType.RESOLVER)
+    )
+    mock_backend.get_resolver_data = Mock(return_value=resolver_data)
+
+    response = test_client.get("/collections/default/runs/1/resolutions/resolver/data")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    result_table = pq.read_table(BytesIO(response.content))
+    assert result_table.schema.equals(SCHEMA_CLUSTERS)
+    mock_backend.get_resolver_data.assert_called_once()
+
+
+def test_get_results_rejects_source_resolution(
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+) -> None:
+    test_client, mock_backend, _ = api_client_and_mocks
+    mock_backend.get_resolution = Mock(
+        return_value=Mock(resolution_type=ResolutionType.SOURCE)
+    )
+
+    response = test_client.get("/collections/default/runs/1/resolutions/source/data")
+
+    assert response.status_code == 422
+    error = ErrorResponse.model_validate(response.json())
+    assert error.exception_type == "MatchboxResolutionTypeError"
 
 
 def test_delete_resolution(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:

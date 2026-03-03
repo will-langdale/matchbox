@@ -101,7 +101,6 @@ def test_query_single_source(
         "collection": testkit.source.dag.name,
         "run_id": str(testkit.source.dag.run),
         "source": testkit.source.name,
-        "threshold": "50",
         "return_leaf_id": "False",
     }
 
@@ -169,14 +168,14 @@ def test_query_multiple_sources(
         "collection": testkit1.source.dag.name,
         "run_id": str(testkit1.source.dag.run),
         "source": testkit1.source.name,
-        "resolution": model.name,
+        "resolution": f"resolver_{model.name}",
         "return_leaf_id": "False",
     }
     assert dict(query_route.calls[-1].request.url.params) == {
         "collection": testkit2.source.dag.name,
         "run_id": str(testkit2.source.dag.run),
         "source": testkit2.source.name,
-        "resolution": model.name,
+        "resolution": f"resolver_{model.name}",
         "return_leaf_id": "False",
     }
 

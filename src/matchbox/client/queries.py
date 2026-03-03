@@ -85,9 +85,15 @@ class Query:
     @property
     def config(self) -> QueryConfig:
         """The query configuration for the current DAG."""
+        # TODO: remove shim in Resolution PR2
+        model_resolution = self.model.name if self.model else None
+        resolver_resolution = (
+            f"resolver_{model_resolution}" if model_resolution is not None else None
+        )
         return QueryConfig(
             source_resolutions=[source.name for source in self.sources],
-            model_resolution=self.model.name if self.model else None,
+            model_resolution=model_resolution,
+            resolver_resolution=resolver_resolution,
             combine_type=self.combine_type,
             threshold=threshold_float_to_int(self.threshold)
             if self.threshold
@@ -112,9 +118,13 @@ class Query:
         sources = [dag.get_source(res) for res in config.source_resolutions]
 
         # Get model if specified
-        model = (
-            dag.get_model(config.model_resolution) if config.model_resolution else None
-        )
+        model_name = config.model_resolution
+        if model_name is None and config.resolver_resolution:
+            resolver_name = str(config.resolver_resolution)
+            if resolver_name.startswith("resolver_") and len(resolver_name) > 9:
+                model_name = resolver_name[9:]
+
+        model = dag.get_model(model_name) if model_name else None
 
         # Convert threshold back to float
         threshold = (

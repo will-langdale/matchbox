@@ -12,6 +12,7 @@ if TYPE_CHECKING:
         CollectionName,
         PermissionType,
         ResolutionName,
+        ResolutionType,
         RunID,
     )
 else:
@@ -19,6 +20,7 @@ else:
     CollectionName = Any
     PermissionType = Any
     ResolutionName = Any
+    ResolutionType = Any
     RunID = Any
 
 
@@ -457,6 +459,49 @@ class MatchboxResolutionNotQueriable(MatchboxHttpException):
     """The resolution is not ready to be queried."""
 
     http_status = 422
+
+
+class MatchboxResolutionTypeError(MatchboxHttpException):
+    """An invalid operation was attempted using this type of resolution."""
+
+    http_status = 422
+
+    def __init__(
+        self,
+        message: str | None = None,
+        resolution_name: ResolutionName | None = None,
+        resolution_type: ResolutionType | None = None,
+        expected_resolution_types: list[ResolutionType] | None = None,
+    ) -> None:
+        """Initialise the exception."""
+        if message is None:
+            message = (
+                "An invalid operation was attempted using this type of resolution."
+            )
+            if resolution_name is not None and resolution_type is not None:
+                message = (
+                    f"Resolution '{resolution_name}' is of type {resolution_type}, "
+                    "which does not support this operation."
+                )
+            if expected_resolution_types is not None:
+                expected = ", ".join(expected_resolution_types)
+                message += f" Expected one of: {expected}."
+
+        super().__init__(message)
+        self.resolution_name = resolution_name
+        self.resolution_type = resolution_type
+        self.expected_resolution_types = expected_resolution_types
+
+    def to_details(self) -> dict[str, Any] | None:
+        """Return attributes if set."""
+        details: dict[str, Any] = {}
+        if self.resolution_name is not None:
+            details["resolution_name"] = self.resolution_name
+        if self.resolution_type is not None:
+            details["resolution_type"] = self.resolution_type
+        if self.expected_resolution_types is not None:
+            details["expected_resolution_types"] = list(self.expected_resolution_types)
+        return details if details else None
 
 
 class MatchboxCollectionAlreadyExists(MatchboxHttpException):

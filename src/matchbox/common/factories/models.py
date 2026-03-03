@@ -24,11 +24,15 @@ from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.models.models import Model
 from matchbox.client.queries import Query
 from matchbox.client.results import ModelResults
-from matchbox.common.arrow import SCHEMA_RESULTS
+from matchbox.common.arrow import SCHEMA_CLUSTERS, SCHEMA_MODEL_EDGES
 from matchbox.common.dtos import (
     ModelResolutionName,
     ModelResolutionPath,
     ModelType,
+    Resolution,
+    ResolutionType,
+    ResolverConfig,
+    ResolverResolutionPath,
     SourceResolutionName,
 )
 from matchbox.common.factories.entities import (
@@ -44,6 +48,7 @@ from matchbox.common.factories.sources import (
     SourceTestkitParameters,
     linked_sources_factory,
 )
+from matchbox.common.hash import hash_arrow_table
 from matchbox.common.transform import DisjointSet, graph_results
 
 T = TypeVar("T", bound=Hashable)
@@ -58,7 +63,7 @@ class MockDeduper(Deduper):
 
     def dedupe(self, data: pl.DataFrame) -> pl.DataFrame:
         """Mock dedupe method."""
-        return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_RESULTS))
+        return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_MODEL_EDGES))
 
 
 class MockLinker(Linker):
@@ -70,7 +75,7 @@ class MockLinker(Linker):
 
     def link(self, left: pl.DataFrame, right: pl.DataFrame) -> pl.DataFrame:
         """Mock link method."""
-        return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_RESULTS))
+        return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_MODEL_EDGES))
 
 
 add_model_class(MockDeduper)
@@ -526,9 +531,9 @@ def generate_entity_probabilities(
 
     # If no edges were generated, return empty table with correct schema
     if not edges:
-        return pl.DataFrame(schema=pl.Schema(SCHEMA_RESULTS))
+        return pl.DataFrame(schema=pl.Schema(SCHEMA_MODEL_EDGES))
 
-    return pl.DataFrame(edges, orient="row", schema=pl.Schema(SCHEMA_RESULTS))
+    return pl.DataFrame(edges, orient="row", schema=pl.Schema(SCHEMA_MODEL_EDGES))
 
 
 class ModelTestkit(BaseModel):
@@ -651,6 +656,97 @@ class ModelTestkit(BaseModel):
         """Initialize the query lookup table."""
         self.threshold = 0
         return self
+
+
+def resolver_upload_from_model_testkit(model_tkit: ModelTestkit) -> pl.DataFrame:
+    """Return canonical resolver upload rows from a model testkit.
+
+    Output columns:
+    - parent_id: UInt64
+    - child_id: UInt64
+    """
+    # TODO: remove shim in Resolution PR2
+    server_cluster_ids = set(model_tkit.left_clusters.keys())
+    if model_tkit.right_clusters is not None:
+        server_cluster_ids.update(model_tkit.right_clusters.keys())
+
+    left_ids = [int(cluster_id) for cluster_id in model_tkit.probabilities["left_id"]]
+    right_ids = [int(cluster_id) for cluster_id in model_tkit.probabilities["right_id"]]
+
+    components = DisjointSet[int]()
+    for server_cluster_id in server_cluster_ids:
+        components.add(server_cluster_id)
+
+    for left_id, right_id, probability in zip(
+        left_ids,
+        right_ids,
+        model_tkit.probabilities["probability"],
+        strict=True,
+    ):
+        if probability >= model_tkit.threshold:
+            components.union(left_id, right_id)
+
+    rows: list[tuple[int, int]] = []
+    for component in components.get_components():
+        ordered_server_cluster_ids = sorted(component)
+        if not ordered_server_cluster_ids:
+            continue
+        parent_id = ordered_server_cluster_ids[0]
+        rows.extend((parent_id, child_id) for child_id in ordered_server_cluster_ids)
+
+    if not rows:
+        return pl.DataFrame(schema=pl.Schema(SCHEMA_CLUSTERS))
+
+    return pl.DataFrame(
+        rows,
+        orient="row",
+        schema=pl.Schema(SCHEMA_CLUSTERS),
+    )
+
+
+def canonical_resolver_path_for_model(
+    model_path: ModelResolutionPath,
+) -> ResolverResolutionPath:
+    """Return the canonical resolver path for a model path."""
+    # TODO: remove shim in Resolution PR2
+    return ResolverResolutionPath(
+        collection=model_path.collection,
+        run=model_path.run,
+        name=f"resolver_{model_path.name}",
+    )
+
+
+def build_canonical_resolver_resolution(
+    model_tkit: ModelTestkit,
+    resolver_upload: pl.DataFrame,
+) -> Resolution:
+    """Build canonical Components resolver metadata for a model testkit."""
+    # TODO: remove shim in Resolution PR2
+    threshold = int(model_tkit.threshold)
+    return Resolution(
+        description=f"Resolver for {model_tkit.name}",
+        resolution_type=ResolutionType.RESOLVER,
+        config=ResolverConfig(
+            resolver_class="Components",
+            resolver_settings=json.dumps({"thresholds": {model_tkit.name: threshold}}),
+            inputs=(model_tkit.name,),
+        ),
+        fingerprint=hash_arrow_table(resolver_upload.to_arrow()),
+    )
+
+
+def canonical_resolver_artifacts_from_model_testkit(
+    model_tkit: ModelTestkit,
+) -> tuple[ResolverResolutionPath, Resolution, pl.DataFrame]:
+    """Return canonical resolver path, resolution DTO and upload payload."""
+    # TODO: remove shim in Resolution PR2
+    resolver_upload = resolver_upload_from_model_testkit(model_tkit)
+    resolver_path = canonical_resolver_path_for_model(model_tkit.resolution_path)
+    resolver_resolution = build_canonical_resolver_resolution(
+        model_tkit=model_tkit,
+        resolver_upload=resolver_upload,
+    )
+    return resolver_path, resolver_resolution, resolver_upload
 
 
 def _testkit_to_query(testkit: SourceTestkit | ModelTestkit) -> Query:

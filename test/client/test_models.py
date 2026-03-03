@@ -107,20 +107,29 @@ def test_init_and_run_model(
 def test_model_sync(matchbox_api: MockRouter) -> None:
     # Mock model
     testkit = model_factory(model_type="linker")
+    resolver_name = f"resolver_{testkit.model.name}"
 
     # Mock the routes:
     # Resolution doesn't yet exist
+    resolution_get_calls = {"count": 0}
+
+    # TODO: remove shim in Resolution PR2
+    # will be done with a resolver_factory
+    def model_resolution_response(_: object) -> Response:
+        resolution_get_calls["count"] += 1
+        if resolution_get_calls["count"] <= 2:
+            return Response(
+                404,
+                json=ErrorResponse(
+                    exception_type="MatchboxResolutionNotFoundError",
+                    message="Model not found",
+                ).model_dump(),
+            )
+        return Response(200, json=testkit.model.to_resolution().model_dump())
+
     matchbox_api.get(
         f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
-    ).mock(
-        return_value=Response(
-            404,
-            json=ErrorResponse(
-                exception_type="MatchboxResolutionNotFoundError",
-                message="Model not found",
-            ).model_dump(),
-        )
-    )
+    ).mock(side_effect=model_resolution_response)
 
     # Resolution can be inserted
     insert_config_route = matchbox_api.post(
@@ -145,6 +154,40 @@ def test_model_sync(matchbox_api: MockRouter) -> None:
             json=ResourceOperationStatus(
                 success=True, target="", operation=CRUDOperation.CREATE
             ).model_dump(),
+        )
+    )
+
+    # Canonical resolver_<model> can be created and uploaded.
+    matchbox_api.post(
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{resolver_name}"
+    ).mock(
+        return_value=Response(
+            201,
+            json=ResourceOperationStatus(
+                success=True,
+                target=f"Resolution {resolver_name}",
+                operation=CRUDOperation.CREATE,
+            ).model_dump(),
+        )
+    )
+    matchbox_api.post(
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{resolver_name}/data"
+    ).mock(
+        return_value=Response(
+            202,
+            json=ResourceOperationStatus(
+                success=True,
+                target=f"Resolution {resolver_name}",
+                operation=CRUDOperation.CREATE,
+            ).model_dump(),
+        )
+    )
+    matchbox_api.get(
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{resolver_name}/data/status"
+    ).mock(
+        return_value=Response(
+            200,
+            json=UploadInfo(stage=UploadStage.COMPLETE).model_dump(),
         )
     )
 

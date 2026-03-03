@@ -89,13 +89,6 @@ class BackendCountableType(StrEnum):
     PROPOSES = "proposes"
 
 
-class ModelResultsType(StrEnum):
-    """Enumeration of supported model results types."""
-
-    PROBABILITIES = "probabilities"
-    CLUSTERS = "clusters"
-
-
 class BackendResourceType(StrEnum):
     """Enumeration of resources types referenced by client or API."""
 
@@ -200,7 +193,12 @@ SourceResolutionName: TypeAlias = MatchboxName
 ModelResolutionName: TypeAlias = MatchboxName
 """Type alias for model resolution names."""
 
-ResolutionName: TypeAlias = SourceResolutionName | ModelResolutionName
+ResolverResolutionName: TypeAlias = MatchboxName
+"""Type alias for resolver resolution names."""
+
+ResolutionName: TypeAlias = (
+    SourceResolutionName | ModelResolutionName | ResolverResolutionName
+)
 """Type alias for any resolution names."""
 
 
@@ -224,12 +222,16 @@ SourceResolutionPath: TypeAlias = ResolutionPath
 ModelResolutionPath: TypeAlias = ResolutionPath
 """Type alias for model resolution paths."""
 
+ResolverResolutionPath: TypeAlias = ResolutionPath
+"""Type alias for resolver resolution paths."""
+
 
 class ResolutionType(StrEnum):
     """Types of nodes in a resolution."""
 
     SOURCE = "source"
     MODEL = "model"
+    RESOLVER = "resolver"
 
 
 class LocationConfig(BaseModel):
@@ -411,34 +413,70 @@ class QueryConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     source_resolutions: tuple[SourceResolutionName, ...]
+    # TODO: remove shim in Resolution PR2
     model_resolution: ModelResolutionName | None = None
+    resolver_resolution: ResolverResolutionName | None = None
     combine_type: QueryCombineType = QueryCombineType.CONCAT
     threshold: int | None = None
     cleaning: dict[str, str] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalise_resolutions(cls, value: object) -> object:
+        """Normalise legacy model point-of-truth to canonical resolver naming."""
+        # TODO: remove shim in Resolution PR2
+        if not isinstance(value, dict):
+            return value
+
+        model_resolution = value.get("model_resolution")
+        resolver_resolution = value.get("resolver_resolution")
+        if model_resolution is None:
+            return value
+
+        canonical_resolver = f"resolver_{model_resolution}"
+        if resolver_resolution is None:
+            return value | {"resolver_resolution": canonical_resolver}
+
+        if resolver_resolution != canonical_resolver:
+            raise ValueError(
+                "model_resolution and resolver_resolution must match canonical "
+                "'resolver_<model_resolution>' naming."
+            )
+        return value
 
     @model_validator(mode="after")
     def validate_resolutions(self) -> Self:
         """Ensure that resolution settings are compatible."""
         if not self.source_resolutions:
             raise ValueError("At least one source resolution required.")
-        if len(self.source_resolutions) > 1 and not self.model_resolution:
+        if len(self.source_resolutions) > 1 and not (
+            self.resolver_resolution or self.model_resolution
+        ):
+            # TODO: remove shim in Resolution PR2
             raise ValueError(
-                "A model resolution must be set if querying from multiple sources"
+                "A model or resolver resolution must be set if querying from multiple "
+                "sources."
             )
         return self
 
     @property
     def dependencies(self) -> list[ResolutionName]:
         """Return all resolutions that this query needs."""
+        # TODO: remove shim in Resolution PR2
         deps = list(self.source_resolutions)
         if self.model_resolution:
             deps.append(self.model_resolution)
+        elif self.resolver_resolution:
+            deps.append(self.resolver_resolution)
 
         return deps
 
     @property
     def point_of_truth(self) -> ResolutionName:
         """Return path of resolution that will be used as point of truth."""
+        # TODO: remove shim in Resolution PR2
+        if self.resolver_resolution:
+            return self.resolver_resolution
         if self.model_resolution:
             return self.model_resolution
         return self.source_resolutions[0]
@@ -504,12 +542,56 @@ class ModelConfig(BaseModel):
     @property
     def parents(self) -> list[ResolutionName]:
         """Returns all resolution names directly input to this config."""
+
+        # TODO: remove shim in Resolution PR2
+        def parent_for_query(query: QueryConfig) -> ResolutionName:
+            if query.model_resolution:
+                return query.model_resolution
+            if query.resolver_resolution:
+                return query.resolver_resolution
+            return query.source_resolutions[0]
+
         if self.right_query:
             return [
-                self.left_query.point_of_truth,
-                self.right_query.point_of_truth,
+                parent_for_query(self.left_query),
+                parent_for_query(self.right_query),
             ]
-        return [self.left_query.point_of_truth]
+        return [parent_for_query(self.left_query)]
+
+
+class ResolverConfig(BaseModel):
+    """Configuration for resolver that combines model and resolver outputs."""
+
+    resolver_class: str
+    resolver_settings: str
+    inputs: tuple[ModelResolutionName, ...]
+
+    @model_validator(mode="after")
+    def validate_inputs(self) -> Self:
+        """Ensure resolver config has at least one input."""
+        if len(self.inputs) < 1:
+            raise ValueError("Resolver must have at least one input.")
+        return self
+
+    @field_validator("resolver_settings", mode="after")
+    @classmethod
+    def validate_settings_json(cls, value: str) -> str:
+        """Ensure that resolver settings are valid JSON."""
+        try:
+            isinstance(json.loads(value), dict)
+        except json.JSONDecodeError as e:
+            raise ValueError("Resolver settings are not valid JSON") from e
+        return value
+
+    @property
+    def dependencies(self) -> list[ModelResolutionName]:
+        """Return all resolutions that this resolver needs."""
+        return list(self.inputs)
+
+    @property
+    def parents(self) -> list[ModelResolutionName]:
+        """Returns all resolution names directly input to this config."""
+        return list(self.inputs)
 
 
 class Match(BaseModel):
@@ -553,7 +635,7 @@ class Resolution(BaseModel):
     resolution_type: ResolutionType
 
     # Type-specific config as discriminated union
-    config: SourceConfig | ModelConfig
+    config: SourceConfig | ModelConfig | ResolverConfig
 
     @field_validator("description", mode="after")
     @classmethod
@@ -570,24 +652,18 @@ class Resolution(BaseModel):
             assert isinstance(self.config, SourceConfig), (
                 "Config must be SourceConfig when resolution_type is 'source'"
             )
-        else:
+            if self.truth is not None:
+                raise ValueError("Truth must be None for source resolutions.")
+        elif self.resolution_type == ResolutionType.MODEL:
             assert isinstance(self.config, ModelConfig), (
                 "Config must be ModelConfig when resolution_type is 'model'"
             )
-        return self
-
-    @model_validator(mode="after")
-    def validate_truth_matches_type(self) -> Self:
-        """Ensure truth field matches resolution type requirements."""
-        if self.resolution_type == ResolutionType.SOURCE and self.truth is not None:
-            raise ValueError("Truth must be None for source resolutions")
-        elif self.resolution_type == ResolutionType.MODEL:
-            if self.truth is None:
-                raise ValueError("Truth is required for model resolutions")
-            if not (0 <= self.truth <= 100):
-                raise ValueError(
-                    "Truth must be between 0 and 100 for model resolutions"
-                )
+        else:
+            assert isinstance(self.config, ResolverConfig), (
+                "Config must be ResolverConfig when resolution_type is 'resolver'"
+            )
+            if self.truth is not None:
+                raise ValueError("Truth must be None for resolver resolutions.")
         return self
 
 

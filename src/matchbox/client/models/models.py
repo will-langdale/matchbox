@@ -20,6 +20,7 @@ from matchbox.common.dtos import (
     ModelResolutionPath,
     ModelType,
     Resolution,
+    ResolutionName,
     ResolutionType,
     SourceResolutionName,
 )
@@ -165,10 +166,23 @@ class Model:
     @property
     def sources(self) -> set[SourceResolutionName]:
         """Set of source names upstream of this node."""
-        left_input = self.dag.nodes[self.left_query.config.point_of_truth]
+
+        # TODO: remove shim in Resolution PR2
+        def query_parent_name(query: Query) -> ResolutionName:
+            config = query.config
+            if config.model_resolution:
+                return config.model_resolution
+            if (
+                config.resolver_resolution
+                and config.resolver_resolution in self.dag.nodes
+            ):
+                return config.resolver_resolution
+            return config.point_of_truth
+
+        left_input = self.dag.nodes[query_parent_name(self.left_query)]
         model_sources = left_input.sources
         if self.right_query:
-            right_input = self.dag.nodes[self.right_query.config.point_of_truth]
+            right_input = self.dag.nodes[query_parent_name(self.right_query)]
             model_sources.update(right_input.sources)
 
         return model_sources

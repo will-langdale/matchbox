@@ -15,26 +15,33 @@ from fastapi import (
 from pyarrow import ArrowInvalid
 from pyarrow import parquet as pq
 
-from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS, table_to_buffer
+from matchbox.common.arrow import (
+    SCHEMA_CLUSTERS,
+    SCHEMA_INDEX,
+    SCHEMA_MODEL_EDGES,
+    table_to_buffer,
+)
 from matchbox.common.dtos import (
     Collection,
     CollectionName,
     CRUDOperation,
     ErrorResponse,
     GroupName,
-    ModelResolutionName,
+    ModelResolutionPath,
     PermissionGrant,
     PermissionType,
     Resolution,
     ResolutionName,
     ResolutionPath,
     ResolutionType,
+    ResolverResolutionPath,
     ResourceOperationStatus,
     Run,
     RunID,
     UploadInfo,
 )
 from matchbox.common.exceptions import (
+    MatchboxResolutionTypeError,
     MatchboxServerFileError,
 )
 from matchbox.server.api.dependencies import (
@@ -46,7 +53,11 @@ from matchbox.server.api.dependencies import (
     SettingsDependency,
     UploadTrackerDependency,
 )
-from matchbox.server.uploads import file_to_s3, process_upload, process_upload_celery
+from matchbox.server.uploads import (
+    file_to_s3,
+    process_upload,
+    process_upload_celery,
+)
 
 router = APIRouter(prefix="/collections", tags=["collection"])
 
@@ -478,7 +489,7 @@ def set_data(
     background_tasks: BackgroundTasks,
     collection: CollectionName,
     run_id: RunID,
-    resolution_name: ModelResolutionName,
+    resolution_name: ResolutionName,
     file: UploadFile,
 ) -> ResourceOperationStatus:
     """Create an upload task for source hashes or model results."""
@@ -519,8 +530,12 @@ def set_data(
 
         if resolution.resolution_type == ResolutionType.SOURCE:
             expected_schema = SCHEMA_INDEX
+        elif resolution.resolution_type == ResolutionType.MODEL:
+            expected_schema = SCHEMA_MODEL_EDGES
+        elif resolution.resolution_type == ResolutionType.RESOLVER:
+            expected_schema = SCHEMA_CLUSTERS
         else:
-            expected_schema = SCHEMA_RESULTS
+            raise RuntimeError("Unsupported resolution type.")
 
         table = pq.read_table(file.file)
         if not table.schema.equals(expected_schema):
@@ -606,6 +621,7 @@ def get_upload_status(
         401: {"model": ErrorResponse},
         403: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
     },
     dependencies=[Depends(RequireCollectionRead)],
     summary="Get resolution results",
@@ -615,12 +631,35 @@ def get_results(
     backend: BackendDependency,
     collection: CollectionName,
     run_id: RunID,
-    resolution: ModelResolutionName,
+    resolution: ResolutionName,
 ) -> ParquetResponse:
-    """Download results for a model as a parquet file."""
-    res = backend.get_model_data(
-        path=ResolutionPath(collection=collection, run=run_id, name=resolution)
-    )
+    """Download results for a model or resolver as a parquet file."""
+    resolution_path = ResolutionPath(collection=collection, run=run_id, name=resolution)
+    resolution_dto = backend.get_resolution(path=resolution_path)
+    if resolution_dto.resolution_type == ResolutionType.MODEL:
+        res = backend.get_model_data(
+            path=ModelResolutionPath(
+                collection=collection,
+                run=run_id,
+                name=resolution,
+            )
+        )
+    elif resolution_dto.resolution_type == ResolutionType.RESOLVER:
+        res = backend.get_resolver_data(
+            path=ResolverResolutionPath(
+                collection=collection,
+                run=run_id,
+                name=resolution,
+            )
+        )
+    else:
+        raise MatchboxResolutionTypeError(
+            resolution_name=ResolutionPath(
+                collection=collection, run=run_id, name=resolution
+            ),
+            resolution_type=resolution_dto.resolution_type,
+            expected_resolution_types=[ResolutionType.MODEL, ResolutionType.RESOLVER],
+        )
 
     buffer = table_to_buffer(res)
     return ParquetResponse(buffer.getvalue())
