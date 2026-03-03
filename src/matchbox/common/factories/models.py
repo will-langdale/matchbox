@@ -11,7 +11,6 @@ from typing import Any, Self, TypeVar
 import numpy as np
 import polars as pl
 import pyarrow as pa
-import rustworkx as rx
 from faker import Faker
 from pyarrow import compute as pc
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -23,16 +22,12 @@ from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.models.models import Model
 from matchbox.client.queries import Query
-from matchbox.client.results import ModelResults
-from matchbox.common.arrow import SCHEMA_CLUSTERS, SCHEMA_MODEL_EDGES
+from matchbox.client.results import normalise_model_probabilities
+from matchbox.common.arrow import SCHEMA_MODEL_EDGES
 from matchbox.common.dtos import (
     ModelResolutionName,
     ModelResolutionPath,
     ModelType,
-    Resolution,
-    ResolutionType,
-    ResolverConfig,
-    ResolverResolutionPath,
     SourceResolutionName,
 )
 from matchbox.common.factories.entities import (
@@ -48,8 +43,7 @@ from matchbox.common.factories.sources import (
     SourceTestkitParameters,
     linked_sources_factory,
 )
-from matchbox.common.hash import hash_arrow_table
-from matchbox.common.transform import DisjointSet, graph_results
+from matchbox.common.transform import DisjointSet
 
 T = TypeVar("T", bound=Hashable)
 
@@ -83,7 +77,7 @@ add_model_class(MockLinker)
 
 
 def component_report(all_nodes: list[Any], table: pl.DataFrame) -> dict:
-    """Fast reporting on connected components using rustworkx.
+    """Fast reporting on connected components.
 
     Args:
         all_nodes: list of identities of inputs being matched
@@ -92,17 +86,23 @@ def component_report(all_nodes: list[Any], table: pl.DataFrame) -> dict:
     Returns:
         dictionary containing basic component statistics
     """
-    graph, _, _ = graph_results(table, all_nodes)
-    components = rx.connected_components(graph)
+    ds = DisjointSet[Any]()
+    for node in all_nodes:
+        ds.add(node)
+    for left_id, right_id in table.select(["left_id", "right_id"]).rows():
+        ds.union(left_id, right_id)
+
+    components = ds.get_components()
     component_sizes = Counter(len(component) for component in components)
+    total_nodes = sum(component_sizes.values())
 
     return {
         "num_components": len(components),
-        "total_nodes": graph.num_nodes(),
-        "total_edges": graph.num_edges(),
+        "total_nodes": total_nodes,
+        "total_edges": len(table),
         "component_sizes": component_sizes,
-        "min_component_size": min(component_sizes.keys()),
-        "max_component_size": max(component_sizes.keys()),
+        "min_component_size": min(component_sizes.keys()) if component_sizes else 0,
+        "max_component_size": max(component_sizes.keys()) if component_sizes else 0,
     }
 
 
@@ -549,6 +549,7 @@ class ModelTestkit(BaseModel):
     right_query: Query | None
     right_clusters: dict[int, ClusterEntity] | None
     probabilities: pl.DataFrame
+    threshold_value: int = 0
 
     _entities: tuple[ClusterEntity, ...]
     _query_lookup: pa.Table
@@ -598,12 +599,12 @@ class ModelTestkit(BaseModel):
     @property
     def threshold(self) -> int:
         """Threshold for the model."""
-        return self.model._truth
+        return self.threshold_value
 
     @threshold.setter
     def threshold(self, value: int) -> None:
         """Set the threshold for the model."""
-        self.model._truth = value
+        self.threshold_value = value
         right_clusters = self.right_clusters.values() if self.right_clusters else []
         input_results = set(self.left_clusters.values()) | set(right_clusters)
 
@@ -635,7 +636,7 @@ class ModelTestkit(BaseModel):
 
     def fake_run(self) -> Self:
         """Set model results without running model."""
-        self.model.results = ModelResults(probabilities=self.probabilities)
+        self.model.results = normalise_model_probabilities(self.probabilities)
 
         return self
 
@@ -647,7 +648,6 @@ class ModelTestkit(BaseModel):
             "model_settings": json.loads(self.model.config.model_settings),
             "left_query": self.model.left_query,
             "right_query": self.model.right_query,
-            "truth": self.model.truth,
             "description": self.model.description,
         }
 
@@ -658,97 +658,6 @@ class ModelTestkit(BaseModel):
         return self
 
 
-def resolver_upload_from_model_testkit(model_tkit: ModelTestkit) -> pl.DataFrame:
-    """Return canonical resolver upload rows from a model testkit.
-
-    Output columns:
-    - parent_id: UInt64
-    - child_id: UInt64
-    """
-    # TODO: remove shim in Resolution PR2
-    server_cluster_ids = set(model_tkit.left_clusters.keys())
-    if model_tkit.right_clusters is not None:
-        server_cluster_ids.update(model_tkit.right_clusters.keys())
-
-    left_ids = [int(cluster_id) for cluster_id in model_tkit.probabilities["left_id"]]
-    right_ids = [int(cluster_id) for cluster_id in model_tkit.probabilities["right_id"]]
-
-    components = DisjointSet[int]()
-    for server_cluster_id in server_cluster_ids:
-        components.add(server_cluster_id)
-
-    for left_id, right_id, probability in zip(
-        left_ids,
-        right_ids,
-        model_tkit.probabilities["probability"],
-        strict=True,
-    ):
-        if probability >= model_tkit.threshold:
-            components.union(left_id, right_id)
-
-    rows: list[tuple[int, int]] = []
-    for component in components.get_components():
-        ordered_server_cluster_ids = sorted(component)
-        if not ordered_server_cluster_ids:
-            continue
-        parent_id = ordered_server_cluster_ids[0]
-        rows.extend((parent_id, child_id) for child_id in ordered_server_cluster_ids)
-
-    if not rows:
-        return pl.DataFrame(schema=pl.Schema(SCHEMA_CLUSTERS))
-
-    return pl.DataFrame(
-        rows,
-        orient="row",
-        schema=pl.Schema(SCHEMA_CLUSTERS),
-    )
-
-
-def canonical_resolver_path_for_model(
-    model_path: ModelResolutionPath,
-) -> ResolverResolutionPath:
-    """Return the canonical resolver path for a model path."""
-    # TODO: remove shim in Resolution PR2
-    return ResolverResolutionPath(
-        collection=model_path.collection,
-        run=model_path.run,
-        name=f"resolver_{model_path.name}",
-    )
-
-
-def build_canonical_resolver_resolution(
-    model_tkit: ModelTestkit,
-    resolver_upload: pl.DataFrame,
-) -> Resolution:
-    """Build canonical Components resolver metadata for a model testkit."""
-    # TODO: remove shim in Resolution PR2
-    threshold = int(model_tkit.threshold)
-    return Resolution(
-        description=f"Resolver for {model_tkit.name}",
-        resolution_type=ResolutionType.RESOLVER,
-        config=ResolverConfig(
-            resolver_class="Components",
-            resolver_settings=json.dumps({"thresholds": {model_tkit.name: threshold}}),
-            inputs=(model_tkit.name,),
-        ),
-        fingerprint=hash_arrow_table(resolver_upload.to_arrow()),
-    )
-
-
-def canonical_resolver_artifacts_from_model_testkit(
-    model_tkit: ModelTestkit,
-) -> tuple[ResolverResolutionPath, Resolution, pl.DataFrame]:
-    """Return canonical resolver path, resolution DTO and upload payload."""
-    # TODO: remove shim in Resolution PR2
-    resolver_upload = resolver_upload_from_model_testkit(model_tkit)
-    resolver_path = canonical_resolver_path_for_model(model_tkit.resolution_path)
-    resolver_resolution = build_canonical_resolver_resolution(
-        model_tkit=model_tkit,
-        resolver_upload=resolver_upload,
-    )
-    return resolver_path, resolver_resolution, resolver_upload
-
-
 def _testkit_to_query(testkit: SourceTestkit | ModelTestkit) -> Query:
     if isinstance(testkit, SourceTestkit):
         return Query(testkit.source, dag=testkit.source.dag)
@@ -756,11 +665,12 @@ def _testkit_to_query(testkit: SourceTestkit | ModelTestkit) -> Query:
         all_sources = list(testkit.model.left_query.sources)
         if testkit.model.right_query is not None:
             all_sources += list(testkit.model.right_query.sources)
-        return Query(
-            *all_sources,
-            model=testkit.model,
-            dag=testkit.model.dag,
-        )
+        if len(all_sources) > 1:
+            raise ValueError(
+                "ModelTestkit no longer exposes a queryable point-of-truth. "
+                "Create a resolver for multi-source queries."
+            )
+        return Query(*all_sources, dag=testkit.model.dag)
 
 
 def model_factory(
@@ -944,7 +854,6 @@ def model_factory(
         model_settings=model_settings,
         left_query=left_query,
         right_query=right_query,
-        truth=min(prob_range),
     )
 
     # ==== Entity and probability generation ====
@@ -980,7 +889,7 @@ def model_factory(
         if right_entities
         else None,
         probabilities=probabilities,
-        _threshold=model._truth,
+        threshold_value=0,
     )
 
 
@@ -1060,7 +969,6 @@ def query_to_model_factory(
         model_settings=model_settings,
         left_query=left_query,
         right_query=right_query,
-        truth=min(prob_range),
     )
 
     # Generate probabilities
@@ -1084,5 +992,5 @@ def query_to_model_factory(
         if right_clusters
         else None,
         probabilities=probabilities,
-        _threshold=model._truth,
+        threshold_value=0,
     )

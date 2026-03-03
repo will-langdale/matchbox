@@ -4,18 +4,20 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Any, Literal
 
+import polars as pl
 import pyarrow as pa
 from polars.testing import assert_frame_equal
 from sqlalchemy import Engine
 
 from matchbox.client.queries import Query
+from matchbox.client.resolvers import Resolver
+from matchbox.common.arrow import SCHEMA_CLUSTERS
 from matchbox.common.dtos import (
     DefaultGroup,
     Group,
     GroupName,
     PermissionGrant,
     PermissionType,
-    ResolverResolutionPath,
     User,
 )
 from matchbox.common.factories.dags import TestkitDAG
@@ -23,14 +25,11 @@ from matchbox.common.factories.entities import (
     FeatureConfig,
     PrefixRule,
     ReplaceRule,
+    SourceEntity,
     SuffixRule,
 )
-from matchbox.common.factories.models import (
-    ModelTestkit,
-    canonical_resolver_artifacts_from_model_testkit,
-    canonical_resolver_path_for_model,
-    query_to_model_factory,
-)
+from matchbox.common.factories.models import query_to_model_factory
+from matchbox.common.factories.resolvers import resolver_factory
 from matchbox.common.factories.sources import (
     SourceTestkitParameters,
     linked_sources_factory,
@@ -46,35 +45,49 @@ SCENARIO_REGISTRY: dict[str, ScenarioBuilder] = {}
 _DATABASE_SNAPSHOTS_CACHE: dict[str, tuple[TestkitDAG, MatchboxSnapshot]] = {}
 
 
-def _materialise_model_and_resolver(
+def _materialise_model_resolver(
+    *,
     backend: MatchboxDBAdapter,
     dag_testkit: TestkitDAG,
-    model_tkit: ModelTestkit,
-    *,
-    add_to_dag: bool = True,
-) -> ResolverResolutionPath:
-    """Create model + resolver resolutions and upload their data."""
-    # TODO: remove shim in Resolution PR2
-    backend.create_resolution(
-        resolution=model_tkit.fake_run().model.to_resolution(),
-        path=model_tkit.resolution_path,
-    )
-    backend.insert_model_data(
-        path=model_tkit.resolution_path,
-        results=model_tkit.probabilities.to_arrow(),
-    )
-    if add_to_dag:
-        dag_testkit.add_model(model_tkit)
+    model_name: str,
+    resolver_name: str | None = None,
+) -> Resolver:
+    """Create and materialise a canonical Components resolver for a model."""
+    model_testkit = dag_testkit.models[model_name]
+    true_entities: set[SourceEntity] = set()
+    for source_name in model_testkit.model.sources:
+        linked = dag_testkit.source_to_linked.get(source_name)
+        if linked is None:
+            raise ValueError(
+                f"Source '{source_name}' is not attached to linked true entities."
+            )
+        true_entities.update(linked.true_entities)
 
-    resolver_path, resolver_resolution, resolver_upload = (
-        canonical_resolver_artifacts_from_model_testkit(model_tkit)
+    resolver_testkit = resolver_factory(
+        dag=dag_testkit.dag,
+        name=resolver_name or f"resolver_{model_name}",
+        inputs=[model_testkit],
+        true_entities=tuple(true_entities),
     )
+    dag_testkit.add_resolver(resolver_testkit)
+    resolver = dag_testkit.resolvers[resolver_testkit.name].resolver
+
+    resolver.run()
     backend.create_resolution(
-        resolution=resolver_resolution,
-        path=resolver_path,
+        resolution=resolver.to_resolution(),
+        path=resolver.resolution_path,
     )
-    backend.insert_resolver_data(path=resolver_path, data=resolver_upload.to_arrow())
-    return resolver_path
+    if resolver.results is None:
+        raise RuntimeError("Resolver upload payload missing after run().")
+
+    backend.insert_resolver_data(
+        path=resolver.resolution_path,
+        data=resolver.results.to_arrow().cast(SCHEMA_CLUSTERS),
+    )
+    resolver.results = pl.from_arrow(
+        backend.get_resolver_data(path=resolver.resolution_path)
+    ).cast(pl.Schema(SCHEMA_CLUSTERS))
+    return resolver
 
 
 def register_scenario(name: str) -> Callable[[ScenarioBuilder], ScenarioBuilder]:
@@ -349,10 +362,20 @@ def create_dedupe_scenario(
             seed=seed,
         )
 
-        _materialise_model_and_resolver(
+        # Add to backend and DAG
+        backend.create_resolution(
+            resolution=model_testkit.fake_run().model.to_resolution(),
+            path=model_testkit.resolution_path,
+        )
+        backend.insert_model_data(
+            path=model_testkit.resolution_path,
+            results=model_testkit.probabilities.to_arrow(),
+        )
+        dag_testkit.add_model(model_testkit)
+        _materialise_model_resolver(
             backend=backend,
             dag_testkit=dag_testkit,
-            model_tkit=model_testkit,
+            model_name=model_testkit.name,
         )
 
     return dag_testkit
@@ -401,12 +424,22 @@ def create_probabilistic_dedupe_scenario(
             seed=seed,
         )
         model_testkit.threshold = 50
-        assert model_testkit.model.truth == 0.5
+        assert model_testkit.threshold == 50
 
-        _materialise_model_and_resolver(
+        # Add to backend and DAG
+        backend.create_resolution(
+            resolution=model_testkit.fake_run().model.to_resolution(),
+            path=model_testkit.resolution_path,
+        )
+        backend.insert_model_data(
+            path=model_testkit.resolution_path,
+            results=model_testkit.probabilities.to_arrow(),
+        )
+        dag_testkit.add_model(model_testkit)
+        _materialise_model_resolver(
             backend=backend,
             dag_testkit=dag_testkit,
-            model_tkit=model_testkit,
+            model_name=model_testkit.name,
         )
 
     return dag_testkit
@@ -439,19 +472,22 @@ def create_link_scenario(
     crn_model = dag_testkit.models["naive_test_crn"]
     dh_model = dag_testkit.models["naive_test_dh"]
     cdms_model = dag_testkit.models["naive_test_cdms"]
+    crn_resolver = dag_testkit.resolvers[f"resolver_{crn_model.name}"].resolver
+    dh_resolver = dag_testkit.resolvers[f"resolver_{dh_model.name}"].resolver
+    cdms_resolver = dag_testkit.resolvers[f"resolver_{cdms_model.name}"].resolver
 
     # Query data for each resolution
     crn_data = backend.query(
         source=dag_testkit.sources["crn"].resolution_path,
-        point_of_truth=canonical_resolver_path_for_model(crn_model.resolution_path),
+        point_of_truth=crn_resolver.resolution_path,
     )
     dh_data = backend.query(
         source=dag_testkit.sources["dh"].resolution_path,
-        point_of_truth=canonical_resolver_path_for_model(dh_model.resolution_path),
+        point_of_truth=dh_resolver.resolution_path,
     )
     cdms_data = backend.query(
         source=dag_testkit.sources["cdms"].resolution_path,
-        point_of_truth=canonical_resolver_path_for_model(cdms_model.resolution_path),
+        point_of_truth=cdms_resolver.resolution_path,
     )
 
     # Create CRN-DH link
@@ -459,13 +495,15 @@ def create_link_scenario(
     crn_dh_model = query_to_model_factory(
         left_query=Query(
             dag_testkit.sources["crn"].source,
-            model=crn_model.model,
+            resolver=crn_resolver,
             dag=dag_testkit.dag,
         ),
         left_data=crn_data,
         left_keys={"crn": "key"},
         right_query=Query(
-            dag_testkit.sources["dh"], model=dh_model.model, dag=dag_testkit.dag
+            dag_testkit.sources["dh"].source,
+            resolver=dh_resolver,
+            dag=dag_testkit.dag,
         ),
         right_data=dh_data,
         right_keys={"dh": "key"},
@@ -476,10 +514,20 @@ def create_link_scenario(
         seed=seed,
     )
 
-    _materialise_model_and_resolver(
+    # Add to backend and DAG
+    backend.create_resolution(
+        resolution=crn_dh_model.fake_run().model.to_resolution(),
+        path=crn_dh_model.resolution_path,
+    )
+    backend.insert_model_data(
+        path=crn_dh_model.resolution_path,
+        results=crn_dh_model.probabilities.to_arrow(),
+    )
+    dag_testkit.add_model(crn_dh_model)
+    _materialise_model_resolver(
         backend=backend,
         dag_testkit=dag_testkit,
-        model_tkit=crn_dh_model,
+        model_name=crn_dh_model.name,
     )
 
     # Create CRN-CDMS link
@@ -487,14 +535,14 @@ def create_link_scenario(
     crn_cdms_model = query_to_model_factory(
         left_query=Query(
             dag_testkit.sources["crn"].source,
-            model=crn_model.model,
+            resolver=crn_resolver,
             dag=dag_testkit.dag,
         ),
         left_data=crn_data,
         left_keys={"crn": "key"},
         right_query=Query(
             dag_testkit.sources["cdms"].source,
-            model=cdms_model.model,
+            resolver=cdms_resolver,
             dag=dag_testkit.dag,
         ),
         right_data=cdms_data,
@@ -505,23 +553,33 @@ def create_link_scenario(
         seed=seed,
     )
 
+    # Add to backend and DAG
     crn_cdms_model.threshold = 75
-    assert crn_cdms_model.model.truth == 0.75
-    crn_cdms_resolver_path = _materialise_model_and_resolver(
+    assert crn_cdms_model.threshold == 75
+    backend.create_resolution(
+        path=crn_cdms_model.resolution_path,
+        resolution=crn_cdms_model.fake_run().model.to_resolution(),
+    )
+    backend.insert_model_data(
+        path=crn_cdms_model.resolution_path,
+        results=crn_cdms_model.probabilities.to_arrow(),
+    )
+    dag_testkit.add_model(crn_cdms_model)
+    crn_cdms_resolver = _materialise_model_resolver(
         backend=backend,
         dag_testkit=dag_testkit,
-        model_tkit=crn_cdms_model,
+        model_name=crn_cdms_model.name,
     )
 
     # Create final join
     # Query the previous link's results
     crn_cdms_data_crn_only = backend.query(
         source=dag_testkit.sources["crn"].resolution_path,
-        point_of_truth=crn_cdms_resolver_path,
+        point_of_truth=crn_cdms_resolver.resolution_path,
     ).rename_columns(["id", "keys_crn"])
     crn_cdms_data_cdms_only = backend.query(
         source=dag_testkit.sources["cdms"].resolution_path,
-        point_of_truth=crn_cdms_resolver_path,
+        point_of_truth=crn_cdms_resolver.resolution_path,
     ).rename_columns(["id", "keys_cdms"])
     crn_cdms_data = pa.concat_tables(
         [crn_cdms_data_crn_only, crn_cdms_data_cdms_only],
@@ -530,7 +588,7 @@ def create_link_scenario(
 
     dh_data_linked = backend.query(
         source=dag_testkit.sources["dh"].resolution_path,
-        point_of_truth=canonical_resolver_path_for_model(dh_model.resolution_path),
+        point_of_truth=dh_resolver.resolution_path,
     )
 
     final_join_name = "final_join"
@@ -538,14 +596,14 @@ def create_link_scenario(
         left_query=Query(
             dag_testkit.sources["crn"].source,
             dag_testkit.sources["cdms"].source,
-            model=crn_cdms_model.model,
+            resolver=crn_cdms_resolver,
             dag=dag_testkit.dag,
         ),
         left_data=crn_cdms_data,
         left_keys={"crn": "keys_crn", "cdms": "keys_cdms"},
         right_query=Query(
             dag_testkit.sources["dh"].source,
-            model=dh_model.model,
+            resolver=dh_resolver,
             dag=dag_testkit.dag,
         ),
         right_data=dh_data_linked,
@@ -556,10 +614,20 @@ def create_link_scenario(
         seed=seed,
     )
 
-    _materialise_model_and_resolver(
+    # Add to backend and DAG
+    backend.create_resolution(
+        resolution=final_join_model.fake_run().model.to_resolution(),
+        path=final_join_model.resolution_path,
+    )
+    backend.insert_model_data(
+        path=final_join_model.resolution_path,
+        results=final_join_model.probabilities.to_arrow(),
+    )
+    dag_testkit.add_model(final_join_model)
+    _materialise_model_resolver(
         backend=backend,
         dag_testkit=dag_testkit,
-        model_tkit=final_join_model,
+        model_name=final_join_model.name,
     )
 
     return dag_testkit
@@ -670,12 +738,23 @@ def create_alt_dedupe_scenario(
 
         for model, threshold in ((model_testkit1, 50), (model_testkit2, 75)):
             model.threshold = threshold
-            assert model.model.truth == threshold / 100
+            assert model.threshold == threshold
 
-            _materialise_model_and_resolver(
+            # Add both models to backend and DAG
+            backend.create_resolution(
+                path=model.resolution_path,
+                resolution=model.fake_run().model.to_resolution(),
+            )
+            backend.insert_model_data(
+                path=model.resolution_path, results=model.probabilities.to_arrow()
+            )
+
+            # Add to DAG
+            dag_testkit.add_model(model)
+            _materialise_model_resolver(
                 backend=backend,
                 dag_testkit=dag_testkit,
-                model_tkit=model,
+                model_name=model.name,
             )
 
     return dag_testkit
@@ -798,11 +877,18 @@ def create_convergent_scenario(
         backend, warehouse_engine, n_entities, seed, **kwargs
     )
     for model_testkit in dag_testkit.models.values():
-        _materialise_model_and_resolver(
+        backend.create_resolution(
+            resolution=model_testkit.fake_run().model.to_resolution(),
+            path=model_testkit.resolution_path,
+        )
+        backend.insert_model_data(
+            path=model_testkit.resolution_path,
+            results=model_testkit.probabilities.to_arrow(),
+        )
+        _materialise_model_resolver(
             backend=backend,
             dag_testkit=dag_testkit,
-            model_tkit=model_testkit,
-            add_to_dag=False,
+            model_name=model_testkit.name,
         )
 
     return dag_testkit
@@ -1104,11 +1190,16 @@ def create_mega_scenario(
         seed=seed,
     )
 
-    _materialise_model_and_resolver(
-        backend=backend,
-        dag_testkit=dag_testkit,
-        model_tkit=link_model,
+    # Add model to backend
+    backend.create_resolution(
+        resolution=link_model.fake_run().model.to_resolution(),
+        path=link_model.resolution_path,
     )
+    backend.insert_model_data(
+        path=link_model.resolution_path,
+        results=link_model.probabilities.to_arrow(),
+    )
+    dag_testkit.add_model(link_model)
 
     return dag_testkit
 

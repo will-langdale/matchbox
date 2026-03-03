@@ -35,10 +35,11 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.factories.entities import diff_results, query_to_cluster_entities
 from matchbox.common.factories.models import (
-    canonical_resolver_artifacts_from_model_testkit,
-    canonical_resolver_path_for_model,
     model_factory,
     query_to_model_factory,
+)
+from matchbox.common.factories.resolvers import (
+    resolver_factory,
 )
 from matchbox.common.factories.scenarios import setup_scenario
 from matchbox.common.factories.sources import SourceTestkit
@@ -542,12 +543,14 @@ class TestMatchboxCollectionsBackend:
             )
 
             for dedupe_testkit in (dedupe_1_testkit, dedupe_2_testkit):
-                resolver_path, resolver_resolution, _ = (
-                    canonical_resolver_artifacts_from_model_testkit(dedupe_testkit)
+                resolver_testkit = resolver_factory(
+                    dag=dag_testkit.dag,
+                    name=f"resolver_{dedupe_testkit.name}",
+                    inputs=[dedupe_testkit],
                 )
                 self.backend.create_resolution(
-                    resolution=resolver_resolution,
-                    path=resolver_path,
+                    resolution=resolver_testkit.resolver.to_resolution(),
+                    path=resolver_testkit.resolver.resolution_path,
                 )
 
             assert self.backend.models.count() == models_count + 2
@@ -615,7 +618,7 @@ class TestMatchboxCollectionsBackend:
                 old_resolution.config.model_copy(
                     update={
                         "left_query": old_resolution.config.left_query.model_copy(
-                            update={"model_resolution": "new_model"}
+                            update={"source_resolutions": ("new_source",)}
                         )
                     }
                 )
@@ -657,7 +660,6 @@ class TestMatchboxCollectionsBackend:
                     update={
                         "left_query": invalid_model.model.config.left_query.model_copy(
                             update={
-                                "model_resolution": None,
                                 "resolver_resolution": bad_parent,
                             }
                         )
@@ -712,9 +714,9 @@ class TestMatchboxCollectionsBackend:
         with self.scenario(self.backend, "dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
             naive_crn_testkit = dag_testkit.models.get("naive_test_crn")
-            naive_crn_resolver_path = canonical_resolver_path_for_model(
-                naive_crn_testkit.resolution_path
-            )
+            naive_crn_resolver_path = dag_testkit.resolvers_for_model(
+                naive_crn_testkit.name
+            )[0].resolver.resolution_path
 
             # Query returns the same results as the testkit, showing
             # that processing was performed accurately.
@@ -768,9 +770,9 @@ class TestMatchboxCollectionsBackend:
         with self.scenario(self.backend, "probabilistic_dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
             prob_crn_testkit = dag_testkit.models.get("probabilistic_test_crn")
-            prob_crn_resolver_path = canonical_resolver_path_for_model(
-                prob_crn_testkit.resolution_path
-            )
+            prob_crn_resolver_path = dag_testkit.resolvers_for_model(
+                prob_crn_testkit.name
+            )[0].resolver.resolution_path
 
             # Query returns the same results as the testkit, showing
             # that processing was performed accurately
@@ -825,26 +827,28 @@ class TestMatchboxCollectionsBackend:
 
             self.backend.insert_model_data(
                 path=model_testkit.model.resolution_path,
-                results=model_testkit.model.results.probabilities.to_arrow(),
+                results=model_testkit.model.results.to_arrow(),
             )
 
-            model_resolver_path, resolver_resolution, resolver_upload = (
-                canonical_resolver_artifacts_from_model_testkit(model_testkit)
+            resolver_testkit = resolver_factory(
+                dag=dag_testkit.dag,
+                name=f"resolver_{model_testkit.name}",
+                inputs=[model_testkit],
             )
             self.backend.create_resolution(
-                resolution=resolver_resolution,
-                path=model_resolver_path,
+                resolution=resolver_testkit.resolver.to_resolution(),
+                path=resolver_testkit.resolver.resolution_path,
             )
             self.backend.insert_resolver_data(
-                path=model_resolver_path,
-                data=resolver_upload.to_arrow(),
+                path=resolver_testkit.resolver.resolution_path,
+                data=resolver_testkit.assignments.to_arrow(),
             )
 
             # Querying from deduper with no results is the same as querying from source
             # (That we can query also implies that resolution marked as complete)
             dedupe_query = self.backend.query(
                 source=crn_testkit.resolution_path,
-                point_of_truth=model_resolver_path,
+                point_of_truth=resolver_testkit.resolver.resolution_path,
             )
 
             source_entities = query_to_cluster_entities(
