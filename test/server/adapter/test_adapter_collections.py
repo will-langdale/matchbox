@@ -28,7 +28,7 @@ from matchbox.common.exceptions import (
     MatchboxResolutionAlreadyExists,
     MatchboxResolutionExistingData,
     MatchboxResolutionNotFoundError,
-    MatchboxResolutionNotQueriable,
+    MatchboxResolutionTypeError,
     MatchboxResolutionUpdateError,
     MatchboxRunNotFoundError,
     MatchboxRunNotWriteable,
@@ -671,8 +671,8 @@ class TestMatchboxCollectionsBackend:
             )
 
             with pytest.raises(
-                MatchboxResolutionNotQueriable,
-                match="source or resolver",
+                MatchboxResolutionTypeError,
+                match="Expected one of: source, resolver",
             ):
                 self.backend.create_resolution(
                     resolution=invalid_resolution,
@@ -699,7 +699,7 @@ class TestMatchboxCollectionsBackend:
             )
 
             with pytest.raises(
-                MatchboxResolutionNotQueriable,
+                MatchboxResolutionTypeError,
                 match="depend on model",
             ):
                 self.backend.create_resolution(

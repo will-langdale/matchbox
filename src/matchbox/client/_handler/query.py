@@ -28,7 +28,8 @@ def query(
     limit: int | None = None,
 ) -> Table:
     """Query a source in Matchbox."""
-    del threshold  # Legacy argument is intentionally ignored.
+    # TODO: remove legacy argument in Resolution PR2
+    del threshold
     log_prefix = f"Query {source}"
     resolver = compat_resolver_path(resolution)
     logger.debug(f"Using {resolver}", prefix=log_prefix)
@@ -69,7 +70,8 @@ def match(
     threshold: int | None = None,
 ) -> list[Match]:
     """Match a source against a list of targets."""
-    del threshold  # Legacy argument is intentionally ignored.
+    # TODO: remove legacy argument in Resolution PR2
+    del threshold
     log_prefix = f"Query {source}"
     resolver = compat_resolver_path(resolution)
     if resolver is None:

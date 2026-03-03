@@ -16,7 +16,10 @@ from matchbox.common.dtos import (
     SourceResolutionPath,
     UploadStage,
 )
-from matchbox.common.exceptions import MatchboxResolutionNotQueriable
+from matchbox.common.exceptions import (
+    MatchboxResolutionNotQueriable,
+    MatchboxResolutionTypeError,
+)
 from matchbox.common.logging import logger
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
@@ -36,7 +39,11 @@ def require_complete_resolver(
     """Resolve and validate a resolver path for query-time operations."""
     resolver_resolution = Resolutions.from_path(path=path, session=session)
     if resolver_resolution.type != ResolutionType.RESOLVER:
-        raise MatchboxResolutionNotQueriable
+        raise MatchboxResolutionTypeError(
+            resolution_name=str(path),
+            resolution_type=resolver_resolution.type,
+            expected_resolution_types=[ResolutionType.RESOLVER],
+        )
     if resolver_resolution.upload_stage != UploadStage.COMPLETE:
         raise MatchboxResolutionNotQueriable
     return resolver_resolution

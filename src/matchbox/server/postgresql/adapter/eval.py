@@ -221,7 +221,7 @@ class MatchboxPostgresEvaluationMixin(_MixinBase):
         )
         cluster_features_stmt = (
             select(
-                ResolutionClusters.cluster_id.label("cluster_id"),
+                ResolutionClusters.cluster_id,
                 func.max(user_judgements.c.timestamp).label("latest_ts"),
             )
             .join(

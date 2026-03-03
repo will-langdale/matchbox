@@ -17,7 +17,7 @@ from pyarrow import parquet as pq
 from matchbox.common.arrow import (
     SCHEMA_CLUSTERS,
     SCHEMA_INDEX,
-    SCHEMA_RESULTS,
+    SCHEMA_MODEL_EDGES,
 )
 from matchbox.common.dtos import (
     ResolutionPath,
@@ -225,7 +225,7 @@ def process_upload(
         elif resolution.resolution_type == ResolutionType.MODEL:
             backend.insert_model_data(
                 path=resolution_path,
-                results=pa.Table.from_batches(batches, schema=SCHEMA_RESULTS),
+                results=pa.Table.from_batches(batches, schema=SCHEMA_MODEL_EDGES),
             )
         elif resolution.resolution_type == ResolutionType.RESOLVER:
             backend.insert_resolver_data(

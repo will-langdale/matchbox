@@ -4,7 +4,7 @@ import polars as pl
 import pytest
 
 from matchbox.client.queries import Query
-from matchbox.common.arrow import SCHEMA_RESULTS
+from matchbox.common.arrow import SCHEMA_MODEL_EDGES
 from matchbox.common.dtos import (
     ModelResolutionName,
     ResolutionName,
@@ -100,7 +100,7 @@ def test_model_type_creation(
 
     # Verify probabilities were generated
     assert len(model.probabilities) > 0
-    assert model.probabilities.schema == pl.Schema(SCHEMA_RESULTS)
+    assert model.probabilities.schema == pl.Schema(SCHEMA_MODEL_EDGES)
 
     # Test threshold setting and querying
     initial_threshold = 80
@@ -648,7 +648,7 @@ def test_query_to_model_factory_creation(
     assert (model.right_clusters is not None) == expected_checks["has_right"]
 
     # Verify probabilities
-    assert model.probabilities.schema == pl.Schema(SCHEMA_RESULTS)
+    assert model.probabilities.schema == pl.Schema(SCHEMA_MODEL_EDGES)
     if len(model.probabilities) > 0:
         probs = model.probabilities["probability"].to_numpy() / 100
         assert all(p >= expected_checks["prob_min"] for p in probs)

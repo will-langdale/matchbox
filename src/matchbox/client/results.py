@@ -7,7 +7,7 @@ import polars as pl
 from pydantic import ConfigDict
 
 from matchbox.client.sources import Source
-from matchbox.common.arrow import SCHEMA_RESULTS
+from matchbox.common.arrow import SCHEMA_MODEL_EDGES
 from matchbox.common.hash import IntMap
 from matchbox.common.logging import logger
 from matchbox.common.transform import DisjointSet, to_clusters
@@ -64,7 +64,7 @@ class ModelResults:
         if not isinstance(probabilities, pl.DataFrame):
             raise ValueError(f"Expected a polars DataFrame, got {type(probabilities)}.")
 
-        expected_fields = set(SCHEMA_RESULTS.names)
+        expected_fields = set(SCHEMA_MODEL_EDGES.names)
         if set(probabilities.columns) != expected_fields:
             raise ValueError(
                 f"Expected {expected_fields}.\nFound {set(probabilities.column_names)}."
@@ -72,7 +72,7 @@ class ModelResults:
 
         # Handle empty tables
         if probabilities.height == 0:
-            probabilities = pl.DataFrame(schema=pl.Schema(SCHEMA_RESULTS))
+            probabilities = pl.DataFrame(schema=pl.Schema(SCHEMA_MODEL_EDGES))
 
         unique_probabilities = (
             probabilities.with_columns(
@@ -116,7 +116,7 @@ class ModelResults:
             )
 
         # Need schema in format recognised by polars
-        self.probabilities = unique_probabilities.cast(pl.Schema(SCHEMA_RESULTS))
+        self.probabilities = unique_probabilities.cast(pl.Schema(SCHEMA_MODEL_EDGES))
 
     @property
     def clusters(self) -> pl.DataFrame:

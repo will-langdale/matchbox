@@ -18,7 +18,7 @@ from pyarrow import parquet as pq
 from matchbox.common.arrow import (
     SCHEMA_CLUSTERS,
     SCHEMA_INDEX,
-    SCHEMA_RESULTS,
+    SCHEMA_MODEL_EDGES,
     table_to_buffer,
 )
 from matchbox.common.dtos import (
@@ -41,7 +41,7 @@ from matchbox.common.dtos import (
     UploadInfo,
 )
 from matchbox.common.exceptions import (
-    MatchboxResolutionNotQueriable,
+    MatchboxResolutionTypeError,
     MatchboxServerFileError,
 )
 from matchbox.server.api.dependencies import (
@@ -531,7 +531,7 @@ def set_data(
         if resolution.resolution_type == ResolutionType.SOURCE:
             expected_schema = SCHEMA_INDEX
         elif resolution.resolution_type == ResolutionType.MODEL:
-            expected_schema = SCHEMA_RESULTS
+            expected_schema = SCHEMA_MODEL_EDGES
         elif resolution.resolution_type == ResolutionType.RESOLVER:
             expected_schema = SCHEMA_CLUSTERS
         else:
@@ -653,8 +653,12 @@ def get_results(
             )
         )
     else:
-        raise MatchboxResolutionNotQueriable(
-            "Resolution data download only supports model and resolver resolutions."
+        raise MatchboxResolutionTypeError(
+            resolution_name=ResolutionPath(
+                collection=collection, run=run_id, name=resolution
+            ),
+            resolution_type=resolution_dto.resolution_type,
+            expected_resolution_types=[ResolutionType.MODEL, ResolutionType.RESOLVER],
         )
 
     buffer = table_to_buffer(res)

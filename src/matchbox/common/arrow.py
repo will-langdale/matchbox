@@ -24,7 +24,7 @@ SCHEMA_INDEX: Final[pa.Schema] = pa.schema(
 )
 """Data transfer schema for data to be indexed in Matchbox."""
 
-SCHEMA_RESULTS: Final[pa.Schema] = pa.schema(
+SCHEMA_MODEL_EDGES: Final[pa.Schema] = pa.schema(
     [
         ("left_id", pa.uint64()),
         ("right_id", pa.uint64()),

@@ -300,7 +300,6 @@ class MatchboxPostgresCollectionsMixin:
                 if not isinstance(new_config, CommonResolverConfig):
                     raise ValueError("Config for resolver resolution expected.")
                 old_config.resolver_class = new_config.resolver_class
-                old_config.inputs = list(new_config.inputs)
                 old_config.resolver_settings = new_config.resolver_settings
             else:
                 raise ValueError(

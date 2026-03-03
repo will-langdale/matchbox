@@ -44,7 +44,7 @@ from matchbox.common.exceptions import (
     MatchboxCollectionNotFoundError,
     MatchboxResolutionAlreadyExists,
     MatchboxResolutionNotFoundError,
-    MatchboxResolutionNotQueriable,
+    MatchboxResolutionTypeError,
     MatchboxRunNotFoundError,
 )
 from matchbox.server.base import (
@@ -512,57 +512,76 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         elif resolution.resolution_type == ResolutionType.MODEL:
             resolution_orm.model_config = ModelConfigs.from_dto(resolution.config)
             # Create lineage
+            left_parent_path = ResolutionPath(
+                collection=path.collection,
+                run=path.run,
+                name=resolution.config.left_query.point_of_truth,
+            )
             left_parent = cls.from_path(
-                path=ResolutionPath(
-                    collection=path.collection,
-                    run=path.run,
-                    name=resolution.config.left_query.point_of_truth,
-                ),
+                path=left_parent_path,
                 session=session,
             )
             if left_parent.type not in {
                 ResolutionType.SOURCE.value,
                 ResolutionType.RESOLVER.value,
             }:
-                raise MatchboxResolutionNotQueriable(
-                    "Model resolutions must only depend on source or resolver "
-                    "resolutions."
+                raise MatchboxResolutionTypeError(
+                    resolution_name=str(left_parent_path),
+                    resolution_type=ResolutionType(left_parent.type),
+                    expected_resolution_types=[
+                        ResolutionType.SOURCE,
+                        ResolutionType.RESOLVER,
+                    ],
                 )
             cls._create_closure_entries(session, resolution_orm, left_parent)
 
             if resolution.config.type == ModelType.LINKER:
+                right_parent_path = ResolutionPath(
+                    collection=path.collection,
+                    run=path.run,
+                    name=resolution.config.right_query.point_of_truth,
+                )
                 right_parent = cls.from_path(
-                    path=ResolutionPath(
-                        collection=path.collection,
-                        run=path.run,
-                        name=resolution.config.right_query.point_of_truth,
-                    ),
+                    path=right_parent_path,
                     session=session,
                 )
                 if right_parent.type not in {
                     ResolutionType.SOURCE.value,
                     ResolutionType.RESOLVER.value,
                 }:
-                    raise MatchboxResolutionNotQueriable(
-                        "Model resolutions must only depend on source or resolver "
-                        "resolutions."
+                    raise MatchboxResolutionTypeError(
+                        resolution_name=str(right_parent_path),
+                        resolution_type=ResolutionType(right_parent.type),
+                        expected_resolution_types=[
+                            ResolutionType.SOURCE,
+                            ResolutionType.RESOLVER,
+                        ],
                     )
                 cls._create_closure_entries(session, resolution_orm, right_parent)
 
         elif resolution.resolution_type == ResolutionType.RESOLVER:
             resolution_orm.resolver_config = ResolverConfigs.from_dto(resolution.config)
             for parent_name in dict.fromkeys(resolution.config.inputs):
+                parent_path = ResolutionPath(
+                    collection=path.collection,
+                    run=path.run,
+                    name=parent_name,
+                )
                 parent = cls.from_path(
-                    path=ResolutionPath(
-                        collection=path.collection,
-                        run=path.run,
-                        name=parent_name,
-                    ),
+                    path=parent_path,
                     session=session,
                 )
                 if parent.type != ResolutionType.MODEL.value:
-                    raise MatchboxResolutionNotQueriable(
-                        "Resolver resolutions must only depend on model resolutions."
+                    raise MatchboxResolutionTypeError(
+                        message=(
+                            "Resolver resolutions must only depend on model "
+                            "resolutions."
+                        ),
+                        resolution_name=str(parent_path),
+                        resolution_type=ResolutionType(parent.type),
+                        expected_resolution_types=[
+                            ResolutionType.MODEL,
+                        ],
                     )
                 cls._create_closure_entries(
                     session,

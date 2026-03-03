@@ -4,7 +4,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from matchbox.common.arrow import SCHEMA_RESULTS
+from matchbox.common.arrow import SCHEMA_MODEL_EDGES
 from matchbox.common.factories.entities import (
     ClusterEntity,
     EntityReference,
@@ -409,7 +409,7 @@ def test_generate_entity_probabilities_scenarios(
     )
 
     # Check schema
-    assert result.schema == pl.Schema(SCHEMA_RESULTS)
+    assert result.schema == pl.Schema(SCHEMA_MODEL_EDGES)
 
     # Get edges from result
     edges = list(

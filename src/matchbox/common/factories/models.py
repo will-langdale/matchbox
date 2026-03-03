@@ -24,7 +24,7 @@ from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.models.models import Model
 from matchbox.client.queries import Query
 from matchbox.client.results import ModelResults
-from matchbox.common.arrow import SCHEMA_CLUSTERS, SCHEMA_RESULTS
+from matchbox.common.arrow import SCHEMA_CLUSTERS, SCHEMA_MODEL_EDGES
 from matchbox.common.dtos import (
     ModelResolutionName,
     ModelResolutionPath,
@@ -63,7 +63,7 @@ class MockDeduper(Deduper):
 
     def dedupe(self, data: pl.DataFrame) -> pl.DataFrame:
         """Mock dedupe method."""
-        return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_RESULTS))
+        return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_MODEL_EDGES))
 
 
 class MockLinker(Linker):
@@ -75,7 +75,7 @@ class MockLinker(Linker):
 
     def link(self, left: pl.DataFrame, right: pl.DataFrame) -> pl.DataFrame:
         """Mock link method."""
-        return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_RESULTS))
+        return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_MODEL_EDGES))
 
 
 add_model_class(MockDeduper)
@@ -531,9 +531,9 @@ def generate_entity_probabilities(
 
     # If no edges were generated, return empty table with correct schema
     if not edges:
-        return pl.DataFrame(schema=pl.Schema(SCHEMA_RESULTS))
+        return pl.DataFrame(schema=pl.Schema(SCHEMA_MODEL_EDGES))
 
-    return pl.DataFrame(edges, orient="row", schema=pl.Schema(SCHEMA_RESULTS))
+    return pl.DataFrame(edges, orient="row", schema=pl.Schema(SCHEMA_MODEL_EDGES))
 
 
 class ModelTestkit(BaseModel):

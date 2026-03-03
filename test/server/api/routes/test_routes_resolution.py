@@ -414,7 +414,7 @@ def test_get_results_rejects_source_resolution(
 
     assert response.status_code == 422
     error = ErrorResponse.model_validate(response.json())
-    assert error.exception_type == "MatchboxResolutionNotQueriable"
+    assert error.exception_type == "MatchboxResolutionTypeError"
 
 
 def test_delete_resolution(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
