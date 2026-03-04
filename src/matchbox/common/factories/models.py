@@ -6,7 +6,7 @@ from collections import Counter
 from collections.abc import Hashable
 from functools import cache
 from textwrap import dedent
-from typing import Any, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Self, TypeVar
 
 import numpy as np
 import polars as pl
@@ -45,6 +45,11 @@ from matchbox.common.factories.sources import (
 )
 from matchbox.common.transform import DisjointSet
 
+if TYPE_CHECKING:
+    from matchbox.common.factories.resolvers import ResolverTestkit
+else:
+    ResolverTestkit = Any
+
 T = TypeVar("T", bound=Hashable)
 
 
@@ -76,17 +81,17 @@ add_model_class(MockDeduper)
 add_model_class(MockLinker)
 
 
-def component_report(all_nodes: list[Any], table: pl.DataFrame) -> dict:
+def component_report(all_nodes: list[int], table: pl.DataFrame) -> dict:
     """Fast reporting on connected components.
 
     Args:
         all_nodes: list of identities of inputs being matched
-        table: Polars dataframe with 'left', 'right' columns
+        table: Polars dataframe matching SCHEMA_MODEL_EDGES
 
     Returns:
         dictionary containing basic component statistics
     """
-    ds = DisjointSet[Any]()
+    ds = DisjointSet[int]()
     for node in all_nodes:
         ds.add(node)
     for left_id, right_id in table.select(["left_id", "right_id"]).rows():
@@ -549,10 +554,10 @@ class ModelTestkit(BaseModel):
     right_query: Query | None
     right_clusters: dict[int, ClusterEntity] | None
     probabilities: pl.DataFrame
-    threshold_value: int = 0
 
     _entities: tuple[ClusterEntity, ...]
     _query_lookup: pa.Table
+    _threshold: int = 0
 
     @property
     def name(self) -> str:
@@ -599,12 +604,12 @@ class ModelTestkit(BaseModel):
     @property
     def threshold(self) -> int:
         """Threshold for the model."""
-        return self.threshold_value
+        return self._threshold
 
     @threshold.setter
     def threshold(self, value: int) -> None:
         """Set the threshold for the model."""
-        self.threshold_value = value
+        self._threshold = value
         right_clusters = self.right_clusters.values() if self.right_clusters else []
         input_results = set(self.left_clusters.values()) | set(right_clusters)
 
@@ -658,27 +663,12 @@ class ModelTestkit(BaseModel):
         return self
 
 
-def _testkit_to_query(testkit: SourceTestkit | ModelTestkit) -> Query:
-    if isinstance(testkit, SourceTestkit):
-        return Query(testkit.source, dag=testkit.source.dag)
-    else:
-        all_sources = list(testkit.model.left_query.sources)
-        if testkit.model.right_query is not None:
-            all_sources += list(testkit.model.right_query.sources)
-        if len(all_sources) > 1:
-            raise ValueError(
-                "ModelTestkit no longer exposes a queryable point-of-truth. "
-                "Create a resolver for multi-source queries."
-            )
-        return Query(*all_sources, dag=testkit.model.dag)
-
-
 def model_factory(
     name: ModelResolutionName | None = None,
     dag: DAG | None = None,
     description: str | None = None,
-    left_testkit: SourceTestkit | ModelTestkit | None = None,
-    right_testkit: SourceTestkit | ModelTestkit | None = None,
+    left_testkit: SourceTestkit | ResolverTestkit | None = None,
+    right_testkit: SourceTestkit | ResolverTestkit | None = None,
     true_entities: tuple[SourceEntity, ...] | None = None,
     model_type: ModelType | None = None,
     n_true_entities: int | None = None,
@@ -690,16 +680,16 @@ def model_factory(
     Allows autoconfiguration with minimal settings, or more nuanced control.
 
     Can either be used to generate a model in a pipeline, interconnected with existing
-    SourceTestkit or ModelTestkit objects, or generate a standalone model with
-    random data.
+    testkit objects, or generate a standalone model with random data.
 
     Args:
-        name: Name of the model
+        name: Name of the model. Defaults to a randomly generated word suffixed
+            with '_model'.
         dag: DAG containing this model.
             Overridden by dag of left testkit if present.
         description: Description of the model
-        left_testkit: A SourceTestkit or ModelTestkit for the left source
-        right_testkit: If creating a linker, a SourceTestkit or ModelTestkit for the
+        left_testkit: A SourceTestkit or ResolverTestkit for the left source
+        right_testkit: If creating a linker, a SourceTestkit or ResolverTestkit for the
             right source
         true_entities: Ground truth SourceEntity objects to use for
             generating probabilities. Must be supplied if sources are given
@@ -745,12 +735,12 @@ def model_factory(
     if left_testkit is not None:
         # Using provided sources
         left_data = left_testkit.data
-        left_query = _testkit_to_query(left_testkit)
+        left_query = left_testkit.query()
         left_entities = left_testkit.entities
         if isinstance(left_testkit, SourceTestkit):
             dag = left_testkit.source.dag
         else:
-            dag = left_testkit.model.dag
+            dag = left_testkit.resolver.dag
 
         right_data = None
         right_query = None
@@ -759,7 +749,7 @@ def model_factory(
         if right_testkit is not None:
             model_type = ModelType.LINKER
             right_data = right_testkit.data
-            right_query = _testkit_to_query(right_testkit)
+            right_query = right_testkit.query()
             right_entities = right_testkit.entities
         else:
             model_type = ModelType.DEDUPER
@@ -889,7 +879,7 @@ def model_factory(
         if right_entities
         else None,
         probabilities=probabilities,
-        threshold_value=0,
+        _threshold=0,
     )
 
 
@@ -915,7 +905,8 @@ def query_to_model_factory(
             in left query
         true_entities: Ground truth SourceEntity objects to use for generating
             probabilities
-        name: Name of the model
+        name: Name of the model. Defaults to a randomly generated word suffixed
+            with '_model'.
         description: Description of the model
         right_query: Query generating right data
         right_data: PyArrow table with right query data, if creating a linker
@@ -992,5 +983,5 @@ def query_to_model_factory(
         if right_clusters
         else None,
         probabilities=probabilities,
-        threshold_value=0,
+        _threshold=0,
     )

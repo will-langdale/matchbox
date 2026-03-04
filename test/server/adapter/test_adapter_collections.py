@@ -559,8 +559,8 @@ class TestMatchboxCollectionsBackend:
             linker_testkit = model_factory(
                 name="link_1",
                 description="Test linker 1",
-                left_testkit=dedupe_1_testkit,
-                right_testkit=dedupe_2_testkit,
+                left_testkit=crn_testkit,
+                right_testkit=dh_testkit,
                 true_entities=linked.true_entities,
             )
             self.backend.create_resolution(

@@ -17,31 +17,6 @@ from matchbox.common.factories.models import (
 from matchbox.common.factories.sources import linked_sources_factory, source_factory
 
 
-def test_model_factory_entity_preservation() -> None:
-    """Test that model_factory preserves keys with incomplete probabilities."""
-    linked = linked_sources_factory()
-    all_true_sources = list(linked.true_entities)
-
-    # Create first model
-    first_model = model_factory(
-        left_testkit=linked.sources["crn"],
-        true_entities=all_true_sources[:1],  # Just one source entity
-    )
-
-    # Record input entities for second model
-    input_entities = set(first_model.entities)
-    assert len(input_entities) > 0
-
-    # Create second model with no matching true entities
-    second_model = model_factory(
-        left_testkit=first_model,
-        true_entities=all_true_sources[1:],  # Different source entities
-    )
-
-    # Even with no probabilities possible, should describe same keys
-    assert sum(second_model.entities) == sum(first_model.entities)
-
-
 @pytest.mark.parametrize(
     ("left_testkit", "right_testkit", "expected_type", "should_have_right"),
     [
@@ -51,10 +26,6 @@ def test_model_factory_entity_preservation() -> None:
         ),
         pytest.param(
             "source", "source", "linker", True, id="both_sources_creates_linker"
-        ),
-        pytest.param("model", None, "deduper", False, id="left_model_creates_deduper"),
-        pytest.param(
-            "model", "source", "linker", True, id="mixed_types_creates_linker"
         ),
     ],
 )
@@ -198,27 +169,20 @@ def test_model_pipeline_with_dummy_methodology(
         sources = [left_testkit]
         model_entities = (tuple(linked.sources[left_testkit].entities), None)
     else:  # linker
-        # Create perfect deduped models first
-        left_deduped = model_factory(
-            left_testkit=linked.sources[left_testkit],
-            true_entities=all_true_sources,
-        )
-        right_deduped = model_factory(
-            left_testkit=linked.sources[right_testkit],
-            true_entities=all_true_sources,
-        )
-
         # Get inputs to final model for later diff
-        left_clusters = left_deduped.entities
-        right_clusters = right_deduped.entities
+        left_clusters = linked.sources[left_testkit].entities
+        right_clusters = linked.sources[right_testkit].entities
 
         perfect_model = model_factory(
-            left_testkit=left_deduped,
-            right_testkit=right_deduped,
+            left_testkit=linked.sources[left_testkit],
+            right_testkit=linked.sources[right_testkit],
             true_entities=all_true_sources,
         )
         sources = [left_testkit, right_testkit]
-        model_entities = (tuple(left_deduped.entities), tuple(right_deduped.entities))
+        model_entities = (
+            tuple(linked.sources[left_testkit].entities),
+            tuple(linked.sources[right_testkit].entities),
+        )
 
     # Verify perfect model works
     identical, _ = linked.diff_model_edges(

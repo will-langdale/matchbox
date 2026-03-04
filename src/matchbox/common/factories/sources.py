@@ -19,6 +19,7 @@ from sqlglot.expressions import column
 
 from matchbox.client.dags import DAG
 from matchbox.client.locations import RelationalDBLocation
+from matchbox.client.queries import Query
 from matchbox.client.sources import Source
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_QUERY
 from matchbox.common.datatypes import DataTypes
@@ -134,6 +135,10 @@ class SourceTestkit(BaseModel):
     def source_config(self) -> SourceConfig:
         """Return the SourceConfig from the source."""
         return self.source.config
+
+    def query(self) -> Query:
+        """Thin wrapper to Query this testkit's Source."""
+        return self.source.query()
 
     def fake_run(self) -> Self:
         """Set source hashes before source is run."""

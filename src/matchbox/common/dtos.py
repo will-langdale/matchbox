@@ -1,6 +1,5 @@
 """Data transfer objects for Matchbox API."""
 
-import hashlib
 import json
 import re
 import textwrap
@@ -26,12 +25,6 @@ from pydantic import (
 from matchbox.common.datatypes import DataTypes
 from matchbox.common.exceptions import MatchboxExceptionType, MatchboxNameError
 from matchbox.common.hash import base64_to_hash, hash_to_base64
-
-
-def stable_hash_dict(payload: dict[str, Any]) -> str:
-    """Return a deterministic hash for a JSON-serialisable payload."""
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def validate_matchbox_name(value: str) -> str:
@@ -405,10 +398,6 @@ class SourceConfig(BaseModel):
             return self.qualify_field(name, fields)
         return [self.qualify_field(name, field_name) for field_name in fields]
 
-    def stable_hash(self) -> str:
-        """Return deterministic hash for this config."""
-        return stable_hash_dict(self.model_dump(mode="json"))
-
 
 class QueryCombineType(StrEnum):
     """Enumeration of ways to combine multiple rows having the same matchbox ID."""
@@ -454,10 +443,6 @@ class QueryConfig(BaseModel):
         if self.resolver_resolution:
             return self.resolver_resolution
         return self.source_resolutions[0]
-
-    def stable_hash(self) -> str:
-        """Return deterministic hash for this config."""
-        return stable_hash_dict(self.model_dump(mode="json"))
 
 
 class ModelType(StrEnum):
@@ -527,10 +512,6 @@ class ModelConfig(BaseModel):
             ]
         return [self.left_query.point_of_truth]
 
-    def stable_hash(self) -> str:
-        """Return deterministic hash for this config."""
-        return stable_hash_dict(self.model_dump(mode="json"))
-
 
 class ResolverType(StrEnum):
     """Enumeration of supported resolver methodology types."""
@@ -543,7 +524,7 @@ class ResolverConfig(BaseModel):
 
     resolver_class: str
     resolver_settings: str
-    inputs: tuple[ResolutionName, ...]
+    inputs: tuple[ModelResolutionName, ...]
 
     @model_validator(mode="after")
     def validate_inputs(self) -> Self:
@@ -563,18 +544,14 @@ class ResolverConfig(BaseModel):
         return value
 
     @property
-    def dependencies(self) -> list[ResolutionName]:
-        """Return all resolutions that this resolver needs."""
+    def dependencies(self) -> list[ModelResolutionName]:
+        """Return all model resolutions that this resolver needs."""
         return list(self.inputs)
 
     @property
-    def parents(self) -> list[ResolutionName]:
-        """Returns all resolution names directly input to this config."""
+    def parents(self) -> list[ModelResolutionName]:
+        """Returns all model resolution names directly input to this config."""
         return list(self.inputs)
-
-    def stable_hash(self) -> str:
-        """Return deterministic hash for this config."""
-        return stable_hash_dict(self.model_dump(mode="json"))
 
 
 class Match(BaseModel):

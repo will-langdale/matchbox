@@ -10,17 +10,16 @@ from pydantic import BaseModel, ConfigDict
 
 from matchbox.client.dags import DAG
 from matchbox.client.models import Model
+from matchbox.client.queries import Query
 from matchbox.client.resolvers import (
     Components,
     ComponentsSettings,
     Resolver,
 )
-from matchbox.common.dtos import ResolverResolutionName
-from matchbox.common.factories.entities import (
-    ClusterEntity,
-    SourceEntity,
-)
+from matchbox.common.dtos import ResolverResolutionName, SourceResolutionName
+from matchbox.common.factories.entities import ClusterEntity, SourceEntity
 from matchbox.common.factories.models import ModelTestkit, model_factory
+from matchbox.common.factories.sources import linked_sources_factory
 from matchbox.common.transform import threshold_int_to_float
 
 
@@ -38,6 +37,10 @@ class ResolverTestkit(BaseModel):
         """Return resolver name."""
         return self.resolver.name
 
+    def query(self) -> Query:
+        """Thin wrapper to Query this testkit's Sources via its Resolver."""
+        return self.resolver.query()
+
     def into_dag(self) -> dict[str, Any]:
         """Return kwargs for explicit DAG insertion."""
         config = self.resolver.config
@@ -51,34 +54,65 @@ class ResolverTestkit(BaseModel):
 
 
 def resolver_factory(
-    *,
-    dag: DAG,
+    dag: DAG | None = None,
     inputs: Iterable[ModelTestkit] | None = None,
     true_entities: Iterable[SourceEntity] | None = None,
     name: ResolverResolutionName | None = None,
     description: str | None = None,
     seed: int = 42,
 ) -> ResolverTestkit:
-    """Build a detached resolver testkit and local expected entities.
+    """Generate a complete resolver testkit.
 
-    Defaults:
-    - `inputs=None`: create a single default model testkit.
-    - Components resolver with thresholds inferred from each model threshold.
+    Allows autoconfiguration with minimal settings, or more nuanced control.
+
+    Can either be used to generate a resolver in a pipeline, interconnected with
+    existing testkit objects, or generate a standalone resolver with random data.
+
+    Args:
+        dag: DAG containing this resolver.
+            Inferred from the first input testkit if not provided.
+            A default DAG is created when inputs are also absent.
+        inputs: An iterable of ModelTestkit objects to use as resolver inputs.
+            If None, a single default deduper model testkit is created automatically.
+            All inputs must belong to the same DAG.
+        true_entities: Ground truth SourceEntity objects used to generate the
+            expected cluster assignments. If None, the resolver testkit will have
+            no expected entities.
+        name: Name of the resolver. Defaults to a randomly generated word suffixed
+            with '_resolver'.
+        description: Description of the resolver.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        ResolverTestkit: A resolver testkit with generated assignments and expected
+            entities.
+
+    Raises:
+        TypeError: If any element of inputs is not a ModelTestkit.
+        ValueError: If inputs belong to different DAGs.
     """
     if inputs is None:
-        default_model = model_factory(dag=dag, seed=seed).fake_run()
-        for source in default_model.left_query.sources:
-            dag._add_step(source)  # noqa: SLF001
-        if default_model.right_query is not None:
-            for source in default_model.right_query.sources:
-                dag._add_step(source)  # noqa: SLF001
-        dag._add_step(default_model.model)  # noqa: SLF001
+        dag = dag or DAG(name="collection")
+        dag.run = dag.run or 1
+        linked = linked_sources_factory(dag=dag, seed=seed)
+        default_model = model_factory(
+            left_testkit=linked.sources["crn"],
+            true_entities=tuple(linked.true_entities),
+            seed=seed,
+        ).fake_run()
         inputs = (default_model,)
+        source_names: set[SourceResolutionName] = set(linked.sources.keys())
+    else:
+        inputs = tuple(inputs)
+        source_names: set[SourceResolutionName] = set()
+        for testkit in inputs:
+            if not isinstance(testkit, ModelTestkit):
+                raise TypeError("resolver_factory inputs must be ModelTestkit.")
+            source_names.update(testkit.model.sources)
+        dag = dag or inputs[0].model.dag
 
     input_map: dict[str, ModelTestkit] = {}
     for testkit in inputs:
-        if not isinstance(testkit, ModelTestkit):
-            raise TypeError("resolver_factory inputs must be ModelTestkit.")
         input_map.setdefault(testkit.name, testkit)
 
     resolver_inputs: list[Model] = []
@@ -108,7 +142,6 @@ def resolver_factory(
     )
     assignments = resolver.run()
 
-    source_names = tuple(sorted(resolver.sources))
     source_entities = tuple(true_entities or ())
     entities = tuple(
         projected
