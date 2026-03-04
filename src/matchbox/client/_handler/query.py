@@ -14,9 +14,7 @@ from matchbox.common.dtos import (
     ResolverResolutionPath,
     SourceResolutionPath,
 )
-from matchbox.common.exceptions import (
-    MatchboxEmptyServerResponse,
-)
+from matchbox.common.exceptions import MatchboxEmptyServerResponse
 from matchbox.common.logging import logger
 
 

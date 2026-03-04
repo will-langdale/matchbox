@@ -221,7 +221,7 @@ def test_model_pipeline_with_dummy_methodology(
         model_entities = (tuple(left_deduped.entities), tuple(right_deduped.entities))
 
     # Verify perfect model works
-    identical, _ = linked.diff_results(
+    identical, _ = linked.diff_model_edges(
         probabilities=perfect_model.probabilities,
         left_clusters=left_clusters,
         right_clusters=right_clusters,
@@ -240,7 +240,7 @@ def test_model_pipeline_with_dummy_methodology(
         num_components=len(all_true_sources) - 1,  # Intentionally wrong
     )
 
-    identical, report = linked.diff_results(
+    identical, report = linked.diff_model_edges(
         probabilities=random_probabilities,
         left_clusters=left_clusters,
         right_clusters=right_clusters,

@@ -21,6 +21,7 @@ from matchbox.common.factories.entities import (
     SourceEntity,
 )
 from matchbox.common.factories.models import ModelTestkit, model_factory
+from matchbox.common.transform import threshold_int_to_float
 
 
 class ResolverTestkit(BaseModel):
@@ -90,7 +91,8 @@ def resolver_factory(
 
     resolver_settings = ComponentsSettings(
         thresholds={
-            testkit.name: int(testkit.threshold) for testkit in input_map.values()
+            testkit.name: threshold_int_to_float(testkit.threshold)
+            for testkit in input_map.values()
         }
     )
 
@@ -98,7 +100,7 @@ def resolver_factory(
     generator.seed_instance(seed)
     resolver = Resolver(
         dag=dag,
-        name=name or generator.unique.word(),
+        name=name or f"{generator.unique.word()}_resolver",
         inputs=resolver_inputs,
         resolver_class=Components,
         resolver_settings=resolver_settings,

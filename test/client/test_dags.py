@@ -34,6 +34,7 @@ from matchbox.common.exceptions import (
     MatchboxCollectionNotFoundError,
     MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
+    MatchboxResolutionTypeError,
 )
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.models import model_factory
@@ -778,7 +779,7 @@ def test_resolver_rejects_resolver_inputs(sqla_sqlite_warehouse: Engine) -> None
         resolver_settings={"thresholds": {dedupe.name: 0}},
     )
 
-    with pytest.raises(ValueError, match="is not a model"):
+    with pytest.raises(MatchboxResolutionTypeError, match="Expected one of: model"):
         dag.resolver(
             name="resolver_2",
             inputs=[first_resolver, dedupe],

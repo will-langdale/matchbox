@@ -162,7 +162,7 @@ class TestScenarioIntegration:
                 name="mega_eval_resolver",
                 inputs=[mega_model],
                 resolver_class=Components,
-                resolver_settings=ComponentsSettings(thresholds={mega_model.name: 0}),
+                resolver_settings=ComponentsSettings(thresholds={mega_model.name: 0.0}),
             )
             mega_model.results = mega_model.download_results()
             mega_resolver.run()
@@ -315,7 +315,7 @@ class TestScenarioIntegration:
                 inputs=[crn_model, dh_model],
                 resolver_class=Components,
                 resolver_settings=ComponentsSettings(
-                    thresholds={crn_model.name: 0, dh_model.name: 0}
+                    thresholds={crn_model.name: 0.0, dh_model.name: 0.0}
                 ),
             )
             crn_model.results = crn_model.download_results()

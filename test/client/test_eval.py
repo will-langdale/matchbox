@@ -157,7 +157,7 @@ def test_get_samples_remote(
         inputs=[foo_bar, bar_baz],
         resolver_class=Components,
         resolver_settings=ComponentsSettings(
-            thresholds={foo_bar.name: 0, bar_baz.name: 0}
+            thresholds={foo_bar.name: 0.0, bar_baz.name: 0.0}
         ),
     )
 

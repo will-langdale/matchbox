@@ -1,9 +1,9 @@
 """Resolver nodes and methodology registry for client-side execution."""
 
-from __future__ import annotations
-
-from collections.abc import Iterable, Mapping
-from typing import TYPE_CHECKING, Any
+import json
+from collections.abc import Callable, Iterable, Mapping
+from functools import wraps
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import polars as pl
 
@@ -11,7 +11,7 @@ from matchbox.client import _handler
 from matchbox.client.models.models import Model
 from matchbox.client.queries import Query
 from matchbox.client.resolvers.base import ResolverMethod, ResolverSettings
-from matchbox.client.resolvers.components import Components, ComponentsSettings
+from matchbox.client.resolvers.components import Components
 from matchbox.common.arrow import SCHEMA_CLUSTERS, check_schema
 from matchbox.common.dtos import (
     Resolution,
@@ -23,7 +23,10 @@ from matchbox.common.dtos import (
     ResolverType,
     SourceResolutionName,
 )
-from matchbox.common.exceptions import MatchboxResolutionNotFoundError
+from matchbox.common.exceptions import (
+    MatchboxResolutionNotFoundError,
+    MatchboxResolutionTypeError,
+)
 from matchbox.common.hash import hash_arrow_table
 from matchbox.common.logging import logger, profile_time
 
@@ -33,6 +36,8 @@ if TYPE_CHECKING:
 else:
     DAG = Any
     Source = Any
+
+T = TypeVar("T")
 
 _RESOLVER_CLASSES: dict[str, type[ResolverMethod]] = {}
 
@@ -45,15 +50,25 @@ def add_resolver_class(resolver_class: type[ResolverMethod]) -> None:
     logger.debug(f"Registered resolver class: {resolver_class.__name__}")
 
 
-def get_resolver_class(class_name: str) -> type[ResolverMethod]:
-    """Retrieve a resolver methodology class by name."""
-    try:
-        return _RESOLVER_CLASSES[class_name]
-    except KeyError as e:
-        raise ValueError(f"Unknown resolver class: {class_name}") from e
-
-
 add_resolver_class(Components)
+
+
+def post_run(method: Callable[..., T]) -> Callable[..., T]:
+    """Decorator to ensure that a method is called after resolver run.
+
+    Raises:
+        RuntimeError: If run hasn't happened.
+    """
+
+    @wraps(method)
+    def wrapper(self: "Resolver", *args: Any, **kwargs: Any) -> T:
+        if self.results is None:
+            raise RuntimeError(
+                "The resolver must be run before attempting this operation."
+            )
+        return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class Resolver:
@@ -75,8 +90,9 @@ class Resolver:
         seen_names: set[str] = set()
         for node in inputs:
             if not isinstance(node, Model):
-                raise ValueError(
-                    f"Resolver input '{getattr(node, 'name', node)}' is not a model"
+                raise MatchboxResolutionTypeError(
+                    resolution_name=getattr(node, "name", node),
+                    expected_resolution_types=[ResolutionType.MODEL],
                 )
             if node.name in seen_names:
                 continue
@@ -89,16 +105,20 @@ class Resolver:
             raise ValueError("Resolver needs at least one input")
 
         if isinstance(resolver_class, str):
-            self.resolver_class = get_resolver_class(resolver_class)
+            self.resolver_class: type[ResolverMethod] = _RESOLVER_CLASSES[
+                resolver_class
+            ]
         else:
             self.resolver_class = resolver_class
 
         self.resolver_instance = self.resolver_class(settings=resolver_settings)
         self.resolver_type = self._infer_resolver_type(self.resolver_class)
-        self.resolver_settings = self.resolver_instance.settings
 
-        self.resolver_instance.settings = self.resolver_settings
-        self._normalise_components_settings()
+        if isinstance(resolver_settings, dict):
+            SettingsClass = self.resolver_instance.__annotations__["settings"]
+            self.resolver_settings = SettingsClass(**resolver_settings)
+        else:
+            self.resolver_settings = resolver_settings
 
         self.results: pl.DataFrame | None = None
 
@@ -115,32 +135,6 @@ class Resolver:
                 f"Resolver class '{resolver_class.__name__}' must define resolver_type"
             )
         return ResolverType(resolver_type)
-
-    def _normalise_components_settings(self) -> None:
-        """Ensure Components settings are aligned with configured inputs."""
-        if self.resolver_type != ResolverType.COMPONENTS:
-            return
-
-        if not isinstance(self.resolver_settings, ComponentsSettings):
-            self.resolver_settings = ComponentsSettings.model_validate(
-                self.resolver_settings.model_dump(mode="json")
-            )
-
-        input_names = tuple(node.name for node in self.inputs)
-        threshold_input = dict(self.resolver_settings.thresholds)
-
-        extra_thresholds = [name for name in threshold_input if name not in input_names]
-        if extra_thresholds:
-            raise ValueError(
-                "Thresholds were provided for unknown resolver inputs: "
-                f"{extra_thresholds}"
-            )
-
-        for node_name in input_names:
-            threshold_input.setdefault(node_name, 0)
-
-        self.resolver_settings = ComponentsSettings(thresholds=threshold_input)
-        self.resolver_instance.settings = self.resolver_settings
 
     @property
     def config(self) -> ResolverConfig:
@@ -170,15 +164,10 @@ class Resolver:
 
     @profile_time(attr="name")
     def compute_clusters(
-        self,
-        model_edges: Mapping[ResolutionName, pl.DataFrame],
-        resolver_assignments: Mapping[ResolutionName, pl.DataFrame],
+        self, model_edges: Mapping[ResolutionName, pl.DataFrame]
     ) -> pl.DataFrame:
         """Delegate cluster computation to the configured resolver instance."""
-        return self.resolver_instance.compute_clusters(
-            model_edges=model_edges,
-            resolver_assignments=resolver_assignments,
-        )
+        return self.resolver_instance.compute_clusters(model_edges=model_edges)
 
     @profile_time(attr="name")
     def run(self) -> pl.DataFrame:
@@ -193,19 +182,14 @@ class Resolver:
                 )
             model_edges[node.name] = node.results
 
-        clusters = self.compute_clusters(
-            model_edges=model_edges,
-            resolver_assignments={},
-        )
+        clusters = self.compute_clusters(model_edges=model_edges)
 
         self.results = clusters
         return self.results
 
+    @post_run
     def to_resolution(self) -> Resolution:
         """Convert to Resolution for API calls."""
-        if self.results is None:
-            raise RuntimeError("Resolver must be run before converting to a resolution")
-
         upload_table = self.results.to_arrow()
         check_schema(expected=SCHEMA_CLUSTERS, actual=upload_table.schema)
         return Resolution(
@@ -215,12 +199,32 @@ class Resolver:
             fingerprint=hash_arrow_table(upload_table),
         )
 
+    @classmethod
+    def from_resolution(
+        cls,
+        resolution: Resolution,
+        resolution_name: str,
+        dag: DAG,
+    ) -> "Resolver":
+        """Reconstruct from Resolution."""
+        if resolution.resolution_type != ResolutionType.RESOLVER:
+            raise ValueError("Resolution must be of type 'resolver'")
+
+        return cls(
+            dag=dag,
+            name=ResolverResolutionName(resolution_name),
+            description=resolution.description,
+            inputs=[dag.nodes[name] for name in resolution.config.inputs],
+            resolver_class=resolution.config.resolver_class,
+            resolver_settings=json.loads(resolution.config.resolver_settings),
+        )
+
+    @post_run
     @profile_time(attr="name")
     def sync(self) -> None:
         """Send resolver config and assignments to the server."""
-        resolution = self.to_resolution()
         log_prefix = f"Sync {self.name}"
-        should_upload = False
+        resolution = self.to_resolution()
 
         try:
             existing_resolution = _handler.get_resolution(path=self.resolution_path)
@@ -248,12 +252,7 @@ class Resolver:
         if not existing_resolution:
             logger.info("Creating new resolution", prefix=log_prefix)
             _handler.create_resolution(resolution=resolution, path=self.resolution_path)
-            should_upload = True
-
-        if should_upload:
-            if self.results is None:
-                raise RuntimeError("Resolver must be run before sync")
-
+            logger.info("Setting data for new resolution", prefix=log_prefix)
             _handler.set_data(
                 path=self.resolution_path,
                 data=self.results,

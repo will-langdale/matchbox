@@ -202,13 +202,13 @@ class TestE2EPipelineBuilder:
             name="resolver_dedupe_source_a",
             inputs=[dedupe_a],
             resolver_class=Components,
-            resolver_settings=ComponentsSettings(thresholds={dedupe_a.name: 0}),
+            resolver_settings=ComponentsSettings(thresholds={dedupe_a.name: 0.0}),
         )
         dedupe_b_resolver = dag.resolver(
             name="resolver_dedupe_source_b",
             inputs=[dedupe_b],
             resolver_class=Components,
-            resolver_settings=ComponentsSettings(thresholds={dedupe_b.name: 0}),
+            resolver_settings=ComponentsSettings(thresholds={dedupe_b.name: 0.0}),
         )
 
         # Link deduplicated sources A and B
@@ -239,7 +239,7 @@ class TestE2EPipelineBuilder:
             resolver_class=Components,
             resolver_settings=ComponentsSettings(
                 thresholds={
-                    link_a_b.name: 0,
+                    link_a_b.name: 0.0,
                 }
             ),
         )

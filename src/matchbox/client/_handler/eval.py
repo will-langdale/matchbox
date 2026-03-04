@@ -14,9 +14,7 @@ from matchbox.common.arrow import (
     JudgementsZipFilenames,
     check_schema,
 )
-from matchbox.common.dtos import (
-    ResolverResolutionPath,
-)
+from matchbox.common.dtos import ResolverResolutionPath
 from matchbox.common.eval import Judgement
 from matchbox.common.logging import logger
 

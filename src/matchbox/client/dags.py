@@ -15,7 +15,7 @@ from matchbox.client._settings import settings
 from matchbox.client.locations import Location
 from matchbox.client.models import Model
 from matchbox.client.queries import Query
-from matchbox.client.resolvers import Resolver, ResolverMethod, ResolverSettings
+from matchbox.client.resolvers import Resolver
 from matchbox.client.results import ResolvedMatches
 from matchbox.client.sources import Source
 from matchbox.common.dtos import (
@@ -197,34 +197,9 @@ class DAG:
 
         return model
 
-    def resolver(
-        self,
-        name: ResolverResolutionName,
-        inputs: list[Model | ResolutionName],
-        resolver_class: type[ResolverMethod] | str,
-        resolver_settings: ResolverSettings | dict[str, Any],
-        description: str | None = None,
-    ) -> Resolver:
+    def resolver(self, *args: Any, **kwargs: Any) -> Resolver:
         """Create a resolver and add it to the DAG."""
-        resolved_inputs: list[Model] = []
-        for input_node in inputs:
-            if isinstance(input_node, Model):
-                resolved = input_node
-            else:
-                node = self.nodes.get(input_node)
-                if not isinstance(node, Model):
-                    raise ValueError(f"Resolver input '{input_node}' is not a model")
-                resolved = node
-            resolved_inputs.append(resolved)
-
-        resolver = Resolver(
-            dag=self,
-            name=name,
-            inputs=resolved_inputs,
-            resolver_class=resolver_class,
-            resolver_settings=resolver_settings,
-            description=description,
-        )
+        resolver = Resolver(*args, **kwargs, dag=self)
         self._add_step(resolver)
         return resolver
 

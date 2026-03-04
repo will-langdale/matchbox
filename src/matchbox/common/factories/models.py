@@ -848,7 +848,7 @@ def model_factory(
     )
     model = Model(
         dag=dag,
-        name=name or generator.unique.word(),
+        name=name or f"{generator.unique.word()}_model",
         description=description or generator.sentence(),
         model_class=model_class,
         model_settings=model_settings,
@@ -963,7 +963,7 @@ def query_to_model_factory(
 
     model = Model(
         dag=dag,
-        name=name or generator.unique.word(),
+        name=name or f"{generator.unique.word()}_model",
         description=description or generator.sentence(),
         model_class=model_class,
         model_settings=model_settings,

@@ -253,7 +253,7 @@ def test_probabilistic_scores_generation(
     results = linker.run()
 
     # Validate results against ground truth
-    identical, report = linked.diff_results(
+    identical, report = linked.diff_model_edges(
         probabilities=results,
         left_clusters=left_source.entities,
         right_clusters=right_source.entities,
@@ -264,7 +264,7 @@ def test_probabilistic_scores_generation(
     assert identical, f"Expected perfect results but got: {report}"
 
     # Validate results over a threshold as a subset of the ground truth
-    identical, report = linked.diff_results(
+    identical, report = linked.diff_model_edges(
         probabilities=results,
         left_clusters=left_source.entities,
         right_clusters=right_source.entities,

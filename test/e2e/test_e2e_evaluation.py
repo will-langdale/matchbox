@@ -121,7 +121,7 @@ class TestE2EModelEvaluation:
             name=f"resolver_{final_resolution_1_name}",
             inputs=[final_model_1],
             resolver_class=Components,
-            resolver_settings=ComponentsSettings(thresholds={final_model_1.name: 0}),
+            resolver_settings=ComponentsSettings(thresholds={final_model_1.name: 0.0}),
         )
 
         dag1.run_and_sync()
@@ -164,7 +164,7 @@ class TestE2EModelEvaluation:
             name=f"resolver_{final_resolution_2_name}",
             inputs=[final_model_2],
             resolver_class=Components,
-            resolver_settings=ComponentsSettings(thresholds={final_model_2.name: 0}),
+            resolver_settings=ComponentsSettings(thresholds={final_model_2.name: 0.0}),
         )
 
         dag2.run_and_sync()
