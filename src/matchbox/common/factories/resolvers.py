@@ -51,10 +51,7 @@ def _connected_components_from_edges(
     model_edges: Mapping[ModelResolutionName, pl.DataFrame],
     thresholds: Mapping[ModelResolutionName, float],
 ) -> pl.DataFrame:
-    """Generate clusters from model edge tables using DSU and per-model thresholds.
-
-    Uses edges-only semantics: IDs only appear if they occur in filtered edges.
-    """
+    """Generate clusters from model edge tables and per-model thresholds."""
     djs = DisjointSet[int]()
 
     for model_name, edges in model_edges.items():

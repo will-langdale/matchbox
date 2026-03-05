@@ -20,7 +20,6 @@ from matchbox.common.dtos import (
     ResolverConfig,
     ResolverResolutionName,
     ResolverResolutionPath,
-    ResolverType,
     SourceResolutionName,
 )
 from matchbox.common.exceptions import (
@@ -112,7 +111,6 @@ class Resolver:
             self.resolver_class = resolver_class
 
         self.resolver_instance = self.resolver_class(settings=resolver_settings)
-        self.resolver_type = self._infer_resolver_type(self.resolver_class)
 
         if isinstance(resolver_settings, dict):
             SettingsClass = self.resolver_instance.__annotations__["settings"]
@@ -121,20 +119,6 @@ class Resolver:
             self.resolver_settings = resolver_settings
 
         self.results: pl.DataFrame | None = None
-
-    @staticmethod
-    def _infer_resolver_type(
-        resolver_class: type[ResolverMethod],
-    ) -> ResolverType:
-        """Infer resolver type from resolver class metadata."""
-        resolver_type = getattr(resolver_class, "resolver_type", None)
-        if resolver_type is None:
-            if issubclass(resolver_class, Components):
-                return ResolverType.COMPONENTS
-            raise ValueError(
-                f"Resolver class '{resolver_class.__name__}' must define resolver_type"
-            )
-        return ResolverType(resolver_type)
 
     @property
     def config(self) -> ResolverConfig:

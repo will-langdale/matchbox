@@ -655,7 +655,7 @@ class DAG:
     @profile_time(kwarg="node")
     def get_matches(
         self,
-        node: ResolutionName | None = None,
+        node: ResolverResolutionName | None = None,
         source_filter: list[str] | None = None,
         location_names: list[str] | None = None,
     ) -> ResolvedMatches:
