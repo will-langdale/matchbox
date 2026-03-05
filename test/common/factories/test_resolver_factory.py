@@ -122,4 +122,33 @@ def test_resolver_factory_can_autobuild() -> None:
     assert resolver_testkit.resolver.results is None
     assert len(resolver_testkit.resolver.inputs) == 1
     input_name = resolver_testkit.resolver.inputs[0].name
-    assert resolver_testkit.resolver.resolver_settings.thresholds == {input_name: 0}
+    assert resolver_testkit.resolver.resolver_settings.thresholds == {input_name: 0.0}
+
+
+def test_resolver_factory_honours_explicit_thresholds() -> None:
+    """Explicit thresholds should influence generated assignments."""
+    dag_testkit = TestkitDAG()
+    linked = linked_sources_factory(dag=dag_testkit.dag)
+    dag_testkit.add_linked_sources(linked)
+
+    model_testkit = model_factory(
+        dag=dag_testkit.dag,
+        left_testkit=linked.sources["crn"],
+        true_entities=tuple(linked.true_entities),
+        prob_range=(0.5, 0.99),
+    ).fake_run()
+    assert model_testkit.probabilities.height > 0
+
+    low_threshold = resolver_factory(
+        dag=dag_testkit.dag,
+        inputs=[model_testkit],
+        thresholds={model_testkit.name: 0.0},
+    )
+    high_threshold = resolver_factory(
+        dag=dag_testkit.dag,
+        inputs=[model_testkit],
+        thresholds={model_testkit.name: 1.0},
+    )
+
+    assert low_threshold.assignments.height > 0
+    assert high_threshold.assignments.height == 0

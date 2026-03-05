@@ -380,7 +380,6 @@ def create_probabilistic_dedupe_scenario(
             prob_range=(0.5, 0.99),
             seed=seed,
         )
-        model_testkit.threshold = 50
 
         # Add model to backend and DAG
         backend.create_resolution(
@@ -399,6 +398,7 @@ def create_probabilistic_dedupe_scenario(
             name=f"resolver_{model_testkit.name}",
             inputs=[model_testkit],
             true_entities=linked.true_entities,
+            thresholds={model_testkit.name: 0.5},
         ).fake_run()
         backend.create_resolution(
             resolution=resolver_testkit.resolver.to_resolution(),
@@ -530,7 +530,6 @@ def create_link_scenario(
         description="Link between CRN and CDMS",
         seed=seed,
     )
-    crn_cdms_model.threshold = 75
 
     # Add model to backend and DAG
     backend.create_resolution(
@@ -549,6 +548,7 @@ def create_link_scenario(
         name=f"resolver_{crn_cdms_model.name}",
         inputs=[crn_cdms_model],
         true_entities=linked.true_entities,
+        thresholds={crn_cdms_model.name: 0.75},
     ).fake_run()
     backend.create_resolution(
         resolution=crn_cdms_resolver_testkit.resolver.to_resolution(),
@@ -731,8 +731,6 @@ def create_alt_dedupe_scenario(
         assert_frame_equal(model_testkit1.probabilities, model_testkit2.probabilities)
 
         for model, threshold in ((model_testkit1, 50), (model_testkit2, 75)):
-            model.threshold = threshold
-
             # Add model to backend and DAG
             backend.create_resolution(
                 path=model.resolution_path,
@@ -749,6 +747,7 @@ def create_alt_dedupe_scenario(
                 name=f"resolver_{model.name}",
                 inputs=[model],
                 true_entities=linked.true_entities,
+                thresholds={model.name: threshold / 100},
             ).fake_run()
             backend.create_resolution(
                 resolution=resolver_testkit.resolver.to_resolution(),

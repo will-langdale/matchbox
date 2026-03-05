@@ -73,23 +73,11 @@ def test_model_type_creation(
     assert len(model.probabilities) > 0
     assert model.probabilities.schema == pl.Schema(SCHEMA_MODEL_EDGES)
 
-    # Test threshold setting and querying
-    model.threshold = 80
-    initial_data = model.data
-    initial_ids = set(initial_data["id"].to_pylist())
-    assert len(initial_ids) > 0
-
-    # Test threshold change affects results
-    model.threshold = 90
-    new_data = model.data
-    new_ids = set(new_data["id"].to_pylist())
-
-    # Higher threshold should result in more distinct entities, as fewer merge
-    assert len(new_ids) >= len(initial_ids)
-
-    # Verify schema consistency
-    assert initial_data.schema == new_data.schema
-    assert "id" in initial_data.column_names
+    # Verify derived model data exists and includes ids
+    query_data = model.data
+    query_ids = set(query_data["id"].to_pylist())
+    assert len(query_ids) > 0
+    assert "id" in query_data.column_names
 
     # For linkers, verify we maintain separation between left and right IDs
     if expected_type == "linker":
@@ -700,12 +688,8 @@ def test_query_to_model_factory_compare_with_model_factory() -> None:
     # but probabilities should match with the same seed
     assert standard_model.probabilities.equals(query_model.probabilities)
 
-    # Set the same threshold and verify queries
-    standard_model.threshold = 80
-    query_model.threshold = 80
-
     # Compare entities
-    assert len(standard_model.entities) == len(query_model.entities)
+    assert set(standard_model.entities) == set(query_model.entities)
 
     # Compare model type
     assert str(standard_model.model.config.type) == str(query_model.model.config.type)

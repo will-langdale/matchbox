@@ -813,8 +813,9 @@ class TestMatchboxCollectionsBackend:
                 description="Empty dedupe test model",
                 prob_range=(1.0, 1.0),
             )
-            model_testkit.probabilities = model_testkit.probabilities.head(0)
             model_testkit.fake_run()
+            assert model_testkit.model.results is not None
+            model_testkit.model.results = model_testkit.model.results.head(0)
 
             self.backend.create_resolution(
                 model_testkit.model.to_resolution(), path=model_testkit.resolution_path
@@ -829,7 +830,12 @@ class TestMatchboxCollectionsBackend:
                 dag=dag_testkit.dag,
                 name=f"resolver_{model_testkit.name}",
                 inputs=[model_testkit],
-            ).fake_run()
+            )
+            resolver_testkit.fake_run()
+            assert resolver_testkit.resolver.results is not None
+            resolver_testkit.resolver.results = resolver_testkit.resolver.results.head(
+                0
+            )
             self.backend.create_resolution(
                 resolution=resolver_testkit.resolver.to_resolution(),
                 path=resolver_testkit.resolver.resolution_path,

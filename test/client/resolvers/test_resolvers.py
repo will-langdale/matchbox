@@ -13,7 +13,6 @@ from matchbox.common.arrow import SCHEMA_CLUSTERS
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.models import ModelTestkit, model_factory
 from matchbox.common.factories.sources import linked_sources_factory, source_factory
-from matchbox.common.transform import threshold_int_to_float
 
 ResolverConfigurator = Callable[[list[ModelTestkit]], dict[str, Any]]
 
@@ -25,16 +24,13 @@ def configure_components_resolver(model_testkits: list) -> dict[str, Any]:
     """Configure settings for the Components resolver.
 
     Args:
-        model_testkits: List of ModelTestkit objects whose thresholds will be used
+        model_testkits: List of ModelTestkit objects that need resolver thresholds
 
     Returns:
         A dictionary with validated settings for ComponentsSettings
     """
     return ComponentsSettings(
-        thresholds={
-            testkit.name: threshold_int_to_float(testkit.threshold)
-            for testkit in model_testkits
-        }
+        thresholds={testkit.name: 0.0 for testkit in model_testkits}
     ).model_dump()
 
 

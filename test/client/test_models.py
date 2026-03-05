@@ -239,9 +239,9 @@ def test_model_sync(matchbox_api: MockRouter) -> None:
         f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
     ).mock(return_value=Response(200, json=testkit.model.to_resolution().model_dump()))
 
-    # Changing data requires deletion and re-insertion
-    testkit.probabilities = testkit.probabilities.slice(1, 3)
-    testkit.fake_run()
+    # Changing local model results requires deletion and re-insertion
+    assert testkit.model.results is not None
+    testkit.model.results = testkit.model.results.slice(1, 3)
 
     # Resolution data is first ready to upload, and then uploaded
     matchbox_api.get(

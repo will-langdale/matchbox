@@ -30,7 +30,6 @@ from matchbox.common.factories.sources import linked_sources_factory
 from matchbox.common.transform import (
     DisjointSet,
     threshold_float_to_int,
-    threshold_int_to_float,
 )
 
 
@@ -144,6 +143,7 @@ def resolver_factory(
     true_entities: Iterable[SourceEntity] | None = None,
     name: ResolverResolutionName | None = None,
     description: str | None = None,
+    thresholds: Mapping[ModelResolutionName, float] | None = None,
     seed: int = 42,
 ) -> ResolverTestkit:
     """Generate a complete resolver testkit.
@@ -166,6 +166,8 @@ def resolver_factory(
         name: Name of the resolver. Defaults to a randomly generated word suffixed
             with '_resolver'.
         description: Description of the resolver.
+        thresholds: Per-model probability thresholds in [0.0, 1.0]. If omitted,
+            defaults to 0.0 for all resolver inputs.
         seed: Random seed for reproducibility.
 
     Returns:
@@ -211,10 +213,13 @@ def resolver_factory(
         resolver_inputs.append(testkit.model)
         model_edges[testkit.name] = testkit.probabilities
 
-    thresholds = {
-        testkit.name: threshold_int_to_float(testkit.threshold)
-        for testkit in input_map.values()
-    }
+    expected_model_names = set(input_map.keys())
+    if thresholds is None:
+        thresholds = {name: 0.0 for name in expected_model_names}
+
+    if set(thresholds) != expected_model_names:
+        raise ValueError("Threshold keys must exactly match resolver input models.")
+
     resolver_settings = MockResolverSettings(
         thresholds=thresholds,
     )
