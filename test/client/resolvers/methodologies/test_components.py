@@ -8,6 +8,7 @@ from matchbox.common.arrow import SCHEMA_CLUSTERS
 
 
 def test_components_compute_clusters_uses_thresholds() -> None:
+    """Test thresholds are honoured by the Components.compute_clusters."""
     method = Components(settings=ComponentsSettings(thresholds={"model_a": 0.6}))
     model_edges = {
         "model_a": pl.DataFrame(
@@ -34,6 +35,7 @@ def test_components_compute_clusters_uses_thresholds() -> None:
 
 
 def test_components_compute_clusters_returns_empty_for_no_edges() -> None:
+    """Test Components.compute_clusters can work with no data."""
     clusters = Components(settings=ComponentsSettings()).compute_clusters(
         model_edges={}
     )
@@ -42,6 +44,7 @@ def test_components_compute_clusters_returns_empty_for_no_edges() -> None:
 
 
 def test_components_compute_clusters_merges_multiple_models() -> None:
+    """Test Components.compute_clusters can work with multiple models."""
     method = Components(
         settings=ComponentsSettings(thresholds={"model_a": 0.0, "model_b": 0.0})
     )

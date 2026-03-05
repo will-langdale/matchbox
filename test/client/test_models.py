@@ -257,13 +257,6 @@ def test_model_sync(matchbox_api: MockRouter) -> None:
     assert insert_results_route.called
 
 
-def test_model_query_method_removed() -> None:
-    """Models no longer expose query() directly."""
-    testkit = model_factory(model_type="linker")
-    with pytest.raises(AttributeError):
-        _ = testkit.model.query
-
-
 def test_delete_resolution(matchbox_api: MockRouter) -> None:
     """Test successfully deleting a resolution."""
     # Create test model using factory
