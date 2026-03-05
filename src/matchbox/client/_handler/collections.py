@@ -257,7 +257,7 @@ def get_resolution(path: ResolutionPath) -> Resolution | None:
 @profile_time(kwarg="path")
 @http_retry
 def set_data(path: ResolutionPath, data: pl.DataFrame | Table) -> str:
-    """Upload source hashes or model results to server."""
+    """Upload any step data to server."""
     log_prefix = f"Resolution {path}"
     logger.debug("Uploading results", prefix=log_prefix)
 

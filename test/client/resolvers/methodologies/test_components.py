@@ -4,11 +4,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 from matchbox.client.resolvers import Components, ComponentsSettings
-
-
-def test_components_settings_stores_float_thresholds() -> None:
-    settings = ComponentsSettings(thresholds={"model_a": 0.63})
-    assert settings.thresholds == {"model_a": 0.63}
+from matchbox.common.arrow import SCHEMA_CLUSTERS
 
 
 def test_components_compute_clusters_uses_thresholds() -> None:
@@ -42,7 +38,7 @@ def test_components_compute_clusters_returns_empty_for_no_edges() -> None:
         model_edges={}
     )
     assert clusters.height == 0
-    assert clusters.schema == pl.Schema({"parent_id": pl.UInt64, "child_id": pl.UInt64})
+    assert clusters.schema == pl.Schema(SCHEMA_CLUSTERS)
 
 
 def test_components_compute_clusters_merges_multiple_models() -> None:
@@ -72,6 +68,6 @@ def test_components_compute_clusters_merges_multiple_models() -> None:
 
     expected = pl.DataFrame(
         {"parent_id": [1, 1, 2, 2], "child_id": [1, 2, 3, 4]},
-        schema={"parent_id": pl.UInt64, "child_id": pl.UInt64},
+        schema=pl.Schema(SCHEMA_CLUSTERS),
     )
     assert_frame_equal(clusters, expected)

@@ -16,6 +16,10 @@ from matchbox.common.factories.sources import linked_sources_factory
 
 
 def test_resolver_factory_is_detached() -> None:
+    """Test resolver factory isn't attached to the DAG by default.
+
+    This must be done explicitly.
+    """
     dag_testkit = TestkitDAG()
     linked = linked_sources_factory(dag=dag_testkit.dag)
     dag_testkit.add_linked_sources(linked)
@@ -39,6 +43,7 @@ def test_resolver_factory_is_detached() -> None:
 
 
 def test_resolver_testkit_into_dag_can_be_attached() -> None:
+    """Test the resolver can be attached to the DAG."""
     dag_testkit = TestkitDAG()
     linked = linked_sources_factory(dag=dag_testkit.dag)
     dag_testkit.add_linked_sources(linked)
@@ -58,6 +63,7 @@ def test_resolver_testkit_into_dag_can_be_attached() -> None:
 
 
 def test_resolver_testkit_fake_run_materialises_results() -> None:
+    """Test the resolver testkit's fake run works."""
     dag_testkit = TestkitDAG()
     linked = linked_sources_factory(dag=dag_testkit.dag)
     dag_testkit.add_linked_sources(linked)
@@ -80,26 +86,10 @@ def test_resolver_testkit_fake_run_materialises_results() -> None:
 
 
 def test_resolver_factory_requires_testkit_inputs() -> None:
+    """Test that resolver_factory rejects non-ModelTestkit inputs."""
     dag_testkit = TestkitDAG()
     linked = linked_sources_factory(dag=dag_testkit.dag)
     dag_testkit.add_linked_sources(linked)
-
-    model_testkit = model_factory(
-        dag=dag_testkit.dag,
-        left_testkit=linked.sources["crn"],
-        true_entities=tuple(linked.true_entities),
-    ).fake_run()
-    dag_testkit.add_model(model_testkit)
-
-    with pytest.raises(TypeError, match="resolver_factory inputs must be ModelTestkit"):
-        resolver_factory(dag=dag_testkit.dag, inputs=[model_testkit.model])
-
-
-def test_resolver_factory_rejects_resolver_chaining_inputs() -> None:
-    dag_testkit = TestkitDAG()
-    linked = linked_sources_factory(dag=dag_testkit.dag)
-    dag_testkit.add_linked_sources(linked)
-
     crn_model = model_factory(
         name="dedupe_crn",
         dag=dag_testkit.dag,
@@ -107,7 +97,6 @@ def test_resolver_factory_rejects_resolver_chaining_inputs() -> None:
         true_entities=tuple(linked.true_entities),
     ).fake_run()
     dag_testkit.add_model(crn_model)
-
     dh_model = model_factory(
         name="dedupe_dh",
         dag=dag_testkit.dag,
@@ -115,16 +104,18 @@ def test_resolver_factory_rejects_resolver_chaining_inputs() -> None:
         true_entities=tuple(linked.true_entities),
     ).fake_run()
     dag_testkit.add_model(dh_model)
-
     resolver_inner = resolver_factory(dag=dag_testkit.dag, inputs=[crn_model, dh_model])
+
+    with pytest.raises(TypeError, match="resolver_factory inputs must be ModelTestkit"):
+        resolver_factory(dag=dag_testkit.dag, inputs=[crn_model.model])
 
     with pytest.raises(TypeError, match="resolver_factory inputs must be ModelTestkit"):
         resolver_factory(dag=dag_testkit.dag, inputs=[resolver_inner, crn_model])
 
 
-def test_resolver_factory_can_autobuild_default_model_input() -> None:
-    dag_testkit = TestkitDAG()
-    resolver_testkit = resolver_factory(dag=dag_testkit.dag)
+def test_resolver_factory_can_autobuild() -> None:
+    """Tests that the resolver factory can stand on its own."""
+    resolver_testkit = resolver_factory()
 
     assert isinstance(resolver_testkit, ResolverTestkit)
     assert resolver_testkit.resolver.resolver_class is MockResolver

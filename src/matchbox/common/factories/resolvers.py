@@ -177,8 +177,9 @@ def resolver_factory(
         ValueError: If inputs belong to different DAGs.
     """
     if inputs is None:
-        dag = dag or DAG(name="collection")
-        dag.run = dag.run or 1
+        if dag is None:
+            dag = DAG(name="collection")
+            dag.run = 1
         linked = linked_sources_factory(dag=dag, seed=seed)
         default_model = model_factory(
             left_testkit=linked.sources["crn"],

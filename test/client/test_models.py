@@ -3,6 +3,7 @@ import json
 import polars as pl
 import pytest
 from httpx import Response
+from polars.testing import assert_frame_equal
 from respx.router import MockRouter
 from sqlalchemy import Engine
 
@@ -10,7 +11,7 @@ from matchbox.client.dags import DAG
 from matchbox.client.models import Model, add_model_class
 from matchbox.client.models.linkers.base import LinkerSettings
 from matchbox.client.queries import Query
-from matchbox.common.arrow import table_to_buffer
+from matchbox.common.arrow import SCHEMA_MODEL_EDGES, table_to_buffer
 from matchbox.common.dtos import (
     CRUDOperation,
     ErrorResponse,
@@ -76,8 +77,8 @@ def test_init_and_run_model(
     )
 
     results = model.run()
-    assert isinstance(results, pl.DataFrame)
-    assert isinstance(model.results, pl.DataFrame)
+    assert_frame_equal(results, model.results)
+    assert results.schema == pl.Schema(SCHEMA_MODEL_EDGES)
 
     # Can use pre-fetched query data
     left_df, right_df = foo_query.data(), bar_query.data()

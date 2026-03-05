@@ -34,13 +34,8 @@ from matchbox.common.exceptions import (
     MatchboxRunNotWriteable,
 )
 from matchbox.common.factories.entities import diff_results, query_to_cluster_entities
-from matchbox.common.factories.models import (
-    model_factory,
-    query_to_model_factory,
-)
-from matchbox.common.factories.resolvers import (
-    resolver_factory,
-)
+from matchbox.common.factories.models import model_factory, query_to_model_factory
+from matchbox.common.factories.resolvers import resolver_factory
 from matchbox.common.factories.scenarios import setup_scenario
 from matchbox.common.factories.sources import SourceTestkit
 from matchbox.server.base import MatchboxDBAdapter
