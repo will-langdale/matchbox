@@ -268,7 +268,10 @@ class Resolver:
         return Query(*sources, resolver=self, dag=self.dag, **kwargs)
 
     def download_results(self) -> pl.DataFrame:
-        """Download resolver assignments directly from the resolution data API."""
+        """Download resolver assignments directly from the resolution data API.
+
+        These IDs will be inconsistent with those allocated locally.
+        """
         table = _handler.get_resolver_data(path=self.resolution_path)
         check_schema(expected=SCHEMA_CLUSTERS, actual=table.schema)
         self.results = pl.from_arrow(table)
