@@ -1,26 +1,106 @@
 """Factory helpers for resolver testkits."""
 
 import json
-from collections.abc import Iterable
-from typing import Any
+from collections.abc import Iterable, Mapping
+from typing import Annotated, Any, ClassVar, Self
 
 import polars as pl
 from faker import Faker
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from matchbox.client.dags import DAG
 from matchbox.client.models import Model
 from matchbox.client.queries import Query
 from matchbox.client.resolvers import (
-    Components,
-    ComponentsSettings,
     Resolver,
+    ResolverMethod,
+    ResolverSettings,
+    add_resolver_class,
 )
-from matchbox.common.dtos import ResolverResolutionName, SourceResolutionName
+from matchbox.common.arrow import SCHEMA_CLUSTERS
+from matchbox.common.dtos import (
+    ModelResolutionName,
+    ResolverResolutionName,
+    ResolverType,
+    SourceResolutionName,
+)
 from matchbox.common.factories.entities import ClusterEntity, SourceEntity
 from matchbox.common.factories.models import ModelTestkit, model_factory
 from matchbox.common.factories.sources import linked_sources_factory
-from matchbox.common.transform import threshold_int_to_float
+from matchbox.common.transform import (
+    DisjointSet,
+    threshold_float_to_int,
+    threshold_int_to_float,
+)
+
+
+class MockResolverSettings(ResolverSettings):
+    """Settings type for MockResolver."""
+
+    thresholds: dict[
+        ModelResolutionName,
+        Annotated[float, Field(ge=0.0, le=1.0)],
+    ] = Field(default_factory=dict)
+
+    def validate_inputs(self, model_names: Iterable[ModelResolutionName]) -> None:
+        """Validate all model names are present in thresholds."""
+        if missing := set(model_names) - set(self.thresholds.keys()):
+            raise RuntimeError(f"Missing thresholds for models: {missing}")
+
+
+def _connected_components_from_edges(
+    model_edges: Mapping[ModelResolutionName, pl.DataFrame],
+    thresholds: Mapping[ModelResolutionName, float],
+) -> pl.DataFrame:
+    """Generate clusters from model edge tables using DSU and per-model thresholds.
+
+    Uses edges-only semantics: IDs only appear if they occur in filtered edges.
+    """
+    djs = DisjointSet[int]()
+
+    for model_name, edges in model_edges.items():
+        if edges.height == 0:
+            continue
+
+        threshold = threshold_float_to_int(thresholds[model_name])
+        filtered_edges = edges.filter(pl.col("probability") >= threshold)
+        for left_id, right_id in filtered_edges.select(
+            "left_id", "right_id"
+        ).iter_rows():
+            djs.union(left_id, right_id)
+
+    rows: list[dict[str, int]] = []
+    for parent_id, component in enumerate(
+        sorted(djs.get_components(), key=min), start=1
+    ):
+        rows.extend(
+            {"parent_id": parent_id, "child_id": node_id}
+            for node_id in sorted(component)
+        )
+
+    if not rows:
+        return pl.from_arrow(SCHEMA_CLUSTERS.empty_table())
+    return pl.DataFrame(rows).cast(pl.Schema(SCHEMA_CLUSTERS))
+
+
+class MockResolver(ResolverMethod):
+    """Mock resolver methodology used by resolver testkits."""
+
+    resolver_type: ClassVar[ResolverType] = ResolverType.COMPONENTS
+    settings: MockResolverSettings
+
+    def compute_clusters(
+        self, model_edges: Mapping[ModelResolutionName, pl.DataFrame]
+    ) -> pl.DataFrame:
+        """Compute mock clusters with deterministic DSU-connected-components."""
+        self.settings.validate_inputs(model_edges.keys())
+        return _connected_components_from_edges(
+            model_edges=model_edges,
+            thresholds=self.settings.thresholds,
+        )
+
+
+add_resolver_class(MockResolver)
 
 
 class ResolverTestkit(BaseModel):
@@ -40,6 +120,11 @@ class ResolverTestkit(BaseModel):
     def query(self) -> Query:
         """Thin wrapper to Query this testkit's Sources via its Resolver."""
         return self.resolver.query()
+
+    def fake_run(self) -> Self:
+        """Set resolver results without running the resolver."""
+        self.resolver.results = self.assignments
+        return self
 
     def into_dag(self) -> dict[str, Any]:
         """Return kwargs for explicit DAG insertion."""
@@ -116,18 +201,21 @@ def resolver_factory(
         input_map.setdefault(testkit.name, testkit)
 
     resolver_inputs: list[Model] = []
+    model_edges: dict[ModelResolutionName, pl.DataFrame] = {}
     for testkit in input_map.values():
         if testkit.model.dag != dag:
             raise ValueError("Cannot mix DAGs when building a resolver testkit.")
         if testkit.model.results is None:
             testkit.fake_run()
         resolver_inputs.append(testkit.model)
+        model_edges[testkit.name] = testkit.probabilities
 
-    resolver_settings = ComponentsSettings(
-        thresholds={
-            testkit.name: threshold_int_to_float(testkit.threshold)
-            for testkit in input_map.values()
-        }
+    thresholds = {
+        testkit.name: threshold_int_to_float(testkit.threshold)
+        for testkit in input_map.values()
+    }
+    resolver_settings = MockResolverSettings(
+        thresholds=thresholds,
     )
 
     generator = Faker()
@@ -136,11 +224,14 @@ def resolver_factory(
         dag=dag,
         name=name or f"{generator.unique.word()}_resolver",
         inputs=resolver_inputs,
-        resolver_class=Components,
+        resolver_class=MockResolver,
         resolver_settings=resolver_settings,
         description=description,
     )
-    assignments = resolver.run()
+    assignments = _connected_components_from_edges(
+        model_edges=model_edges,
+        thresholds=thresholds,
+    )
 
     source_entities = tuple(true_entities or ())
     entities = tuple(

@@ -987,7 +987,7 @@ def test_from_resolution() -> None:
         dag=dag_testkit.dag,
         inputs=[crn_dh_model, crn_cdms_model],
         true_entities=true_entities,
-    )
+    ).fake_run()
     dag_testkit.add_resolver(resolver_testkit)
 
     # Test 1: Add all resolutions in dependency order
@@ -1232,7 +1232,7 @@ def test_dag_load_server_run(matchbox_api: MockRouter) -> None:
         dag=dag_testkit.dag,
         inputs=[crn_dh_model, crn_cdms_model],
         true_entities=true_entities,
-    )
+    ).fake_run()
     dag_testkit.add_resolver(resolver_testkit)
 
     # Full pipeline: 3 sources, 2 linkers, 1 resolver

@@ -547,7 +547,7 @@ class TestMatchboxCollectionsBackend:
                     dag=dag_testkit.dag,
                     name=f"resolver_{dedupe_testkit.name}",
                     inputs=[dedupe_testkit],
-                )
+                ).fake_run()
                 self.backend.create_resolution(
                     resolution=resolver_testkit.resolver.to_resolution(),
                     path=resolver_testkit.resolver.resolution_path,
@@ -834,14 +834,14 @@ class TestMatchboxCollectionsBackend:
                 dag=dag_testkit.dag,
                 name=f"resolver_{model_testkit.name}",
                 inputs=[model_testkit],
-            )
+            ).fake_run()
             self.backend.create_resolution(
                 resolution=resolver_testkit.resolver.to_resolution(),
                 path=resolver_testkit.resolver.resolution_path,
             )
             self.backend.insert_resolver_data(
                 path=resolver_testkit.resolver.resolution_path,
-                data=resolver_testkit.assignments.to_arrow(),
+                data=resolver_testkit.resolver.results.to_arrow(),
             )
 
             # Querying from deduper with no results is the same as querying from source

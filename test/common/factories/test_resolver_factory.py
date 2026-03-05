@@ -2,11 +2,16 @@
 
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 from matchbox.common.arrow import SCHEMA_CLUSTERS
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.models import model_factory
-from matchbox.common.factories.resolvers import ResolverTestkit, resolver_factory
+from matchbox.common.factories.resolvers import (
+    MockResolver,
+    ResolverTestkit,
+    resolver_factory,
+)
 from matchbox.common.factories.sources import linked_sources_factory
 
 
@@ -26,8 +31,11 @@ def test_resolver_factory_is_detached() -> None:
 
     assert isinstance(resolver_testkit, ResolverTestkit)
     assert resolver_testkit.name not in dag_testkit.dag.nodes
+    assert resolver_testkit.resolver.results is None
+    assert resolver_testkit.resolver.resolver_class is MockResolver
     assert resolver_testkit.assignments.schema == pl.Schema(SCHEMA_CLUSTERS)
     assert resolver_testkit.into_dag()["inputs"] == [model_testkit.name]
+    assert resolver_testkit.into_dag()["resolver_class"] == "MockResolver"
 
 
 def test_resolver_testkit_into_dag_can_be_attached() -> None:
@@ -47,6 +55,28 @@ def test_resolver_testkit_into_dag_can_be_attached() -> None:
 
     attached = dag_testkit.dag.get_resolver(resolver_testkit.name)
     assert dag_testkit.resolvers[resolver_testkit.name].resolver is attached
+
+
+def test_resolver_testkit_fake_run_materialises_results() -> None:
+    dag_testkit = TestkitDAG()
+    linked = linked_sources_factory(dag=dag_testkit.dag)
+    dag_testkit.add_linked_sources(linked)
+
+    model_testkit = model_factory(
+        dag=dag_testkit.dag,
+        left_testkit=linked.sources["crn"],
+        true_entities=tuple(linked.true_entities),
+    ).fake_run()
+
+    resolver_testkit = resolver_factory(dag=dag_testkit.dag, inputs=[model_testkit])
+
+    with pytest.raises(RuntimeError, match="must be run"):
+        resolver_testkit.resolver.to_resolution()
+
+    resolver_testkit.fake_run()
+    assert_frame_equal(resolver_testkit.resolver.results, resolver_testkit.assignments)
+    resolution = resolver_testkit.resolver.to_resolution()
+    assert resolution.config.resolver_class == "MockResolver"
 
 
 def test_resolver_factory_requires_testkit_inputs() -> None:
@@ -97,6 +127,8 @@ def test_resolver_factory_can_autobuild_default_model_input() -> None:
     resolver_testkit = resolver_factory(dag=dag_testkit.dag)
 
     assert isinstance(resolver_testkit, ResolverTestkit)
+    assert resolver_testkit.resolver.resolver_class is MockResolver
+    assert resolver_testkit.resolver.results is None
     assert len(resolver_testkit.resolver.inputs) == 1
     input_name = resolver_testkit.resolver.inputs[0].name
     assert resolver_testkit.resolver.resolver_settings.thresholds == {input_name: 0}

@@ -155,18 +155,10 @@ class TestScenarioIntegration:
         """
         with self.scenario(self.backend, "mega") as dag:
             model_name: str = "mega_product_linker"
+            mega_resolver_name = dag.resolvers_for_model(model_name)[0].name
 
             loaded_dag: DAG = dag.dag.load_pending().set_client(self.warehouse_engine)
-            mega_model = loaded_dag.get_model(model_name)
-            mega_resolver = loaded_dag.resolver(
-                name="mega_eval_resolver",
-                inputs=[mega_model],
-                resolver_class=Components,
-                resolver_settings=ComponentsSettings(thresholds={mega_model.name: 0.0}),
-            )
-            mega_model.results = mega_model.download_results()
-            mega_resolver.run()
-            mega_resolver.sync()
+            mega_resolver = loaded_dag.get_resolver(mega_resolver_name)
 
             app = EntityResolutionApp(
                 resolution=mega_resolver.resolution_path,

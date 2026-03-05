@@ -326,7 +326,7 @@ def create_dedupe_scenario(
             name=f"resolver_{model_testkit.name}",
             inputs=[model_testkit],
             true_entities=linked.true_entities,
-        )
+        ).fake_run()
         backend.create_resolution(
             resolution=resolver_testkit.resolver.to_resolution(),
             path=resolver_testkit.resolver.resolution_path,
@@ -399,7 +399,7 @@ def create_probabilistic_dedupe_scenario(
             name=f"resolver_{model_testkit.name}",
             inputs=[model_testkit],
             true_entities=linked.true_entities,
-        )
+        ).fake_run()
         backend.create_resolution(
             resolution=resolver_testkit.resolver.to_resolution(),
             path=resolver_testkit.resolver.resolution_path,
@@ -498,7 +498,7 @@ def create_link_scenario(
         name=f"resolver_{crn_dh_model.name}",
         inputs=[crn_dh_model],
         true_entities=linked.true_entities,
-    )
+    ).fake_run()
     backend.create_resolution(
         resolution=crn_dh_resolver_testkit.resolver.to_resolution(),
         path=crn_dh_resolver_testkit.resolver.resolution_path,
@@ -549,7 +549,7 @@ def create_link_scenario(
         name=f"resolver_{crn_cdms_model.name}",
         inputs=[crn_cdms_model],
         true_entities=linked.true_entities,
-    )
+    ).fake_run()
     backend.create_resolution(
         resolution=crn_cdms_resolver_testkit.resolver.to_resolution(),
         path=crn_cdms_resolver_testkit.resolver.resolution_path,
@@ -617,7 +617,7 @@ def create_link_scenario(
         name=f"resolver_{final_join_model.name}",
         inputs=[final_join_model],
         true_entities=linked.true_entities,
-    )
+    ).fake_run()
     backend.create_resolution(
         resolution=final_join_resolver_testkit.resolver.to_resolution(),
         path=final_join_resolver_testkit.resolver.resolution_path,
@@ -749,7 +749,7 @@ def create_alt_dedupe_scenario(
                 name=f"resolver_{model.name}",
                 inputs=[model],
                 true_entities=linked.true_entities,
-            )
+            ).fake_run()
             backend.create_resolution(
                 resolution=resolver_testkit.resolver.to_resolution(),
                 path=resolver_testkit.resolver.resolution_path,
@@ -896,7 +896,7 @@ def create_convergent_scenario(
             name=f"resolver_{model_testkit.name}",
             inputs=[model_testkit],
             true_entities=linked.true_entities,
-        )
+        ).fake_run()
         backend.create_resolution(
             resolution=resolver_testkit.resolver.to_resolution(),
             path=resolver_testkit.resolver.resolution_path,
@@ -1224,7 +1224,7 @@ def create_mega_scenario(
         name=f"resolver_{link_model.name}",
         inputs=[link_model],
         true_entities=linked.true_entities,
-    )
+    ).fake_run()
     backend.create_resolution(
         resolution=mega_resolver_testkit.resolver.to_resolution(),
         path=mega_resolver_testkit.resolver.resolution_path,
@@ -1250,7 +1250,9 @@ def setup_scenario(
         "link",
         "probabilistic_dedupe",
         "alt_dedupe",
+        "convergent_partial",
         "convergent",
+        "mega",
     ],
     warehouse: Engine,
     n_entities: int = 10,
