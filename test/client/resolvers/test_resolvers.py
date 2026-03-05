@@ -144,7 +144,7 @@ def test_resolver_run_requires_materialised_inputs(
     resolver = source.dag.resolver(
         name="resolver",
         inputs=[model],
-        resolver_class="Components",
+        resolver_class=Components,
         resolver_settings={"thresholds": {model.name: 0}},
     )
 

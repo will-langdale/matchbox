@@ -9,6 +9,7 @@ from sqlalchemy import Engine
 from sqlglot.errors import ParseError
 
 from matchbox.client.queries import Query, QueryCombineType, _clean
+from matchbox.client.resolvers import Components
 from matchbox.common.arrow import (
     SCHEMA_QUERY,
     SCHEMA_QUERY_WITH_LEAVES,
@@ -153,7 +154,7 @@ def test_query_multiple_sources(
     resolver = foo_source.dag.resolver(
         name="resolver",
         inputs=[model_foo, model_bar],
-        resolver_class="Components",
+        resolver_class=Components,
         resolver_settings={"thresholds": {model_foo.name: 0, model_bar.name: 0}},
     )
 
@@ -359,7 +360,7 @@ def test_query_combine_type(
     resolver = foo_source.dag.resolver(
         name="resolver",
         inputs=[foo_model, bar_model],
-        resolver_class="Components",
+        resolver_class=Components,
         resolver_settings={"thresholds": {foo_model.name: 0, bar_model.name: 0}},
     )
 
@@ -457,7 +458,7 @@ def test_query_leaf_ids(
     resolver = foo_source.dag.resolver(
         name="resolver",
         inputs=[foo_model, bar_model],
-        resolver_class="Components",
+        resolver_class=Components,
         resolver_settings={"thresholds": {foo_model.name: 0, bar_model.name: 0}},
     )
 
@@ -565,7 +566,7 @@ def test_query_from_config() -> None:
     resolver = dag.resolver(
         name="resolver",
         inputs=[model_testkit, dedupe_testkit],
-        resolver_class="Components",
+        resolver_class=Components,
         resolver_settings={
             "thresholds": {model_testkit.name: 0, dedupe_testkit.name: 0}
         },
@@ -647,7 +648,7 @@ def test_query_from_config_resolver_roundtrip() -> None:
     resolver = dag.resolver(
         name="resolver",
         inputs=[linker, dedupe],
-        resolver_class="Components",
+        resolver_class=Components,
         resolver_settings={"thresholds": {linker.name: 0, dedupe.name: 0}},
     )
 
