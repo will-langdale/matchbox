@@ -11,7 +11,6 @@ from textual.widgets import Footer, Label
 from matchbox.client.cli.eval.app import EntityResolutionApp, EvaluationQueue
 from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
 from matchbox.client.dags import DAG
-from matchbox.client.resolvers import Components, ComponentsSettings
 from matchbox.common.dtos import ResolverResolutionPath
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.scenarios import setup_scenario
@@ -154,8 +153,7 @@ class TestScenarioIntegration:
         - Status updates and help modal
         """
         with self.scenario(self.backend, "mega") as dag:
-            model_name: str = "mega_product_linker"
-            mega_resolver_name = dag.resolvers_for_model(model_name)[0].name
+            mega_resolver_name = "resolver_mega_product_linker"
 
             loaded_dag: DAG = dag.dag.load_pending().set_client(self.warehouse_engine)
             mega_resolver = loaded_dag.get_resolver(mega_resolver_name)
@@ -297,23 +295,10 @@ class TestScenarioIntegration:
     async def test_app_widgets_are_visible(self) -> None:
         """Test that all app widgets are visible with non-zero dimensions."""
         with self.scenario(self.backend, "dedupe") as dag:
-            model_name: str = "naive_test_crn"
+            dedupe_resolver_name = "resolver_naive_test_crn"
 
             loaded_dag: DAG = dag.dag.load_pending().set_client(self.warehouse_engine)
-            crn_model = loaded_dag.get_model(model_name)
-            dh_model = loaded_dag.get_model("naive_test_dh")
-            dedupe_resolver = loaded_dag.resolver(
-                name="dedupe_eval_resolver",
-                inputs=[crn_model, dh_model],
-                resolver_class=Components,
-                resolver_settings=ComponentsSettings(
-                    thresholds={crn_model.name: 0.0, dh_model.name: 0.0}
-                ),
-            )
-            crn_model.results = crn_model.download_results()
-            dh_model.results = dh_model.download_results()
-            dedupe_resolver.run()
-            dedupe_resolver.sync()
+            dedupe_resolver = loaded_dag.get_resolver(dedupe_resolver_name)
 
             app = EntityResolutionApp(
                 resolution=dedupe_resolver.resolution_path,

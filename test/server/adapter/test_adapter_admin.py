@@ -742,8 +742,8 @@ class TestMatchboxAdminBackend:
         """Test validating data IDs."""
         with self.scenario(self.backend, "dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
-            naive_crn_resolver_path = dag_testkit.resolvers_for_model("naive_test_crn")[
-                0
+            naive_crn_resolver_path = dag_testkit.resolvers[
+                "resolver_naive_test_crn"
             ].resolver.resolution_path
 
             df_crn = self.backend.query(
@@ -783,8 +783,8 @@ class TestMatchboxAdminBackend:
         """Test that clearing and restoring the database works."""
         with self.scenario(self.backend, "link") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
-            naive_crn_resolver_path = dag_testkit.resolvers_for_model("naive_test_crn")[
-                0
+            naive_crn_resolver_path = dag_testkit.resolvers[
+                "resolver_naive_test_crn"
             ].resolver.resolution_path
 
             count_funcs = [

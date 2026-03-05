@@ -59,8 +59,8 @@ class TestMatchboxQueryBackend:
         """Test querying data from a deduplication resolver point of truth."""
         with self.scenario(self.backend, "dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
-            dedupe_resolver_path = dag_testkit.resolvers_for_model("naive_test_crn")[
-                0
+            dedupe_resolver_path = dag_testkit.resolvers[
+                "resolver_naive_test_crn"
             ].resolver.resolution_path
 
             df_crn = self.backend.query(
@@ -84,8 +84,8 @@ class TestMatchboxQueryBackend:
             linker_name = "deterministic_naive_test_crn_naive_test_dh"
             crn_testkit = dag_testkit.sources.get("crn")
             dh_testkit = dag_testkit.sources.get("dh")
-            linker_resolver_path = dag_testkit.resolvers_for_model(linker_name)[
-                0
+            linker_resolver_path = dag_testkit.resolvers[
+                f"resolver_{linker_name}"
             ].resolver.resolution_path
 
             df_crn = self.backend.query(
@@ -123,8 +123,8 @@ class TestMatchboxQueryBackend:
             linker_name = "deterministic_naive_test_crn_naive_test_dh"
             crn_testkit = dag_testkit.sources.get("crn")
             dh_testkit = dag_testkit.sources.get("dh")
-            linker_resolver_path = dag_testkit.resolvers_for_model(linker_name)[
-                0
+            linker_resolver_path = dag_testkit.resolvers[
+                f"resolver_{linker_name}"
             ].resolver.resolution_path
 
             # Assumes CRN and DH come from same LinkedSourcesTestkit
@@ -157,8 +157,8 @@ class TestMatchboxQueryBackend:
             linker_name = "deterministic_naive_test_crn_naive_test_dh"
             crn_testkit = dag_testkit.sources.get("crn")
             dh_testkit = dag_testkit.sources.get("dh")
-            linker_resolver_path = dag_testkit.resolvers_for_model(linker_name)[
-                0
+            linker_resolver_path = dag_testkit.resolvers[
+                f"resolver_{linker_name}"
             ].resolver.resolution_path
 
             # Assumes CRN and DH come from same LinkedSourcesTestkit
@@ -191,8 +191,8 @@ class TestMatchboxQueryBackend:
             linker_name = "deterministic_naive_test_crn_naive_test_dh"
             crn_testkit = dag_testkit.sources.get("crn")
             dh_testkit = dag_testkit.sources.get("dh")
-            linker_resolver_path = dag_testkit.resolvers_for_model(linker_name)[
-                0
+            linker_resolver_path = dag_testkit.resolvers[
+                f"resolver_{linker_name}"
             ].resolver.resolution_path
 
             # Assumes CRN and DH come from same LinkedSourcesTestkit
@@ -225,8 +225,8 @@ class TestMatchboxQueryBackend:
             linker_name = "deterministic_naive_test_crn_naive_test_dh"
             crn_testkit = dag_testkit.sources.get("crn")
             dh_testkit = dag_testkit.sources.get("dh")
-            linker_resolver_path = dag_testkit.resolvers_for_model(linker_name)[
-                0
+            linker_resolver_path = dag_testkit.resolvers[
+                f"resolver_{linker_name}"
             ].resolver.resolution_path
 
             # Use a non-existent source key

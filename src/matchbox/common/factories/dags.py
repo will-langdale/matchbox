@@ -58,13 +58,3 @@ class TestkitDAG(BaseModel):
         """Add resolver to the real DAG and register test data."""
         self.dag._add_step(testkit.resolver)
         self.resolvers[testkit.name] = testkit
-
-    def resolvers_for_model(
-        self, model_name: ModelResolutionName
-    ) -> list[ResolverTestkit]:
-        """Return resolver testkits that take the given model as direct input."""
-        return [
-            resolver_testkit
-            for resolver_testkit in self.resolvers.values()
-            if model_name in resolver_testkit.resolver.config.inputs
-        ]

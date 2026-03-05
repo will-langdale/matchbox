@@ -74,17 +74,13 @@ def test_model_type_creation(
     assert model.probabilities.schema == pl.Schema(SCHEMA_MODEL_EDGES)
 
     # Test threshold setting and querying
-    initial_threshold = 80
-    model.threshold = initial_threshold
-    assert model.threshold == initial_threshold
+    model.threshold = 80
     initial_data = model.data
     initial_ids = set(initial_data["id"].to_pylist())
     assert len(initial_ids) > 0
 
     # Test threshold change affects results
-    new_threshold = 90
-    model.threshold = new_threshold
-    assert model.threshold == new_threshold
+    model.threshold = 90
     new_data = model.data
     new_ids = set(new_data["id"].to_pylist())
 

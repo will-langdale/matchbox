@@ -1,6 +1,6 @@
 import tempfile
 from collections.abc import Callable
-from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import polars as pl
 import pytest
@@ -335,8 +335,9 @@ def test_get_samples_remote(
         )
 
 
+@patch("matchbox.client.eval.samples._handler.download_eval_data")
 def test_evaldata_precision_recall_from_resolver(
-    monkeypatch: pytest.MonkeyPatch,
+    mock_download_eval_data: Mock,
 ) -> None:
     """EvalData scores resolver output from backend-resolved matches."""
     judgements = pl.DataFrame(
@@ -348,26 +349,25 @@ def test_evaldata_precision_recall_from_resolver(
         schema={"root": pl.UInt64, "leaves": pl.List(pl.UInt64)},
     )
 
-    monkeypatch.setattr(
-        "matchbox.client.eval.samples._handler.download_eval_data",
-        lambda tag=None: (judgements, expansion),
-    )
+    mock_download_eval_data.return_value = (judgements, expansion)
 
-    resolved = SimpleNamespace(
-        as_dump=lambda: pl.DataFrame({"id": [1, 1], "leaf_id": [1, 2]})
-    )
-    resolver = SimpleNamespace(
-        name="resolver",
-        dag=SimpleNamespace(get_matches=lambda node=None: resolved),
-    )
+    resolved = Mock()
+    resolved.as_dump.return_value = pl.DataFrame({"id": [1, 1], "leaf_id": [1, 2]})
+
+    resolver = Mock()
+    resolver.name = "resolver"
+    resolver.dag.get_matches.return_value = resolved
 
     precision, recall = EvalData().precision_recall(resolver=resolver)
+
+    resolver.dag.get_matches.assert_called_once_with(node="resolver")
     assert precision == 1.0
     assert recall == 1.0
 
 
+@patch("matchbox.client.eval.samples._handler.download_eval_data")
 def test_evaldata_precision_recall_requires_synced_resolver(
-    monkeypatch: pytest.MonkeyPatch,
+    mock_download_eval_data: Mock,
 ) -> None:
     """EvalData emits a clear error when resolver cannot be queried."""
     judgements = pl.DataFrame(
@@ -379,17 +379,12 @@ def test_evaldata_precision_recall_requires_synced_resolver(
         schema={"root": pl.UInt64, "leaves": pl.List(pl.UInt64)},
     )
 
-    monkeypatch.setattr(
-        "matchbox.client.eval.samples._handler.download_eval_data",
-        lambda tag=None: (judgements, expansion),
-    )
+    mock_download_eval_data.return_value = (judgements, expansion)
 
-    def raise_not_queriable(node: str | None = None) -> None:
-        raise MatchboxResolutionNotQueriable("Resolver is not complete")
-
-    resolver = SimpleNamespace(
-        name="resolver",
-        dag=SimpleNamespace(get_matches=raise_not_queriable),
+    resolver = Mock()
+    resolver.name = "resolver"
+    resolver.dag.get_matches.side_effect = MatchboxResolutionNotQueriable(
+        "Resolver is not complete"
     )
 
     with pytest.raises(ValueError, match="must be run and synced before scoring"):

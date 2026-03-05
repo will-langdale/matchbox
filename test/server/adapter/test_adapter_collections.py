@@ -714,9 +714,9 @@ class TestMatchboxCollectionsBackend:
         with self.scenario(self.backend, "dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
             naive_crn_testkit = dag_testkit.models.get("naive_test_crn")
-            naive_crn_resolver_path = dag_testkit.resolvers_for_model(
-                naive_crn_testkit.name
-            )[0].resolver.resolution_path
+            naive_crn_resolver_path = dag_testkit.resolvers[
+                f"resolver_{naive_crn_testkit.name}"
+            ].resolver.resolution_path
 
             # Query returns the same results as the testkit, showing
             # that processing was performed accurately.
@@ -770,9 +770,9 @@ class TestMatchboxCollectionsBackend:
         with self.scenario(self.backend, "probabilistic_dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
             prob_crn_testkit = dag_testkit.models.get("probabilistic_test_crn")
-            prob_crn_resolver_path = dag_testkit.resolvers_for_model(
-                prob_crn_testkit.name
-            )[0].resolver.resolution_path
+            prob_crn_resolver_path = dag_testkit.resolvers[
+                f"resolver_{prob_crn_testkit.name}"
+            ].resolver.resolution_path
 
             # Query returns the same results as the testkit, showing
             # that processing was performed accurately
