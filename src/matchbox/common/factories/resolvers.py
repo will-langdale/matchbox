@@ -88,7 +88,7 @@ class MockResolver(ResolverMethod):
     def compute_clusters(
         self, model_edges: Mapping[ModelResolutionName, pl.DataFrame]
     ) -> pl.DataFrame:
-        """Compute mock clusters with deterministic DSU-connected-components."""
+        """Compute mock clusters with deterministic connected components."""
         self.settings.validate_inputs(model_edges.keys())
         return _connected_components_from_edges(
             model_edges=model_edges,

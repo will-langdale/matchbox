@@ -462,7 +462,7 @@ def query_to_cluster_entities(
     """Convert a query result to a set of ClusterEntities.
 
     Useful for turning a real query from a real model resolution in Matchbox into
-    a set of ClusterEntities that can be used in `LinkedSourcesTestkit.diff_results()`.
+    a set of ClusterEntities that can be used in `LinkedSourcesTestkit.diff_entities()`.
 
     Args:
         data: A PyArrow table or DataFrame representing a query result
@@ -567,7 +567,7 @@ def probabilities_to_results_entities(
     return tuple(entities)
 
 
-def diff_results(
+def diff_entities(
     expected: list[ClusterEntity], actual: list[ClusterEntity]
 ) -> tuple[bool, dict]:
     """Compare two lists of ClusterEntity with detailed diff information.

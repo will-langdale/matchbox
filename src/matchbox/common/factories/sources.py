@@ -36,7 +36,7 @@ from matchbox.common.factories.entities import (
     FeatureConfig,
     SourceEntity,
     SuffixRule,
-    diff_results,
+    diff_entities,
     generate_entities,
     probabilities_to_results_entities,
 )
@@ -246,11 +246,11 @@ class LinkedSourcesTestkit(BaseModel):
             threshold: Threshold for considering a match true
 
         Returns:
-            A tuple of whether the results are identical, and a report dictionary.
-                See [`diff_results()`][matchbox.common.factories.entities.diff_results]
+            A tuple of whether the results are identical, and a report dictionary. See
+                [`diff_entities()`][matchbox.common.factories.entities.diff_entities]
                 for the report format.
         """
-        return diff_results(
+        return diff_entities(
             expected=self.true_entity_subset(*sources),
             actual=probabilities_to_results_entities(
                 probabilities=probabilities,
@@ -277,8 +277,8 @@ class LinkedSourcesTestkit(BaseModel):
                 that produced the assignments table
 
         Returns:
-            A tuple of whether the results are identical, and a report dictionary.
-                See [`diff_results()`][matchbox.common.factories.entities.diff_results]
+            A tuple of whether the results are identical, and a report dictionary. See
+                [`diff_entities()`][matchbox.common.factories.entities.diff_entities]
                 for the report format.
         """
         id_to_entity: dict[int, ClusterEntity] = {
@@ -290,7 +290,7 @@ class LinkedSourcesTestkit(BaseModel):
             sum(id_to_entity[child_id] for child_id in group["child_id"].to_list())
             for group in assignments.partition_by("parent_id")
         ]
-        return diff_results(
+        return diff_entities(
             expected=self.true_entity_subset(*sources),
             actual=actual,
         )

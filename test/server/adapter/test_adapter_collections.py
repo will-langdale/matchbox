@@ -33,7 +33,7 @@ from matchbox.common.exceptions import (
     MatchboxRunNotFoundError,
     MatchboxRunNotWriteable,
 )
-from matchbox.common.factories.entities import diff_results, query_to_cluster_entities
+from matchbox.common.factories.entities import diff_entities, query_to_cluster_entities
 from matchbox.common.factories.models import model_factory, query_to_model_factory
 from matchbox.common.factories.resolvers import resolver_factory
 from matchbox.common.factories.scenarios import setup_scenario
@@ -726,7 +726,7 @@ class TestMatchboxCollectionsBackend:
                 keys={crn_testkit.name: "key"},
             )
 
-            identical, report = diff_results(
+            identical, report = diff_entities(
                 expected=naive_crn_testkit.entities,
                 actual=res_clusters,
             )
@@ -780,7 +780,7 @@ class TestMatchboxCollectionsBackend:
                 keys={crn_testkit.name: "key"},
             )
 
-            identical, report = diff_results(
+            identical, report = diff_entities(
                 expected=prob_crn_testkit.entities,
                 actual=res_clusters,
             )
@@ -860,7 +860,7 @@ class TestMatchboxCollectionsBackend:
                 data=dedupe_query,
                 keys={crn_testkit.name: "key"},
             )
-            identical, report = diff_results(
+            identical, report = diff_entities(
                 expected=list(source_entities),
                 actual=list(dedupe_entities),
             )

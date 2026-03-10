@@ -114,6 +114,7 @@ class DAG:
         elif isinstance(step, Resolver):
             for input_node in step.inputs:
                 self._check_dag(input_node.dag)
+
             for resolution in step.config.dependencies:
                 if resolution not in self.nodes:
                     raise ValueError(f"Step {resolution} not added to DAG")
