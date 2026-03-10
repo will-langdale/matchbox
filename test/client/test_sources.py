@@ -14,6 +14,7 @@ from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.sources import (
     Source,
 )
+from matchbox.common.arrow import SCHEMA_INDEX, check_schema
 from matchbox.common.datatypes import DataTypes
 from matchbox.common.dtos import (
     CRUDOperation,
@@ -284,9 +285,8 @@ def test_source_run(sqla_sqlite_warehouse: Engine, batch_size: int) -> None:
     result = source.run(batch_size=batch_size) if batch_size else source.run()
 
     # Verify result
-    assert isinstance(result, pa.Table)
-    assert "hash" in result.column_names
-    assert "keys" in result.column_names
+    assert isinstance(result, pl.DataFrame)
+    check_schema(expected=SCHEMA_INDEX, actual=result.to_arrow().schema)
     assert len(result) == n_true_entities
 
     source.run()

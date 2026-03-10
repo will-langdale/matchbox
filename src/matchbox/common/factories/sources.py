@@ -142,7 +142,7 @@ class SourceTestkit(BaseModel):
 
     def fake_run(self) -> Self:
         """Set source hashes before source is run."""
-        self.source.hashes = self.data_hashes
+        self.source.hashes = pl.from_arrow(self.data_hashes)
 
         return self
 

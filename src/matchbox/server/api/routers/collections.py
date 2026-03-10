@@ -624,16 +624,16 @@ def get_upload_status(
         422: {"model": ErrorResponse},
     },
     dependencies=[Depends(RequireCollectionRead)],
-    summary="Get resolution results",
-    description="Download results for a model as a parquet file.",
+    summary="Get resolution data",
+    description="Download data for a resolution as a parquet file.",
 )
-def get_results(
+def get_data(
     backend: BackendDependency,
     collection: CollectionName,
     run_id: RunID,
     resolution: ResolutionName,
 ) -> ParquetResponse:
-    """Download results for a model or resolver as a parquet file."""
+    """Download data for a resolution as a parquet file."""
     resolution_path = ResolutionPath(collection=collection, run=run_id, name=resolution)
     resolution_dto = backend.get_resolution(path=resolution_path)
     if resolution_dto.resolution_type == ResolutionType.MODEL:

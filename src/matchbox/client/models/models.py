@@ -2,19 +2,19 @@
 
 import inspect
 import json
-from collections.abc import Callable
-from functools import wraps
-from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
+from typing import TYPE_CHECKING, Any, ClassVar, ParamSpec, TypeVar, overload
 
 import polars as pl
+import pyarrow as pa
 from polars import DataFrame
 
-from matchbox.client import _handler
 from matchbox.client.models import dedupers, linkers
 from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.queries import Query
 from matchbox.client.results import normalise_model_probabilities
+from matchbox.client.steps import Step, post_run
+from matchbox.common.arrow import SCHEMA_MODEL_EDGES
 from matchbox.common.dtos import (
     ModelConfig,
     ModelResolutionName,
@@ -24,8 +24,7 @@ from matchbox.common.dtos import (
     ResolutionType,
     SourceResolutionName,
 )
-from matchbox.common.exceptions import MatchboxResolutionNotFoundError
-from matchbox.common.hash import hash_model_results
+from matchbox.common.hash import hash_arrow_table
 from matchbox.common.logging import logger, profile_time
 
 if TYPE_CHECKING:
@@ -52,26 +51,10 @@ def add_model_class(ModelClass: type[Linker] | type[Deduper]) -> None:
         raise ValueError("The argument is not a proper subclass of Deduper or Linker.")
 
 
-def post_run(method: Callable[..., T]) -> Callable[..., T]:
-    """Decorator to ensure that a method is called after model run.
-
-    Raises:
-        RuntimeError: If run hasn't happened.
-    """
-
-    @wraps(method)
-    def wrapper(self: "Model", *args: Any, **kwargs: Any) -> T:
-        if self.results is None:
-            raise RuntimeError(
-                "The model must be run before attempting this operation."
-            )
-        return method(self, *args, **kwargs)
-
-    return wrapper
-
-
-class Model:
+class Model(Step):
     """Unified model class for both linking and deduping operations."""
+
+    _local_data_schema: ClassVar[pa.Schema] = SCHEMA_MODEL_EDGES
 
     @overload
     def __init__(
@@ -111,20 +94,18 @@ class Model:
 
         Args:
             dag: DAG containing this model.
-            name: Unique name for the model
+            name: Unique name for the model.
             model_class: Class of Linker or Deduper, or its name.
             model_settings: Appropriate settings object to pass to model class.
             left_query: The query that will get the data to deduplicate, or the data to
                 link on the left.
             right_query: The query that will get the data to link on the right.
-            description: Optional description of the model
+            description: Optional description of the model.
         """
-        self.dag = dag
-        self.name = name
-        self.description = description
+        super().__init__(dag=dag, name=name, description=description)
+
         self.left_query = left_query
         self.right_query = right_query
-        self.results: pl.DataFrame | None = None
 
         if isinstance(model_class, str):
             self.model_class: type[Linker | Deduper] = _MODEL_CLASSES[model_class]
@@ -145,6 +126,15 @@ class Model:
             self.model_settings = model_settings
 
     @property
+    def results(self) -> pl.DataFrame | None:
+        """The locally computed model probabilities. Alias for local_data."""
+        return self._local_data
+
+    @results.setter
+    def results(self, value: pl.DataFrame | None) -> None:
+        self._local_data = value
+
+    @property
     def config(self) -> ModelConfig:
         """Generate config DTO from Model."""
         return ModelConfig(
@@ -163,8 +153,14 @@ class Model:
         if self.right_query:
             right_input = self.dag.nodes[self.right_query.config.point_of_truth]
             model_sources.update(right_input.sources)
-
         return model_sources
+
+    @post_run
+    def _fingerprint(self) -> bytes:
+        """Compute a content hash invariant to left/right ID order."""
+        return hash_arrow_table(
+            self._local_data.to_arrow(), as_sorted_list=["left_id", "right_id"]
+        )
 
     @post_run
     def to_resolution(self) -> Resolution:
@@ -173,7 +169,7 @@ class Model:
             description=self.description,
             resolution_type=ResolutionType.MODEL,
             config=self.config,
-            fingerprint=hash_model_results(self.results.to_arrow()),
+            fingerprint=self._fingerprint(),
         )
 
     @classmethod
@@ -182,6 +178,7 @@ class Model:
         resolution: Resolution,
         resolution_name: str,
         dag: DAG,
+        **kwargs: Any,
     ) -> "Model":
         """Reconstruct from Resolution."""
         if resolution.resolution_type != ResolutionType.MODEL:
@@ -208,12 +205,6 @@ class Model:
             name=self.name,
         )
 
-    def delete(self, certain: bool = False) -> bool:
-        """Delete the model from the database."""
-        logger.info(f"Deleting {self.name}")
-        result = _handler.delete_resolution(path=self.resolution_path, certain=certain)
-        return result.success
-
     @profile_time(attr="name")
     def compute_probabilities(
         self, left_df: DataFrame, right_df: DataFrame | None = None
@@ -225,7 +216,6 @@ class Model:
         else:
             self.model_instance.prepare(left_df)
             probabilities = self.model_instance.dedupe(data=left_df)
-
         return probabilities
 
     def run(
@@ -253,58 +243,6 @@ class Model:
 
         logger.info("Running model logic", prefix=log_prefix)
         probabilities = self.compute_probabilities(left_df, right_df)
-        self.results = normalise_model_probabilities(probabilities)
+        self._local_data = normalise_model_probabilities(probabilities)
 
-        return self.results
-
-    @post_run
-    @profile_time(attr="name")
-    def sync(self) -> None:
-        """Send the model config and results to the server.
-
-        Not resistant to race conditions: only one client should call sync at a time.
-        """
-        log_prefix = f"Sync {self.name}"
-        resolution = self.to_resolution()
-        try:
-            existing_resolution = _handler.get_resolution(path=self.resolution_path)
-            logger.info("Found existing resolution", prefix=log_prefix)
-        except MatchboxResolutionNotFoundError:
-            existing_resolution = None
-
-        if existing_resolution:
-            if (existing_resolution.fingerprint == resolution.fingerprint) and (
-                existing_resolution.config.parents == resolution.config.parents
-            ):
-                logger.info("Updating existing resolution", prefix=log_prefix)
-                # Assumes that resolution hasn't been deleted or made incompatible
-                # Else, server will error
-                _handler.update_resolution(
-                    resolution=resolution, path=self.resolution_path
-                )
-            else:
-                logger.info(
-                    "Update not possible. Deleting existing resolution",
-                    prefix=log_prefix,
-                )
-                # Assumes that resolution hasn't been deleted, else server will error
-                _handler.delete_resolution(path=self.resolution_path, certain=True)
-                existing_resolution = None
-
-        if not existing_resolution:
-            logger.info("Creating new resolution", prefix=log_prefix)
-            # Assumes that resolution hasn't since been re-created.
-            # Else, server will error
-            _handler.create_resolution(resolution=resolution, path=self.resolution_path)
-            logger.info("Setting data for new resolution", prefix=log_prefix)
-            # Assumes resolution has not been deleted or made incompatible
-            _handler.set_data(path=self.resolution_path, data=self.results)
-
-    def download_results(self) -> pl.DataFrame:
-        """Retrieve results associated with the model from the database."""
-        results = _handler.get_results(path=self.resolution_path)
-        return normalise_model_probabilities(pl.from_arrow(results))
-
-    def clear_data(self) -> None:
-        """Deletes data computed for node."""
-        self.results = None
+        return self._local_data

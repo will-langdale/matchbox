@@ -1,18 +1,18 @@
 """Resolver nodes and methodology registry for client-side execution."""
 
 import json
-from collections.abc import Callable, Iterable, Mapping
-from functools import wraps
-from typing import TYPE_CHECKING, Any, TypeVar
+from collections.abc import Iterable, Mapping
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import polars as pl
+import pyarrow as pa
 
-from matchbox.client import _handler
 from matchbox.client.models.models import Model
 from matchbox.client.queries import Query
 from matchbox.client.resolvers.base import ResolverMethod, ResolverSettings
 from matchbox.client.resolvers.components import Components
-from matchbox.common.arrow import SCHEMA_CLUSTERS, check_schema
+from matchbox.client.steps import Step, post_run
+from matchbox.common.arrow import SCHEMA_CLUSTERS
 from matchbox.common.dtos import (
     Resolution,
     ResolutionName,
@@ -22,11 +22,7 @@ from matchbox.common.dtos import (
     ResolverResolutionPath,
     SourceResolutionName,
 )
-from matchbox.common.exceptions import (
-    MatchboxResolutionNotFoundError,
-    MatchboxResolutionTypeError,
-)
-from matchbox.common.hash import hash_arrow_table
+from matchbox.common.exceptions import MatchboxResolutionTypeError
 from matchbox.common.logging import logger, profile_time
 
 if TYPE_CHECKING:
@@ -35,8 +31,6 @@ if TYPE_CHECKING:
 else:
     DAG = Any
     Source = Any
-
-T = TypeVar("T")
 
 _RESOLVER_CLASSES: dict[str, type[ResolverMethod]] = {}
 
@@ -52,26 +46,10 @@ def add_resolver_class(resolver_class: type[ResolverMethod]) -> None:
 add_resolver_class(Components)
 
 
-def post_run(method: Callable[..., T]) -> Callable[..., T]:
-    """Decorator to ensure that a method is called after resolver run.
-
-    Raises:
-        RuntimeError: If run hasn't happened.
-    """
-
-    @wraps(method)
-    def wrapper(self: "Resolver", *args: Any, **kwargs: Any) -> T:
-        if self.results is None:
-            raise RuntimeError(
-                "The resolver must be run before attempting this operation."
-            )
-        return method(self, *args, **kwargs)
-
-    return wrapper
-
-
-class Resolver:
+class Resolver(Step):
     """Client-side node that computes clusters from model and resolver inputs."""
+
+    _local_data_schema: ClassVar[pa.Schema] = SCHEMA_CLUSTERS
 
     def __init__(
         self,
@@ -83,8 +61,10 @@ class Resolver:
         description: str | None = None,
     ) -> None:
         """Create a resolver node that computes clusters from its inputs."""
-        self.dag = dag
-        self.name = ResolverResolutionName(name)
+        super().__init__(
+            dag=dag, name=ResolverResolutionName(name), description=description
+        )
+
         deduped_inputs: list[Model] = []
         seen_names: set[str] = set()
         for node in inputs:
@@ -98,7 +78,6 @@ class Resolver:
             seen_names.add(node.name)
             deduped_inputs.append(node)
         self.inputs = tuple(deduped_inputs)
-        self.description = description
 
         if len(self.inputs) < 1:
             raise ValueError("Resolver needs at least one input")
@@ -118,7 +97,14 @@ class Resolver:
         else:
             self.resolver_settings = resolver_settings
 
-        self.results: pl.DataFrame | None = None
+    @property
+    def results(self) -> pl.DataFrame | None:
+        """The locally computed cluster assignments. Alias for local_data."""
+        return self._local_data
+
+    @results.setter
+    def results(self, value: pl.DataFrame | None) -> None:
+        self._local_data = value
 
     @property
     def config(self) -> ResolverConfig:
@@ -166,21 +152,17 @@ class Resolver:
                 )
             model_edges[node.name] = node.results
 
-        clusters = self.compute_clusters(model_edges=model_edges)
-
-        self.results = clusters
-        return self.results
+        self._local_data = self.compute_clusters(model_edges=model_edges)
+        return self._local_data
 
     @post_run
     def to_resolution(self) -> Resolution:
         """Convert to Resolution for API calls."""
-        upload_table = self.results.to_arrow()
-        check_schema(expected=SCHEMA_CLUSTERS, actual=upload_table.schema)
         return Resolution(
             description=self.description,
             resolution_type=ResolutionType.RESOLVER,
             config=self.config,
-            fingerprint=hash_arrow_table(upload_table),
+            fingerprint=self._fingerprint(),
         )
 
     @classmethod
@@ -189,6 +171,7 @@ class Resolver:
         resolution: Resolution,
         resolution_name: str,
         dag: DAG,
+        **kwargs: Any,
     ) -> "Resolver":
         """Reconstruct from Resolution."""
         if resolution.resolution_type != ResolutionType.RESOLVER:
@@ -203,71 +186,8 @@ class Resolver:
             resolver_settings=json.loads(resolution.config.resolver_settings),
         )
 
-    @post_run
-    @profile_time(attr="name")
-    def sync(self) -> None:
-        """Send resolver config and assignments to the server."""
-        log_prefix = f"Sync {self.name}"
-        resolution = self.to_resolution()
-
-        try:
-            existing_resolution = _handler.get_resolution(path=self.resolution_path)
-            logger.info("Found existing resolution", prefix=log_prefix)
-        except MatchboxResolutionNotFoundError:
-            existing_resolution = None
-
-        if existing_resolution:
-            if (existing_resolution.fingerprint == resolution.fingerprint) and (
-                existing_resolution.config.parents == resolution.config.parents
-            ):
-                logger.info("Updating existing resolution", prefix=log_prefix)
-                _handler.update_resolution(
-                    resolution=resolution,
-                    path=self.resolution_path,
-                )
-            else:
-                logger.info(
-                    "Update not possible. Deleting existing resolution",
-                    prefix=log_prefix,
-                )
-                _handler.delete_resolution(path=self.resolution_path, certain=True)
-                existing_resolution = None
-
-        if not existing_resolution:
-            logger.info("Creating new resolution", prefix=log_prefix)
-            _handler.create_resolution(resolution=resolution, path=self.resolution_path)
-            logger.info("Setting data for new resolution", prefix=log_prefix)
-            _handler.set_data(
-                path=self.resolution_path,
-                data=self.results,
-            )
-
-        # Refresh local state from backend canonical resolver data.
-        self.results = self.download_results()
-
     def query(self, *sources: Source, **kwargs: Any) -> Query:
         """Create a query rooted at this resolver."""
         if not sources:
             sources = tuple(self.dag.get_source(name) for name in sorted(self.sources))
         return Query(*sources, resolver=self, dag=self.dag, **kwargs)
-
-    def download_results(self) -> pl.DataFrame:
-        """Download resolver assignments directly from the resolution data API.
-
-        These IDs will be inconsistent with those allocated locally.
-        """
-        table = _handler.get_resolver_data(path=self.resolution_path)
-        check_schema(expected=SCHEMA_CLUSTERS, actual=table.schema)
-        self.results = pl.from_arrow(table)
-        return self.results
-
-    def clear_data(self) -> None:
-        """Drop local resolver data."""
-        self.results = None
-
-    def delete(self, certain: bool = False) -> bool:
-        """Delete resolver and associated data from backend."""
-        return _handler.delete_resolution(
-            path=self.resolution_path,
-            certain=certain,
-        ).success

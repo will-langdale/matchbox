@@ -293,6 +293,19 @@ def set_data(path: ResolutionPath, data: pl.DataFrame | Table) -> str:
     return upload_id
 
 
+@profile_time(kwarg="path")
+@http_retry
+def get_data(path: ModelResolutionPath | ResolverResolutionPath) -> Table:
+    """Download resolution data from Matchbox."""
+    logger.debug("Retrieving data", prefix=f"{path}")
+
+    res = CLIENT.get(
+        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data"
+    )
+    buffer = BytesIO(res.content)
+    return read_table(buffer)
+
+
 @http_retry
 def get_resolution_stage(path: ResolutionPath) -> UploadStage:
     status_res = CLIENT.get(
@@ -300,34 +313,6 @@ def get_resolution_stage(path: ResolutionPath) -> UploadStage:
     )
     upload_info = UploadInfo.model_validate(status_res.json())
     return upload_info.stage
-
-
-@profile_time(kwarg="path")
-@http_retry
-def get_results(path: ModelResolutionPath) -> Table:
-    """Get model results from Matchbox."""
-    log_prefix = f"Model {path}"
-    logger.debug("Retrieving results", prefix=log_prefix)
-
-    res = CLIENT.get(
-        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data"
-    )
-    buffer = BytesIO(res.content)
-    return read_table(buffer)
-
-
-@profile_time(kwarg="path")
-@http_retry
-def get_resolver_data(path: ResolverResolutionPath) -> Table:
-    """Get resolver cluster assignments from Matchbox."""
-    log_prefix = f"Resolver {path}"
-    logger.debug("Retrieving cluster assignments", prefix=log_prefix)
-
-    res = CLIENT.get(
-        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data"
-    )
-    buffer = BytesIO(res.content)
-    return read_table(buffer)
 
 
 @http_retry
