@@ -325,18 +325,16 @@ class SourceConfig(BaseModel):
 
     @property
     def dependencies(self) -> list[ResolutionName]:
-        """Return all resolution names that this source needs.
+        """Local execution prerequisites.
 
-        Provided for symmetry with ModelConfig.
+        While this can contain information about graph topology, it should only be used
+        to check validity, never to reconstruct it.
         """
         return []
 
     @property
     def parents(self) -> list[ResolutionName]:
-        """Returns all resolution names directly input to this config.
-
-        Provided for symmetry with ModelConfig.
-        """
+        """Direct DAG edges to this node."""
         return []
 
     def prefix(self, name: str) -> str:
@@ -408,7 +406,12 @@ class QueryCombineType(StrEnum):
 
 
 class QueryConfig(BaseModel):
-    """Configuration of query generating model inputs."""
+    """Configuration of query generating model inputs.
+
+    A QueryConfig is a view onto the resolution subgraph, a triangulation of
+    a set of sources and an optional resolver. It doesn't describe topology,
+    which is why it has no .parents attribute.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -430,7 +433,11 @@ class QueryConfig(BaseModel):
 
     @property
     def dependencies(self) -> list[ResolutionName]:
-        """Return all resolutions that this query needs."""
+        """Local execution prerequisites.
+
+        While this can contain information about graph topology, it should only be used
+        to check validity, never to reconstruct it.
+        """
         deps = list(self.source_resolutions)
         if self.resolver_resolution:
             deps.append(self.resolver_resolution)
@@ -495,7 +502,11 @@ class ModelConfig(BaseModel):
 
     @property
     def dependencies(self) -> list[ResolutionName]:
-        """Return all resolutions that this model needs."""
+        """Local execution prerequisites.
+
+        While this can contain information about graph topology, it should only be used
+        to check validity, never to reconstruct it.
+        """
         deps = list(self.left_query.dependencies)
         if self.right_query:
             deps.extend(self.right_query.dependencies)
@@ -504,7 +515,7 @@ class ModelConfig(BaseModel):
 
     @property
     def parents(self) -> list[ResolutionName]:
-        """Returns all resolution names directly input to this config."""
+        """Direct DAG edges to this node."""
         if self.right_query:
             return [
                 self.left_query.point_of_truth,
@@ -545,12 +556,16 @@ class ResolverConfig(BaseModel):
 
     @property
     def dependencies(self) -> list[ModelResolutionName]:
-        """Return all model resolutions that this resolver needs."""
+        """Local execution prerequisites.
+
+        While this can contain information about graph topology, it should only be used
+        to check validity, never to reconstruct it.
+        """
         return list(self.inputs)
 
     @property
     def parents(self) -> list[ModelResolutionName]:
-        """Returns all model resolution names directly input to this config."""
+        """Direct DAG edges to this node."""
         return list(self.inputs)
 
 

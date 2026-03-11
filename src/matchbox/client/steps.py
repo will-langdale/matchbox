@@ -4,15 +4,19 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, TypeVar
 
 import polars as pl
 import pyarrow as pa
-from pydantic import BaseModel
 
 from matchbox.client import _handler
 from matchbox.common.arrow import check_schema
-from matchbox.common.dtos import Resolution, ResolutionPath, SourceResolutionName
+from matchbox.common.dtos import (
+    Resolution,
+    ResolutionName,
+    ResolutionPath,
+    SourceResolutionName,
+)
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.hash import hash_arrow_table
 from matchbox.common.logging import logger, profile_time
@@ -23,6 +27,24 @@ else:
     DAG = Any
 
 T = TypeVar("T")
+
+
+class StepConfigProtocol(Protocol):
+    """Minimal protocol required by client DAG step config DTOs."""
+
+    @property
+    def dependencies(self) -> list[ResolutionName]:
+        """Execution prerequisites required before running the step."""
+        ...
+
+    @property
+    def parents(self) -> list[ResolutionName]:
+        """Direct DAG edges to this step."""
+        ...
+
+    def model_dump_json(self, **kwargs: Any) -> str:
+        """Serialise the config for stable hashing."""
+        ...
 
 
 def post_run(method: Callable[..., T]) -> Callable[..., T]:
@@ -85,7 +107,7 @@ class Step(ABC):
 
     @property
     @abstractmethod
-    def config(self) -> BaseModel:
+    def config(self) -> StepConfigProtocol:
         """Config DTO for this step."""
         ...
 
@@ -148,6 +170,15 @@ class Step(ABC):
         check_schema(expected=self._local_data_schema, actual=table.schema)
         self._local_data = pl.from_arrow(table)
         return self._local_data
+
+    def prepare(self) -> None:
+        """Ensure local execution prerequisites are available."""
+        self.dag._check_step(self, check_parents=False, check_dependencies=True)
+
+        for dependency_name in self.config.dependencies:
+            dependency = self.dag.nodes[dependency_name]
+            if dependency.local_data is None:
+                dependency.download()
 
     @post_run
     @profile_time(attr="name")

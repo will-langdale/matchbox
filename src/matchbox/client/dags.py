@@ -82,6 +82,26 @@ class DAG:
         if self != dag:
             raise ValueError("Cannot mix DAGs")
 
+    def _check_step(
+        self,
+        step: Source | Model | Resolver,
+        *,
+        check_parents: bool,
+        check_dependencies: bool,
+    ) -> None:
+        """Validate that the step references existing nodes in this DAG."""
+        if check_parents:
+            for parent_name in step.config.parents:
+                if parent_name not in self.nodes:
+                    raise ValueError(f"Parent step {parent_name} not added to DAG")
+
+        if check_dependencies:
+            for dependency_name in step.config.dependencies:
+                if dependency_name not in self.nodes:
+                    raise ValueError(
+                        f"Dependency step {dependency_name} not added to DAG"
+                    )
+
     def _add_step(self, step: Source | Model | Resolver) -> None:
         """Validate and add sources and models to DAG."""
         self._check_dag(step.dag)
@@ -106,21 +126,17 @@ class DAG:
             self._check_dag(step.left_query.dag)
             if step.right_query:
                 self._check_dag(step.right_query.dag)
-
-            for resolution in step.config.dependencies:
-                if resolution not in self.nodes:
-                    raise ValueError(f"Step {resolution} not added to DAG")
-            self.graph[step.name] = [parent for parent in step.config.parents]
         elif isinstance(step, Resolver):
             for input_node in step.inputs:
                 self._check_dag(input_node.dag)
 
-            for resolution in step.config.dependencies:
-                if resolution not in self.nodes:
-                    raise ValueError(f"Step {resolution} not added to DAG")
-            self.graph[step.name] = [parent for parent in step.config.parents]
-        else:
-            self.graph[step.name] = []
+        self._check_step(
+            step,
+            check_parents=True,
+            check_dependencies=True,
+        )
+
+        self.graph[step.name] = [parent for parent in step.config.parents]
 
         self.nodes[step.name] = step
 
@@ -452,16 +468,18 @@ class DAG:
 
         resolutions: dict[ResolutionName, Resolution] = run.resolutions
 
-        # Build dependency graph and track added
+        # Build parent graph and track added
         added: set[ResolutionName] = set()
         deps_graph: dict[ResolutionName, set[ResolutionName]] = {
-            name: {dep for dep in res.config.dependencies}
+            # Model-only extra deps are source roots,
+            # so parent-layered Kahn order is safe
+            name: {parent for parent in res.config.parents}
             for name, res in resolutions.items()
         }
 
-        # Kahn's algorithm: iteratively add resolutions whose dependencies are satisfied
+        # Kahn's algorithm: iteratively add resolutions whose parents are satisfied
         while len(added) < len(resolutions):
-            # Find resolutions that can be added (all dependencies satisfied)
+            # Find resolutions that can be added (all parents satisfied)
             ready = [
                 name
                 for name in resolutions
@@ -481,6 +499,11 @@ class DAG:
             for name in ready:
                 self.add_resolution(name=name, resolution=resolutions[name])
                 added.add(name)
+
+        for name in resolutions:
+            self._check_step(
+                self.nodes[name], check_parents=True, check_dependencies=True
+            )
 
         return self
 
@@ -576,6 +599,7 @@ class DAG:
             status[step_name] = DAGNodeExecutionStatus.DOING
             logger.info("\n" + self.draw(status=status))
             try:
+                node.prepare()
                 if isinstance(node, Source):
                     node.run(batch_size=batch_size)
                 else:
