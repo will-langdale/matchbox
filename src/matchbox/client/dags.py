@@ -2,6 +2,7 @@
 
 import json
 import tempfile
+from collections import deque
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Self, TypeAlias
@@ -85,7 +86,6 @@ class DAG:
     def _check_step(
         self,
         step: Source | Model | Resolver,
-        *,
         check_parents: bool,
         check_dependencies: bool,
     ) -> None:
@@ -130,15 +130,66 @@ class DAG:
             for input_node in step.inputs:
                 self._check_dag(input_node.dag)
 
-        self._check_step(
-            step,
-            check_parents=True,
-            check_dependencies=True,
-        )
+        self._check_step(step, check_parents=True, check_dependencies=False)
 
         self.graph[step.name] = [parent for parent in step.config.parents]
 
         self.nodes[step.name] = step
+
+    def _topological_sort(
+        self, deps: dict[ResolutionName, set[ResolutionName]]
+    ) -> list[ResolutionName]:
+        """Topologically sort prerequisite constraints using Kahn's algorithm.
+
+        Args:
+            deps: A graph of precedence constraints where keys are node names and
+                values are names that must come before each key.
+
+        Returns:
+            Deterministic topological order preserving insertion-order tie-breaks.
+
+        Raises:
+            ValueError: If dependencies reference unknown nodes or if a cycle exists.
+        """
+        missing_dependencies = {
+            dep for node_deps in deps.values() for dep in node_deps if dep not in deps
+        }
+        if missing_dependencies:
+            raise ValueError(
+                "Cannot sort graph with missing dependencies: "
+                f"{sorted(missing_dependencies)}"
+            )
+
+        in_degree: dict[ResolutionName, int] = {
+            node: len(node_deps) for node, node_deps in deps.items()
+        }
+        children: dict[ResolutionName, list[ResolutionName]] = {
+            node: [] for node in deps
+        }
+
+        for node, node_deps in deps.items():
+            for dep in node_deps:
+                children[dep].append(node)
+
+        ready = deque([node for node, degree in in_degree.items() if degree == 0])
+        ordered: list[ResolutionName] = []
+
+        while ready:
+            node = ready.popleft()
+            ordered.append(node)
+
+            for child in children[node]:
+                in_degree[child] -= 1
+                if in_degree[child] == 0:
+                    ready.append(child)
+
+        if len(ordered) != len(deps):
+            remaining = [node for node, degree in in_degree.items() if degree > 0]
+            raise ValueError(
+                f"Cannot sort graph with unresolved cycles involving: {remaining}"
+            )
+
+        return ordered
 
     @classmethod
     def list_all(cls) -> list[CollectionName]:
@@ -347,6 +398,12 @@ class DAG:
         * ⏸️ Awaiting
         * ⏭️ Skipped
 
+        Node type indicators are:
+
+        * 💎 Resolver
+        * ⚙️ Model
+        * 📄 Source
+
         Args:
             status: Object describing the status of each node.
 
@@ -372,39 +429,54 @@ class DAG:
             elif status[name] == DAGNodeExecutionStatus.DONE:
                 return "✅"
 
+        def _get_node_type_indicator(name: str) -> str:
+            """Determine the type indicator for a node."""
+            node = self.nodes[name]
+            if isinstance(node, Resolver):
+                return "💎"
+            if isinstance(node, Model):
+                return "⚙️"
+            return "📄"
+
+        def _format_node(name: str) -> str:
+            """Format node display with status (if present) and type indicator."""
+            type_indicator = _get_node_type_indicator(name)
+            if status is None:
+                return f"{type_indicator} {name}"
+
+            indicator = _get_node_indicator(name)
+            return f"{indicator}{type_indicator} {name}"
+
         # Header with collection and run info
         head_collection: str = f"Collection: {self.name}"
         head_run: str = f"└── Run: {self._run or '⛓️‍💥 Disconnected'}"
 
         result: list[str] = [head_collection, head_run, ""]
-        visited = set()
 
-        def format_children(node: str, prefix: str = "") -> None:
+        def format_children(
+            node: str, prefix: str = "", ancestors: set[str] | None = None
+        ) -> None:
             """Recursively format the children of a node."""
-            children = []
-            # Get all outgoing edges from this node
-            for target in self.graph.get(node, []):
-                if target not in visited:
-                    children.append(target)
-                    visited.add(target)
+            if ancestors is None:
+                ancestors = {node}
+
+            children = self.graph.get(node, [])
 
             # Format each child
             for i, child in enumerate(children):
                 is_last = i == len(children) - 1
 
-                # Add status indicator if status is provided
-                if status is not None:
-                    indicator = _get_node_indicator(child)
-                    child_display = f"{indicator} {child}"
-                else:
-                    child_display = child
+                child_display = _format_node(child)
 
-                if is_last:
-                    result.append(f"{prefix}└── {child_display}")
-                    format_children(child, prefix + "    ")
-                else:
-                    result.append(f"{prefix}├── {child_display}")
-                    format_children(child, prefix + "│   ")
+                branch = "└──" if is_last else "├──"
+                child_prefix = prefix + ("    " if is_last else "│   ")
+
+                if child in ancestors:
+                    result.append(f"{prefix}{branch} {child_display} (cycle)")
+                    continue
+
+                result.append(f"{prefix}{branch} {child_display}")
+                format_children(child, child_prefix, ancestors | {child})
 
         # Draw each apex node
         for i, apex_node in enumerate(apex_nodes):
@@ -413,15 +485,9 @@ class DAG:
             if i > 0:
                 result.append("")  # Blank line between disconnected components
 
-            visited.add(root_name)
+            result.append(_format_node(root_name))
 
-            if status is not None:
-                indicator = _get_node_indicator(root_name)
-                result.append(f"{indicator} {root_name}")
-            else:
-                result.append(root_name)
-
-            format_children(root_name)
+            format_children(root_name, ancestors={root_name})
 
         return "\n".join(result)
 
@@ -468,37 +534,14 @@ class DAG:
 
         resolutions: dict[ResolutionName, Resolution] = run.resolutions
 
-        # Build parent graph and track added
-        added: set[ResolutionName] = set()
+        # Build parent graph and add in topological order
         deps_graph: dict[ResolutionName, set[ResolutionName]] = {
-            # Model-only extra deps are source roots,
-            # so parent-layered Kahn order is safe
-            name: {parent for parent in res.config.parents}
-            for name, res in resolutions.items()
+            name: set(res.config.parents) for name, res in resolutions.items()
         }
+        sorted_names = self._topological_sort(deps=deps_graph)
 
-        # Kahn's algorithm: iteratively add resolutions whose parents are satisfied
-        while len(added) < len(resolutions):
-            # Find resolutions that can be added (all parents satisfied)
-            ready = [
-                name
-                for name in resolutions
-                if name not in added and deps_graph[name].issubset(added)
-            ]
-
-            if not ready:
-                # No progress possible - circular dependency or missing dependency
-                missing = set(resolutions.keys()) - added
-                raise RuntimeError(
-                    f"Cannot resolve dependencies. Remaining resolutions: {missing}. "
-                    "This may indicate circular dependencies or references to "
-                    "non-existent resolutions."
-                )
-
-            # Add all ready resolutions (order within this batch doesn't matter)
-            for name in ready:
-                self.add_resolution(name=name, resolution=resolutions[name])
-                added.add(name)
+        for name in sorted_names:
+            self.add_resolution(name=name, resolution=resolutions[name])
 
         for name in resolutions:
             self._check_step(
@@ -553,19 +596,9 @@ class DAG:
         if batch_size is None:
             batch_size = settings.batch_size
 
-        # Determine order of execution steps
-        root_nodes = self.final_steps
-
-        def depth_first(node: str, sequence: list) -> None:
-            sequence.append(node)
-            for neighbour in self.graph[node]:
-                if neighbour not in sequence:
-                    depth_first(neighbour, sequence)
-
-        inverse_sequence = []
-        for root_node in root_nodes:
-            depth_first(root_node.name, inverse_sequence)
-        sequence = list(reversed(inverse_sequence))
+        # Determine execution order from structural parent dependencies
+        deps_graph = {name: set(parents) for name, parents in self.graph.items()}
+        sequence = self._topological_sort(deps=deps_graph)
 
         # Identify skipped nodes
         skipped_nodes = []

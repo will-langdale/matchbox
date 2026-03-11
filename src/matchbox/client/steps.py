@@ -173,8 +173,6 @@ class Step(ABC):
 
     def prepare(self) -> None:
         """Ensure local execution prerequisites are available."""
-        self.dag._check_step(self, check_parents=False, check_dependencies=True)
-
         for dependency_name in self.config.dependencies:
             dependency = self.dag.nodes[dependency_name]
             if dependency.local_data is None:

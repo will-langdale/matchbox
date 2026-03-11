@@ -15,7 +15,7 @@ from matchbox.client.dags import DAG, DAGNodeExecutionStatus
 from matchbox.client.models import Model
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
-from matchbox.client.resolvers import Components
+from matchbox.client.resolvers import Components, Resolver
 from matchbox.client.sources import Source
 from matchbox.common.arrow import SCHEMA_QUERY_WITH_LEAVES, table_to_buffer
 from matchbox.common.dtos import (
@@ -145,6 +145,92 @@ def test_dag_run_and_sync(
     assert model_prepare_mock.call_count == 6
     assert source_clear_mock.call_count == 3
     assert model_clear_mock.call_count == 3
+
+
+@patch.object(Source, "sync")
+@patch.object(Model, "sync")
+@patch.object(Resolver, "sync")
+@patch.object(Source, "prepare")
+@patch.object(Model, "prepare")
+@patch.object(Resolver, "prepare")
+@patch.object(Source, "run", autospec=True)
+@patch.object(Model, "run", autospec=True)
+@patch.object(Resolver, "run", autospec=True)
+def test_dag_run_and_sync_orders_shared_parents_before_children(
+    resolver_run_mock: Mock,
+    model_run_mock: Mock,
+    source_run_mock: Mock,
+    resolver_prepare_mock: Mock,
+    model_prepare_mock: Mock,
+    source_prepare_mock: Mock,
+    resolver_sync_mock: Mock,
+    model_sync_mock: Mock,
+    source_sync_mock: Mock,
+    sqla_sqlite_warehouse: Engine,
+) -> None:
+    """Execution order ensures all structural parents run before their children."""
+    foo_tkit = source_factory(
+        name="foo", engine=sqla_sqlite_warehouse
+    ).write_to_location()
+    bar_tkit = source_factory(
+        name="bar", engine=sqla_sqlite_warehouse
+    ).write_to_location()
+    baz_tkit = source_factory(
+        name="baz", engine=sqla_sqlite_warehouse
+    ).write_to_location()
+
+    dag = TestkitDAG().dag
+
+    foo = dag.source(**foo_tkit.into_dag())
+    bar = dag.source(**bar_tkit.into_dag())
+    baz = dag.source(**baz_tkit.into_dag())
+
+    d_foo = foo.query().deduper(
+        name="d_foo", model_class=NaiveDeduper, model_settings={"unique_fields": []}
+    )
+    foo_bar = foo.query().linker(
+        bar.query(),
+        name="foo_bar",
+        model_class=DeterministicLinker,
+        model_settings={"comparisons": "l.field=r.field"},
+    )
+    foo_baz = foo.query().linker(
+        baz.query(),
+        name="foo_baz",
+        model_class=DeterministicLinker,
+        model_settings={"comparisons": "l.field=r.field"},
+    )
+    _ = foo_bar.resolver(
+        d_foo,
+        foo_baz,
+        name="root",
+        resolver_class=Components,
+        resolver_settings={
+            "thresholds": {d_foo.name: 0, foo_bar.name: 0, foo_baz.name: 0}
+        },
+    )
+
+    run_order: list[str] = []
+
+    def _record_run(
+        node: Source | Model | Resolver, *args: object, **kwargs: object
+    ) -> pl.DataFrame:
+        run_order.append(node.name)
+        return pl.DataFrame()
+
+    source_run_mock.side_effect = _record_run
+    model_run_mock.side_effect = _record_run
+    resolver_run_mock.side_effect = _record_run
+
+    dag.run_and_sync()
+
+    assert len(run_order) == len(dag.nodes)
+    assert set(run_order) == set(dag.nodes.keys())
+
+    run_index = {name: index for index, name in enumerate(run_order)}
+    for child, parents in dag.graph.items():
+        for parent in parents:
+            assert run_index[parent] < run_index[child]
 
 
 def test_dags_missing_dependency(sqla_sqlite_warehouse: Engine) -> None:
@@ -349,7 +435,7 @@ def test_dag_draw(sqla_sqlite_warehouse: Engine) -> None:
     assert "Run" in head_lines[1]
 
     # The root node should be first
-    assert tree_lines[0] == "root"
+    assert tree_lines[0].endswith("root")
 
     # Check that all nodes are present
     node_names = [
@@ -366,6 +452,14 @@ def test_dag_draw(sqla_sqlite_warehouse: Engine) -> None:
         # Either the node name is at the start of a line or after the tree characters
         node_present = any(line.endswith(node) for line in tree_lines)
         assert node_present, f"Node {node} not found in the tree representation"
+
+    assert "💎" in tree_str
+    assert "⚙️" in tree_str
+    assert "📄" in tree_str
+
+    # Shared parents should be shown in each branch, not globally suppressed.
+    shared_foo_count = sum(1 for line in tree_lines if line.split()[-1] == foo.name)
+    assert shared_foo_count == 3
 
     # Check that tree has correct formatting with tree characters
     tree_chars = ["└──", "├──", "│"]
@@ -387,6 +481,9 @@ def test_dag_draw(sqla_sqlite_warehouse: Engine) -> None:
     # Verify status indicators are present
     status_indicators = ["✅", "🔄", "⏸️"]
     assert any(indicator in tree_str_with_status for indicator in status_indicators)
+    assert "✅⚙️" in tree_str_with_status
+    assert "🔄⚙️" in tree_str_with_status
+    assert "⏸️📄" in tree_str_with_status
 
     # Check specific statuses: foo_bar done, d_foo working, others awaiting
     for line in status_lines:
