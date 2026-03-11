@@ -220,3 +220,35 @@ def hash_arrow_table(
 def hash_model_results(results: pa.Table) -> bytes:
     """Fingerprint model results."""
     return hash_arrow_table(results, as_sorted_list=["left_id", "right_id"])
+
+
+def hash_clusters(assignments: pa.Table) -> bytes:
+    """Fingerprint resolver cluster assignments by cluster membership semantics.
+
+    This hash is invariant to:
+        * row ordering
+        * parent_id relabeling
+        * child row ordering within a parent cluster
+    """
+    df = pl.from_arrow(assignments)
+
+    if df.height == 0:
+        return b"empty_table_hash"
+
+    canonical_df = (
+        df.select("parent_id", "child_id")
+        .group_by("parent_id")
+        .agg(pl.col("child_id").unique().sort().alias("child_ids"))
+        .select("child_ids")
+        .sort("child_ids")
+        .with_row_index(name="cluster_ordinal", offset=1)
+        .explode("child_ids")
+        .rename({"child_ids": "child_id"})
+        .cast(
+            {
+                "cluster_ordinal": pl.UInt64,
+                "child_id": df.schema["child_id"],
+            }
+        )
+    )
+    return hash_arrow_table(canonical_df.to_arrow())

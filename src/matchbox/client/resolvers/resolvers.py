@@ -12,7 +12,7 @@ from matchbox.client.queries import Query
 from matchbox.client.resolvers.base import ResolverMethod, ResolverSettings
 from matchbox.client.resolvers.components import Components
 from matchbox.client.steps import Step, post_run
-from matchbox.common.arrow import SCHEMA_CLUSTERS
+from matchbox.common.arrow import SCHEMA_CLUSTERS, check_schema
 from matchbox.common.dtos import (
     Resolution,
     ResolutionName,
@@ -23,6 +23,7 @@ from matchbox.common.dtos import (
     SourceResolutionName,
 )
 from matchbox.common.exceptions import MatchboxResolutionTypeError
+from matchbox.common.hash import hash_clusters
 from matchbox.common.logging import logger, profile_time
 
 if TYPE_CHECKING:
@@ -154,6 +155,14 @@ class Resolver(Step):
 
         self._local_data = self.compute_clusters(model_edges=model_edges)
         return self._local_data
+
+    @post_run
+    def _fingerprint(self) -> bytes:
+        """Compute resolver fingerprint from semantic cluster membership."""
+        check_schema(
+            expected=self._local_data_schema, actual=self._local_data.to_arrow().schema
+        )
+        return hash_clusters(self._local_data.to_arrow())
 
     @post_run
     def to_resolution(self) -> Resolution:

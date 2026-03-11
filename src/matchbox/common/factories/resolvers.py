@@ -66,12 +66,9 @@ def _connected_components_from_edges(
             djs.union(left_id, right_id)
 
     rows: list[dict[str, int]] = []
-    for parent_id, component in enumerate(
-        sorted(djs.get_components(), key=min), start=1
-    ):
+    for parent_id, component in enumerate(djs.get_components(), start=1):
         rows.extend(
-            {"parent_id": parent_id, "child_id": node_id}
-            for node_id in sorted(component)
+            {"parent_id": parent_id, "child_id": node_id} for node_id in component
         )
 
     if not rows:
@@ -88,7 +85,7 @@ class MockResolver(ResolverMethod):
     def compute_clusters(
         self, model_edges: Mapping[ModelResolutionName, pl.DataFrame]
     ) -> pl.DataFrame:
-        """Compute mock clusters with deterministic connected components."""
+        """Compute mock clusters with connected components."""
         self.settings.validate_inputs(model_edges.keys())
         return _connected_components_from_edges(
             model_edges=model_edges,

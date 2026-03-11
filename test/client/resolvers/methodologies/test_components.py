@@ -1,7 +1,6 @@
 """Tests for the Components resolver methodology."""
 
 import polars as pl
-from polars.testing import assert_frame_equal
 
 from matchbox.client.resolvers import Components, ComponentsSettings
 from matchbox.common.arrow import SCHEMA_CLUSTERS
@@ -27,11 +26,11 @@ def test_components_compute_clusters_uses_thresholds() -> None:
 
     clusters = method.compute_clusters(model_edges=model_edges)
 
-    expected = pl.DataFrame(
-        {"parent_id": [1, 1], "child_id": [1, 2]},
-        schema={"parent_id": pl.UInt64, "child_id": pl.UInt64},
-    )
-    assert_frame_equal(clusters, expected)
+    grouped_clusters = {
+        frozenset(group["child_id"].to_list())
+        for group in clusters.partition_by("parent_id")
+    }
+    assert grouped_clusters == {frozenset({1, 2})}
 
 
 def test_components_compute_clusters_returns_empty_for_no_edges() -> None:
@@ -69,8 +68,8 @@ def test_components_compute_clusters_merges_multiple_models() -> None:
 
     clusters = method.compute_clusters(model_edges=model_edges)
 
-    expected = pl.DataFrame(
-        {"parent_id": [1, 1, 2, 2], "child_id": [1, 2, 3, 4]},
-        schema=pl.Schema(SCHEMA_CLUSTERS),
-    )
-    assert_frame_equal(clusters, expected)
+    grouped_clusters = {
+        frozenset(group["child_id"].to_list())
+        for group in clusters.partition_by("parent_id")
+    }
+    assert grouped_clusters == {frozenset({1, 2}), frozenset({3, 4})}
