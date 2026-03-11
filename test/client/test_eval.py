@@ -1,3 +1,5 @@
+"""Tests for client-side evaluation sampling and scoring workflows."""
+
 import tempfile
 from collections.abc import Callable
 from unittest.mock import Mock, patch
@@ -152,9 +154,9 @@ def test_get_samples_remote(
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.key=r.key"},
     )
-    resolver = dag.resolver(
+    resolver = foo_bar.resolver(
+        bar_baz,
         name="resolver",
-        inputs=[foo_bar, bar_baz],
         resolver_class=Components,
         resolver_settings=ComponentsSettings(
             thresholds={foo_bar.name: 0.0, bar_baz.name: 0.0}

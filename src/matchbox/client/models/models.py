@@ -29,6 +29,8 @@ from matchbox.common.logging import logger, profile_time
 
 if TYPE_CHECKING:
     from matchbox.client.dags import DAG
+    from matchbox.client.resolvers import Resolver
+    from matchbox.client.resolvers.base import ResolverMethod, ResolverSettings
 else:
     DAG = Any
 
@@ -246,3 +248,20 @@ class Model(Step):
         self._local_data = normalise_model_probabilities(probabilities)
 
         return self._local_data
+
+    def resolver(
+        self,
+        *other_models: "Model",
+        name: str,
+        resolver_class: type["ResolverMethod"] | str,
+        resolver_settings: "ResolverSettings | dict[str, Any]",
+        description: str | None = None,
+    ) -> "Resolver":
+        """Create a resolver rooted at this model and add it to the DAG."""
+        return self.dag.resolver(
+            name=name,
+            inputs=[self, *other_models],
+            resolver_class=resolver_class,
+            resolver_settings=resolver_settings,
+            description=description,
+        )

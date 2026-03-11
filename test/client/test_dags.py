@@ -1,3 +1,5 @@
+"""Tests for DAG construction, orchestration, and lookup behaviour in the client."""
+
 import json
 from unittest.mock import Mock, patch
 
@@ -317,9 +319,10 @@ def test_dag_draw(sqla_sqlite_warehouse: Engine) -> None:
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.field=r.field"},
     )
-    root = dag.resolver(
+    root = foo_bar.resolver(
+        d_foo,
+        foo_baz,
         name="root",
-        inputs=[d_foo, foo_bar, foo_baz],
         resolver_class=Components,
         resolver_settings={
             "thresholds": {d_foo.name: 0, foo_bar.name: 0, foo_baz.name: 0}
@@ -515,9 +518,10 @@ def test_resolve(matchbox_api: MockRouter) -> None:
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.field=r.field"},
     )
-    foo_bar_baz = dag.resolver(
+    foo_bar_baz = foo_bar.resolver(
+        foo_dedupe,
+        bar_baz,
         name="foo_bar_baz",
-        inputs=[foo_dedupe, foo_bar, bar_baz],
         resolver_class=Components,
         resolver_settings={
             "thresholds": {foo_dedupe.name: 0, foo_bar.name: 0, bar_baz.name: 0}
@@ -563,9 +567,9 @@ def test_resolve(matchbox_api: MockRouter) -> None:
     assert {source.name for source in apex_resolved.sources} == {"foo", "bar", "baz"}
 
     # Add a second resolver after the apex assertion.
-    foo_bar_resolver = dag.resolver(
+    foo_bar_resolver = foo_bar.resolver(
+        foo_dedupe,
         name="foo_bar_resolver",
-        inputs=[foo_dedupe, foo_bar],
         resolver_class=Components,
         resolver_settings={"thresholds": {foo_dedupe.name: 0, foo_bar.name: 0}},
     )
@@ -733,9 +737,9 @@ def test_lookup_key_ok(matchbox_api: MockRouter, sqla_sqlite_warehouse: Engine) 
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.field=r.field"},
     )
-    dag.resolver(
+    linker_foo_bar.resolver(
+        linker_bar_baz,
         name="root",
-        inputs=[linker_foo_bar, linker_bar_baz],
         resolver_class=Components,
         resolver_settings={
             "thresholds": {linker_foo_bar.name: 0, linker_bar_baz.name: 0}
@@ -788,17 +792,16 @@ def test_resolver_rejects_resolver_inputs(sqla_sqlite_warehouse: Engine) -> None
         model_class=NaiveDeduper,
         model_settings={"unique_fields": []},
     )
-    first_resolver = dag.resolver(
+    first_resolver = dedupe.resolver(
         name="resolver_1",
-        inputs=[dedupe],
         resolver_class=Components,
         resolver_settings={"thresholds": {dedupe.name: 0}},
     )
 
     with pytest.raises(MatchboxResolutionTypeError, match="Expected one of: model"):
-        dag.resolver(
+        dedupe.resolver(
+            first_resolver,
             name="resolver_2",
-            inputs=[first_resolver, dedupe],
             resolver_class=Components,
             resolver_settings={"thresholds": {first_resolver.name: 0, dedupe.name: 0}},
         )
@@ -825,9 +828,9 @@ def test_lookup_key_404_source(matchbox_api: MockRouter) -> None:
         model_class=NaiveDeduper,
         model_settings={"unique_fields": []},
     )
-    dag.resolver(
+    linker.resolver(
+        source_dedupe,
         name="root_resolver",
-        inputs=[linker, source_dedupe],
         resolver_class=Components,
         resolver_settings={"thresholds": {linker.name: 0, source_dedupe.name: 0}},
     )
@@ -874,9 +877,9 @@ def test_lookup_key_no_matches(
         model_class=NaiveDeduper,
         model_settings={"unique_fields": []},
     )
-    dag.resolver(
+    linker.resolver(
+        source_dedupe,
         name="root_resolver",
-        inputs=[linker, source_dedupe],
         resolver_class=Components,
         resolver_settings={"thresholds": {linker.name: 0, source_dedupe.name: 0}},
     )

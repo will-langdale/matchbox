@@ -198,15 +198,13 @@ class TestE2EPipelineBuilder:
             model_settings={"unique_fields": ["registration_id"]},
         )
 
-        dedupe_a_resolver = dag.resolver(
+        dedupe_a_resolver = dedupe_a.resolver(
             name="resolver_dedupe_source_a",
-            inputs=[dedupe_a],
             resolver_class=Components,
             resolver_settings=ComponentsSettings(thresholds={dedupe_a.name: 0.0}),
         )
-        dedupe_b_resolver = dag.resolver(
+        dedupe_b_resolver = dedupe_b.resolver(
             name="resolver_dedupe_source_b",
-            inputs=[dedupe_b],
             resolver_class=Components,
             resolver_settings=ComponentsSettings(thresholds={dedupe_b.name: 0.0}),
         )
@@ -233,9 +231,8 @@ class TestE2EPipelineBuilder:
             model_class=DeterministicLinker,
             model_settings={"comparisons": ["l.registration_id = r.registration_id"]},
         )
-        final_resolver = dag.resolver(
+        final_resolver = link_a_b.resolver(
             name="resolver_final",
-            inputs=[link_a_b],
             resolver_class=Components,
             resolver_settings=ComponentsSettings(
                 thresholds={

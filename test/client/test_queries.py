@@ -1,3 +1,5 @@
+"""Tests for client query construction, retrieval, and cleaning behaviour."""
+
 import polars as pl
 import pyarrow as pa
 import pytest
@@ -151,9 +153,9 @@ def test_query_multiple_sources(
         model_class="NaiveDeduper",
         model_settings={"unique_fields": []},
     )
-    resolver = foo_source.dag.resolver(
+    resolver = model_foo.resolver(
+        model_bar,
         name="resolver",
-        inputs=[model_foo, model_bar],
         resolver_class=Components,
         resolver_settings={"thresholds": {model_foo.name: 0, model_bar.name: 0}},
     )
@@ -357,9 +359,9 @@ def test_query_combine_type(
         model_class="NaiveDeduper",
         model_settings={"unique_fields": []},
     )
-    resolver = foo_source.dag.resolver(
+    resolver = foo_model.resolver(
+        bar_model,
         name="resolver",
-        inputs=[foo_model, bar_model],
         resolver_class=Components,
         resolver_settings={"thresholds": {foo_model.name: 0, bar_model.name: 0}},
     )
@@ -455,9 +457,9 @@ def test_query_leaf_ids(
         model_class="NaiveDeduper",
         model_settings={"unique_fields": []},
     )
-    resolver = foo_source.dag.resolver(
+    resolver = foo_model.resolver(
+        bar_model,
         name="resolver",
-        inputs=[foo_model, bar_model],
         resolver_class=Components,
         resolver_settings={"thresholds": {foo_model.name: 0, bar_model.name: 0}},
     )
@@ -543,7 +545,7 @@ def test_query_from_config() -> None:
     dag.source(**crn_testkit.into_dag())
     dag.source(**dh_testkit.into_dag())
 
-    model_testkit = (
+    linker_model = (
         dag.get_source(crn_testkit.name)
         .query()
         .linker(
@@ -553,7 +555,7 @@ def test_query_from_config() -> None:
             model_settings={"comparisons": "l.key=r.key"},
         )
     )
-    dedupe_testkit = (
+    dedupe_model = (
         dag.get_source(crn_testkit.name)
         .query()
         .deduper(
@@ -563,13 +565,11 @@ def test_query_from_config() -> None:
         )
     )
 
-    resolver = dag.resolver(
+    resolver = linker_model.resolver(
+        dedupe_model,
         name="resolver",
-        inputs=[model_testkit, dedupe_testkit],
         resolver_class=Components,
-        resolver_settings={
-            "thresholds": {model_testkit.name: 0, dedupe_testkit.name: 0}
-        },
+        resolver_settings={"thresholds": {linker_model.name: 0, dedupe_model.name: 0}},
     )
 
     # Create original query
@@ -645,9 +645,9 @@ def test_query_from_config_resolver_roundtrip() -> None:
         )
     )
 
-    resolver = dag.resolver(
+    resolver = linker.resolver(
+        dedupe,
         name="resolver",
-        inputs=[linker, dedupe],
         resolver_class=Components,
         resolver_settings={"thresholds": {linker.name: 0, dedupe.name: 0}},
     )

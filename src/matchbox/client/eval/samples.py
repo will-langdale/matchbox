@@ -243,6 +243,9 @@ def get_samples(
     return results_by_root
 
 
+# TODO: overhaul this to work with the new resolver system
+# Evaluation needs a resolver and list of models, so should be an .eval method
+# on a resolver that takes a list of alternative configs to run point metrics on
 class EvalData:
     """Object which caches evaluation data to measure model performance."""
 

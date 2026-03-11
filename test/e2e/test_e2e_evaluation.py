@@ -117,9 +117,8 @@ class TestE2EModelEvaluation:
                 "unique_fields": [source_a_dag1.f("registration_id")],
             },
         )
-        dag1.resolver(
+        final_model_1.resolver(
             name=f"resolver_{final_resolution_1_name}",
-            inputs=[final_model_1],
             resolver_class=Components,
             resolver_settings=ComponentsSettings(thresholds={final_model_1.name: 0.0}),
         )
@@ -160,9 +159,8 @@ class TestE2EModelEvaluation:
             model_class=NaiveDeduper,
             model_settings={"id": "id", "unique_fields": ["company_name"]},
         )
-        dag2.resolver(
+        final_model_2.resolver(
             name=f"resolver_{final_resolution_2_name}",
-            inputs=[final_model_2],
             resolver_class=Components,
             resolver_settings=ComponentsSettings(thresholds={final_model_2.name: 0.0}),
         )
