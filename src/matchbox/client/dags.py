@@ -2,9 +2,10 @@
 
 import json
 import tempfile
+from collections import deque
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Self, TypeAlias
+from typing import Any, Literal, Self, TypeAlias
 
 import polars as pl
 from platformdirs import user_cache_path
@@ -15,6 +16,7 @@ from matchbox.client._settings import settings
 from matchbox.client.locations import Location
 from matchbox.client.models import Model
 from matchbox.client.queries import Query
+from matchbox.client.resolvers import Resolver
 from matchbox.client.results import ResolvedMatches
 from matchbox.client.sources import Source
 from matchbox.common.dtos import (
@@ -27,6 +29,7 @@ from matchbox.common.dtos import (
     ResolutionName,
     ResolutionPath,
     ResolutionType,
+    ResolverResolutionName,
     Run,
     RunID,
     SourceResolutionName,
@@ -36,7 +39,6 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
 from matchbox.common.logging import log_mem_usage, logger, profile_time
-from matchbox.common.transform import threshold_float_to_int, threshold_int_to_float
 
 
 class DAGNodeExecutionStatus(StrEnum):
@@ -69,7 +71,7 @@ class DAG:
         self.name: CollectionName = CollectionName(name)
         self.admin_group: GroupName = GroupName(admin_group)
         self._run: RunID | None = None
-        self.nodes: dict[ResolutionName, Source | Model] = {}
+        self.nodes: dict[ResolutionName, Source | Model | Resolver] = {}
         self.graph: dict[ResolutionName, list[ResolutionName]] = {}
 
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -81,7 +83,26 @@ class DAG:
         if self != dag:
             raise ValueError("Cannot mix DAGs")
 
-    def _add_step(self, step: Source | Model) -> None:
+    def _check_step(
+        self,
+        step: Source | Model | Resolver,
+        check_parents: bool,
+        check_dependencies: bool,
+    ) -> None:
+        """Validate that the step references existing nodes in this DAG."""
+        if check_parents:
+            for parent_name in step.config.parents:
+                if parent_name not in self.nodes:
+                    raise ValueError(f"Parent step {parent_name} not added to DAG")
+
+        if check_dependencies:
+            for dependency_name in step.config.dependencies:
+                if dependency_name not in self.nodes:
+                    raise ValueError(
+                        f"Dependency step {dependency_name} not added to DAG"
+                    )
+
+    def _add_step(self, step: Source | Model | Resolver) -> None:
         """Validate and add sources and models to DAG."""
         self._check_dag(step.dag)
 
@@ -105,15 +126,70 @@ class DAG:
             self._check_dag(step.left_query.dag)
             if step.right_query:
                 self._check_dag(step.right_query.dag)
+        elif isinstance(step, Resolver):
+            for input_node in step.inputs:
+                self._check_dag(input_node.dag)
 
-            for resolution in step.config.dependencies:
-                if resolution not in self.nodes:
-                    raise ValueError(f"Step {resolution} not added to DAG")
-            self.graph[step.name] = [parent for parent in step.config.parents]
-        else:
-            self.graph[step.name] = []
+        self._check_step(step, check_parents=False, check_dependencies=True)
+
+        self.graph[step.name] = [parent for parent in step.config.parents]
 
         self.nodes[step.name] = step
+
+    def _topological_sort(
+        self, deps: dict[ResolutionName, set[ResolutionName]]
+    ) -> list[ResolutionName]:
+        """Topologically sort prerequisite constraints using Kahn's algorithm.
+
+        Args:
+            deps: A graph of precedence constraints where keys are node names and
+                values are names that must come before each key.
+
+        Returns:
+            Deterministic topological order preserving insertion-order tie-breaks.
+
+        Raises:
+            ValueError: If dependencies reference unknown nodes or if a cycle exists.
+        """
+        missing_dependencies = {
+            dep for node_deps in deps.values() for dep in node_deps if dep not in deps
+        }
+        if missing_dependencies:
+            raise ValueError(
+                "Cannot sort graph with missing dependencies: "
+                f"{sorted(missing_dependencies)}"
+            )
+
+        in_degree: dict[ResolutionName, int] = {
+            node: len(node_deps) for node, node_deps in deps.items()
+        }
+        children: dict[ResolutionName, list[ResolutionName]] = {
+            node: [] for node in deps
+        }
+
+        for node, node_deps in deps.items():
+            for dep in node_deps:
+                children[dep].append(node)
+
+        ready = deque([node for node, degree in in_degree.items() if degree == 0])
+        ordered: list[ResolutionName] = []
+
+        while ready:
+            node = ready.popleft()
+            ordered.append(node)
+
+            for child in children[node]:
+                in_degree[child] -= 1
+                if in_degree[child] == 0:
+                    ready.append(child)
+
+        if len(ordered) != len(deps):
+            remaining = [node for node, degree in in_degree.items() if degree > 0]
+            raise ValueError(
+                f"Cannot sort graph with unresolved cycles involving: {remaining}"
+            )
+
+        return ordered
 
     @classmethod
     def list_all(cls) -> list[CollectionName]:
@@ -137,7 +213,18 @@ class DAG:
         self._run = run_id
 
     @property
-    def final_steps(self) -> list[Source | Model]:
+    def sequence(self) -> list[ResolutionName]:
+        """Return nodes in topological execution order.
+
+        Returns:
+            List of node names in the order they would be executed by run_and_sync.
+            Use as start/finish values to control partial execution.
+        """
+        deps_graph = {name: set(parents) for name, parents in self.graph.items()}
+        return self._topological_sort(deps=deps_graph)
+
+    @property
+    def final_steps(self) -> list[Source | Model | Resolver]:
         """Returns all apex nodes in the DAG.
 
         Returns:
@@ -157,7 +244,7 @@ class DAG:
         return [self.nodes[name] for name in apex_node_names]
 
     @property
-    def final_step(self) -> Source | Model:
+    def final_step(self) -> Source | Model | Resolver:
         """Returns the root node in the DAG.
 
         Returns:
@@ -189,6 +276,12 @@ class DAG:
 
         return model
 
+    def resolver(self, *args: Any, **kwargs: Any) -> Resolver:
+        """Create a resolver and add it to the DAG."""
+        resolver = Resolver(*args, **kwargs, dag=self)
+        self._add_step(resolver)
+        return resolver
+
     @validate_call
     def add_resolution(
         self,
@@ -217,7 +310,24 @@ class DAG:
                 right_query=Query.from_config(resolution.config.right_query, dag=self)
                 if resolution.config.right_query
                 else None,
-                truth=threshold_int_to_float(resolution.truth),
+            )
+        elif resolution.resolution_type == ResolutionType.RESOLVER:
+            inputs: list[Model] = []
+            for input_name in resolution.config.inputs:
+                node = self.nodes.get(input_name)
+                if not isinstance(node, Model):
+                    raise RuntimeError(
+                        "Resolver input "
+                        f"'{input_name}' must reference an available model"
+                    )
+                inputs.append(node)
+
+            self.resolver(
+                name=ResolverResolutionName(name),
+                description=resolution.description,
+                inputs=inputs,
+                resolver_class=resolution.config.resolver_class,
+                resolver_settings=json.loads(resolution.config.resolver_settings),
             )
         else:
             raise ValueError(f"Unknown resolution type {resolution.resolution_type}")
@@ -270,12 +380,34 @@ class DAG:
 
         return node
 
+    @validate_call
+    def get_resolver(self, name: ResolutionName) -> Resolver:
+        """Get a resolver by name from the DAG."""
+        if name not in self.nodes:
+            raise ValueError(f"Resolver '{name}' not found in DAG")
+
+        node = self.nodes[name]
+        if not isinstance(node, Resolver):
+            raise ValueError(
+                f"Node '{name}' is not a Resolver, it's a {type(node).__name__}"
+            )
+
+        return node
+
     def query(self, *args: Any, **kwargs: Any) -> Query:
         """Create Query object."""
         return Query(*args, **kwargs, dag=self)
 
-    def draw(self, status: DAGExecutionStatus | None = None) -> str:
-        """Create a string representation of the DAG as a tree structure.
+    def draw(
+        self,
+        status: DAGExecutionStatus | None = None,
+        mode: Literal["tree", "list"] = "tree",
+    ) -> str:
+        """Create a string representation of the DAG.
+
+        In tree mode, nodes are shown in a dependency tree.
+
+        In list mode, nodes are shown in execution order as a numbered list.
 
         If `status` is provided, it will show the status of each node.
         The status indicators are:
@@ -285,8 +417,16 @@ class DAG:
         * ⏸️ Awaiting
         * ⏭️ Skipped
 
+        Node type indicators are:
+
+        * 💎 Resolver
+        * ⚙️ Model
+        * 📄 Source
+
         Args:
             status: Object describing the status of each node.
+            mode: "tree" renders the DAG as a tree structure (default).
+                "list" renders nodes in flat execution order.
 
         Returns:
             String representation of the DAG with status indicators.
@@ -295,9 +435,9 @@ class DAG:
         if not self.nodes:
             return "Empty DAG"
 
-        apex_nodes = self.final_steps
-        if not apex_nodes:
-            return "No apex nodes found (possible cycle in DAG)"
+        step_numbers: dict[str, int] = {
+            name: i + 1 for i, name in enumerate(self.sequence)
+        }
 
         def _get_node_indicator(name: str) -> str:
             """Determine the status indicator for a node."""
@@ -310,39 +450,78 @@ class DAG:
             elif status[name] == DAGNodeExecutionStatus.DONE:
                 return "✅"
 
-        # Header with collection and run info
-        head_collection: str = f"Collection: {self.name}"
-        head_run: str = f"└── Run: {self._run or '⛓️‍💥 Disconnected'}"
+        def _get_node_type_indicator(name: str) -> str:
+            """Determine the type indicator for a node."""
+            node = self.nodes[name]
+            if isinstance(node, Resolver):
+                return "💎"
+            if isinstance(node, Model):
+                return "⚙️"
+            return "📄"
 
-        result: list[str] = [head_collection, head_run, ""]
-        visited = set()
+        def _format_node(name: str) -> str:
+            """Format node display with step number, status (if present) and type."""
+            type_indicator = _get_node_type_indicator(name)
+            step = f"[{step_numbers[name]}]" if name in step_numbers else ""
+            if status is None:
+                return f"{type_indicator} {name} {step}"
 
-        def format_children(node: str, prefix: str = "") -> None:
+            indicator = _get_node_indicator(name)
+            return f"{indicator}{type_indicator} {name} {step}"
+
+        header: list[str] = [
+            f"Collection: {self.name}",
+            f"└── Run: {self._run or '⛓️‍💥 Disconnected'}",
+            "",
+        ]
+
+        # List mode
+
+        if mode == "list":
+            lines: list[str] = header.copy()
+            for name in self.sequence:
+                step = step_numbers[name]
+                type_indicator = _get_node_type_indicator(name)
+                if status is None:
+                    lines.append(f"{step}. {type_indicator} {name}")
+                else:
+                    lines.append(
+                        f"{step}. {_get_node_indicator(name)}{type_indicator} {name}"
+                    )
+            return "\n".join(lines)
+
+        # Tree mode
+
+        apex_nodes = self.final_steps
+        if not apex_nodes:
+            return "No apex nodes found (possible cycle in DAG)"
+
+        result: list[str] = header.copy()
+
+        def format_children(
+            node: str, prefix: str = "", ancestors: set[str] | None = None
+        ) -> None:
             """Recursively format the children of a node."""
-            children = []
-            # Get all outgoing edges from this node
-            for target in self.graph.get(node, []):
-                if target not in visited:
-                    children.append(target)
-                    visited.add(target)
+            if ancestors is None:
+                ancestors = {node}
+
+            children = self.graph.get(node, [])
 
             # Format each child
             for i, child in enumerate(children):
                 is_last = i == len(children) - 1
 
-                # Add status indicator if status is provided
-                if status is not None:
-                    indicator = _get_node_indicator(child)
-                    child_display = f"{indicator} {child}"
-                else:
-                    child_display = child
+                child_display = _format_node(child)
 
-                if is_last:
-                    result.append(f"{prefix}└── {child_display}")
-                    format_children(child, prefix + "    ")
-                else:
-                    result.append(f"{prefix}├── {child_display}")
-                    format_children(child, prefix + "│   ")
+                branch = "└──" if is_last else "├──"
+                child_prefix = prefix + ("    " if is_last else "│   ")
+
+                if child in ancestors:
+                    result.append(f"{prefix}{branch} {child_display} (cycle)")
+                    continue
+
+                result.append(f"{prefix}{branch} {child_display}")
+                format_children(child, child_prefix, ancestors | {child})
 
         # Draw each apex node
         for i, apex_node in enumerate(apex_nodes):
@@ -351,15 +530,9 @@ class DAG:
             if i > 0:
                 result.append("")  # Blank line between disconnected components
 
-            visited.add(root_name)
+            result.append(_format_node(root_name))
 
-            if status is not None:
-                indicator = _get_node_indicator(root_name)
-                result.append(f"{indicator} {root_name}")
-            else:
-                result.append(root_name)
-
-            format_children(root_name)
+            format_children(root_name, ancestors={root_name})
 
         return "\n".join(result)
 
@@ -406,35 +579,19 @@ class DAG:
 
         resolutions: dict[ResolutionName, Resolution] = run.resolutions
 
-        # Build dependency graph and track added
-        added: set[ResolutionName] = set()
+        # Build parent graph and add in topological order
         deps_graph: dict[ResolutionName, set[ResolutionName]] = {
-            name: {dep for dep in res.config.dependencies}
-            for name, res in resolutions.items()
+            name: set(res.config.parents) for name, res in resolutions.items()
         }
+        sorted_names = self._topological_sort(deps=deps_graph)
 
-        # Kahn's algorithm: iteratively add resolutions whose dependencies are satisfied
-        while len(added) < len(resolutions):
-            # Find resolutions that can be added (all dependencies satisfied)
-            ready = [
-                name
-                for name in resolutions
-                if name not in added and deps_graph[name].issubset(added)
-            ]
+        for name in sorted_names:
+            self.add_resolution(name=name, resolution=resolutions[name])
 
-            if not ready:
-                # No progress possible - circular dependency or missing dependency
-                missing = set(resolutions.keys()) - added
-                raise RuntimeError(
-                    f"Cannot resolve dependencies. Remaining resolutions: {missing}. "
-                    "This may indicate circular dependencies or references to "
-                    "non-existent resolutions."
-                )
-
-            # Add all ready resolutions (order within this batch doesn't matter)
-            for name in ready:
-                self.add_resolution(name=name, resolution=resolutions[name])
-                added.add(name)
+        for name in resolutions:
+            self._check_step(
+                self.nodes[name], check_parents=True, check_dependencies=True
+            )
 
         return self
 
@@ -484,19 +641,7 @@ class DAG:
         if batch_size is None:
             batch_size = settings.batch_size
 
-        # Determine order of execution steps
-        root_nodes = self.final_steps
-
-        def depth_first(node: str, sequence: list) -> None:
-            sequence.append(node)
-            for neighbour in self.graph[node]:
-                if neighbour not in sequence:
-                    depth_first(neighbour, sequence)
-
-        inverse_sequence = []
-        for root_node in root_nodes:
-            depth_first(root_node.name, inverse_sequence)
-        sequence = list(reversed(inverse_sequence))
+        sequence: list[ResolutionName] = self.sequence
 
         # Identify skipped nodes
         skipped_nodes = []
@@ -566,7 +711,6 @@ class DAG:
         from_source: str,
         to_sources: list[str],
         key: str,
-        threshold: float | None = None,
     ) -> dict[str, list[str]]:
         """Matches IDs against the selected backend.
 
@@ -574,10 +718,6 @@ class DAG:
             from_source: Name of source the provided key belongs to
             to_sources: Names of sources to find keys in
             key: The value to match from the source. Usually a primary key
-            threshold (optional): The threshold to use for creating clusters.
-                If None, uses the resolutions' default threshold
-                If a float, uses that threshold for the specified resolution, and the
-                resolution's cached thresholds for its ancestors
 
         Returns:
             Dictionary mapping source names to list of keys within that source.
@@ -594,10 +734,9 @@ class DAG:
             )
             ```
         """
-        if threshold:
-            if not isinstance(threshold, float):
-                raise ValueError("If passed, threshold must be a float")
-            threshold = threshold_float_to_int(threshold)
+        if not isinstance(self.final_step, Resolver):
+            raise ValueError("lookup_key requires the DAG apex to be a resolver")
+
         matches = _handler.match(
             targets=[
                 ResolutionPath(name=target, collection=self.name, run=self.run)
@@ -606,7 +745,6 @@ class DAG:
             source=ResolutionPath(name=from_source, collection=self.name, run=self.run),
             key=key,
             resolution=self.final_step.resolution_path,
-            threshold=threshold,
         )
 
         to_sources_results = {m.target.name: list(m.target_id) for m in matches}
@@ -615,30 +753,23 @@ class DAG:
 
     @validate_call
     @profile_time(kwarg="node")
-    def resolve(
+    def get_matches(
         self,
-        node: ResolutionName | None = None,
+        node: ResolverResolutionName | None = None,
         source_filter: list[str] | None = None,
         location_names: list[str] | None = None,
-        threshold: float | None = None,
     ) -> ResolvedMatches:
         """Returns ResolvedMatches, optionally filtering.
 
         Args:
-            node: Name of source or model to resolve within DAG.
+            node: Name of resolver to query within DAG.
                 If not provided, will look for an apex.
             source_filter: An optional list of source resolution names to filter by.
             location_names: An optional list of location names to filter by.
-            threshold (optional): The threshold to use for creating clusters.
-                If None, uses the resolutions' default threshold
-                If a float, uses that threshold for the specified resolution, and the
-                resolution's cached thresholds for its ancestors
         """
-        if threshold:
-            if not isinstance(threshold, float):
-                raise ValueError("If passed, threshold must be a float")
-            threshold = threshold_float_to_int(threshold)
         point_of_truth = self.nodes[node] if node else self.final_step
+        if not isinstance(point_of_truth, Resolver):
+            raise ValueError("get_matches can only query from resolver nodes")
 
         available_sources = {
             node_name: self.get_source(node_name)
@@ -672,7 +803,6 @@ class DAG:
                         source=available_sources[source_name].resolution_path,
                         resolution=point_of_truth.resolution_path,
                         return_leaf_id=True,
-                        threshold=threshold,
                     )
                 )
             )

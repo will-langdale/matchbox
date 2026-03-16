@@ -325,18 +325,16 @@ class SourceConfig(BaseModel):
 
     @property
     def dependencies(self) -> list[ResolutionName]:
-        """Return all resolution names that this source needs.
+        """Local execution prerequisites.
 
-        Provided for symmetry with ModelConfig.
+        While this can contain information about graph topology, it should only be used
+        to check validity, never to reconstruct it.
         """
         return []
 
     @property
     def parents(self) -> list[ResolutionName]:
-        """Returns all resolution names directly input to this config.
-
-        Provided for symmetry with ModelConfig.
-        """
+        """Direct DAG edges to this node."""
         return []
 
     def prefix(self, name: str) -> str:
@@ -408,65 +406,40 @@ class QueryCombineType(StrEnum):
 
 
 class QueryConfig(BaseModel):
-    """Configuration of query generating model inputs."""
+    """Configuration of query generating model inputs.
+
+    A QueryConfig is a view onto the resolution subgraph, a triangulation of
+    a set of sources and an optional resolver. It doesn't describe topology,
+    which is why it has no .parents attribute.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     source_resolutions: tuple[SourceResolutionName, ...]
-    # TODO: remove shim in Resolution PR2
-    model_resolution: ModelResolutionName | None = None
     resolver_resolution: ResolverResolutionName | None = None
     combine_type: QueryCombineType = QueryCombineType.CONCAT
-    threshold: int | None = None
     cleaning: dict[str, str] | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def normalise_resolutions(cls, value: object) -> object:
-        """Normalise legacy model point-of-truth to canonical resolver naming."""
-        # TODO: remove shim in Resolution PR2
-        if not isinstance(value, dict):
-            return value
-
-        model_resolution = value.get("model_resolution")
-        resolver_resolution = value.get("resolver_resolution")
-        if model_resolution is None:
-            return value
-
-        canonical_resolver = f"resolver_{model_resolution}"
-        if resolver_resolution is None:
-            return value | {"resolver_resolution": canonical_resolver}
-
-        if resolver_resolution != canonical_resolver:
-            raise ValueError(
-                "model_resolution and resolver_resolution must match canonical "
-                "'resolver_<model_resolution>' naming."
-            )
-        return value
 
     @model_validator(mode="after")
     def validate_resolutions(self) -> Self:
         """Ensure that resolution settings are compatible."""
         if not self.source_resolutions:
             raise ValueError("At least one source resolution required.")
-        if len(self.source_resolutions) > 1 and not (
-            self.resolver_resolution or self.model_resolution
-        ):
-            # TODO: remove shim in Resolution PR2
+        if len(self.source_resolutions) > 1 and not self.resolver_resolution:
             raise ValueError(
-                "A model or resolver resolution must be set if querying from multiple "
-                "sources."
+                "A resolver resolution must be set if querying from multiple sources"
             )
         return self
 
     @property
     def dependencies(self) -> list[ResolutionName]:
-        """Return all resolutions that this query needs."""
-        # TODO: remove shim in Resolution PR2
+        """Local execution prerequisites.
+
+        While this can contain information about graph topology, it should only be used
+        to check validity, never to reconstruct it.
+        """
         deps = list(self.source_resolutions)
-        if self.model_resolution:
-            deps.append(self.model_resolution)
-        elif self.resolver_resolution:
+        if self.resolver_resolution:
             deps.append(self.resolver_resolution)
 
         return deps
@@ -474,11 +447,8 @@ class QueryConfig(BaseModel):
     @property
     def point_of_truth(self) -> ResolutionName:
         """Return path of resolution that will be used as point of truth."""
-        # TODO: remove shim in Resolution PR2
         if self.resolver_resolution:
             return self.resolver_resolution
-        if self.model_resolution:
-            return self.model_resolution
         return self.source_resolutions[0]
 
 
@@ -532,7 +502,11 @@ class ModelConfig(BaseModel):
 
     @property
     def dependencies(self) -> list[ResolutionName]:
-        """Return all resolutions that this model needs."""
+        """Local execution prerequisites.
+
+        While this can contain information about graph topology, it should only be used
+        to check validity, never to reconstruct it.
+        """
         deps = list(self.left_query.dependencies)
         if self.right_query:
             deps.extend(self.right_query.dependencies)
@@ -541,22 +515,19 @@ class ModelConfig(BaseModel):
 
     @property
     def parents(self) -> list[ResolutionName]:
-        """Returns all resolution names directly input to this config."""
-
-        # TODO: remove shim in Resolution PR2
-        def parent_for_query(query: QueryConfig) -> ResolutionName:
-            if query.model_resolution:
-                return query.model_resolution
-            if query.resolver_resolution:
-                return query.resolver_resolution
-            return query.source_resolutions[0]
-
+        """Direct DAG edges to this node."""
         if self.right_query:
             return [
-                parent_for_query(self.left_query),
-                parent_for_query(self.right_query),
+                self.left_query.point_of_truth,
+                self.right_query.point_of_truth,
             ]
-        return [parent_for_query(self.left_query)]
+        return [self.left_query.point_of_truth]
+
+
+class ResolverType(StrEnum):
+    """Enumeration of supported resolver methodology types."""
+
+    COMPONENTS = "components"
 
 
 class ResolverConfig(BaseModel):
@@ -585,12 +556,16 @@ class ResolverConfig(BaseModel):
 
     @property
     def dependencies(self) -> list[ModelResolutionName]:
-        """Return all resolutions that this resolver needs."""
+        """Local execution prerequisites.
+
+        While this can contain information about graph topology, it should only be used
+        to check validity, never to reconstruct it.
+        """
         return list(self.inputs)
 
     @property
     def parents(self) -> list[ModelResolutionName]:
-        """Returns all resolution names directly input to this config."""
+        """Direct DAG edges to this node."""
         return list(self.inputs)
 
 
@@ -624,7 +599,6 @@ class Resolution(BaseModel):
     """Unified resolution type with common fields and discriminated config."""
 
     description: str | None = Field(default=None, description="Description")
-    truth: int | None = Field(default=None, ge=0, le=100, strict=True)
     fingerprint: Annotated[
         bytes,
         PlainSerializer(hash_to_base64, return_type=str),
@@ -652,8 +626,6 @@ class Resolution(BaseModel):
             assert isinstance(self.config, SourceConfig), (
                 "Config must be SourceConfig when resolution_type is 'source'"
             )
-            if self.truth is not None:
-                raise ValueError("Truth must be None for source resolutions.")
         elif self.resolution_type == ResolutionType.MODEL:
             assert isinstance(self.config, ModelConfig), (
                 "Config must be ModelConfig when resolution_type is 'model'"
@@ -662,8 +634,6 @@ class Resolution(BaseModel):
             assert isinstance(self.config, ResolverConfig), (
                 "Config must be ResolverConfig when resolution_type is 'resolver'"
             )
-            if self.truth is not None:
-                raise ValueError("Truth must be None for resolver resolutions.")
         return self
 
 

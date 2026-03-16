@@ -11,7 +11,7 @@ from matchbox.common.factories.entities import (
     EntityReference,
     FeatureConfig,
     SourceEntity,
-    diff_results,
+    diff_entities,
     generate_entities,
     probabilities_to_results_entities,
 )
@@ -384,14 +384,14 @@ def assert_deep_approx_equal(
         ),
     ],
 )
-def test_diff_results(
+def test_diff_entities(
     expected: list[ClusterEntity],
     actual: list[ClusterEntity],
     want_identical: bool,
     want_result: dict[str, Any],
 ) -> None:
-    """Test diff_results function handles various scenarios correctly."""
-    got_identical, got_result = diff_results(expected, actual)
+    """Test diff_entities function handles various scenarios correctly."""
+    got_identical, got_result = diff_entities(expected, actual)
 
     assert got_identical == want_identical
     assert dict(got_result) == want_result
@@ -413,17 +413,17 @@ def test_source_to_results_conversion() -> None:
     results3 = source.to_cluster_entity("source2")
 
     # Test different comparison scenarios
-    identical, report = diff_results([results1], [results1])
+    identical, report = diff_entities([results1], [results1])
     assert identical
     assert report == {}
 
     # Compare partial overlap
-    identical, report = diff_results([results1], [results2])
+    identical, report = diff_entities([results1], [results2])
     assert not identical
     assert "source2" in str(results2 - results1)
 
     # Compare disjoint sets
-    identical, report = diff_results([results1], [results3])
+    identical, report = diff_entities([results1], [results3])
     assert not identical
     assert results1.similarity_ratio(results3) == 0.0
 

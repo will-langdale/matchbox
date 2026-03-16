@@ -480,7 +480,7 @@ def delete_resolution(
     dependencies=[Depends(RequireCollectionWrite)],
     status_code=status.HTTP_202_ACCEPTED,
     summary="Set resolution data",
-    description="Create an upload task for source hashes or model results.",
+    description="Create an upload task for any step data.",
 )
 def set_data(
     backend: BackendDependency,
@@ -492,7 +492,7 @@ def set_data(
     resolution_name: ResolutionName,
     file: UploadFile,
 ) -> ResourceOperationStatus:
-    """Create an upload task for source hashes or model results."""
+    """Create an upload task for any step data."""
     resolution_path = ResolutionPath(
         collection=collection, run=run_id, name=resolution_name
     )
@@ -624,16 +624,16 @@ def get_upload_status(
         422: {"model": ErrorResponse},
     },
     dependencies=[Depends(RequireCollectionRead)],
-    summary="Get resolution results",
-    description="Download results for a model as a parquet file.",
+    summary="Get resolution data",
+    description="Download data for a resolution as a parquet file.",
 )
-def get_results(
+def get_data(
     backend: BackendDependency,
     collection: CollectionName,
     run_id: RunID,
     resolution: ResolutionName,
 ) -> ParquetResponse:
-    """Download results for a model or resolver as a parquet file."""
+    """Download data for a resolution as a parquet file."""
     resolution_path = ResolutionPath(collection=collection, run=run_id, name=resolution)
     resolution_dto = backend.get_resolution(path=resolution_path)
     if resolution_dto.resolution_type == ResolutionType.MODEL:

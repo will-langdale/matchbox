@@ -24,7 +24,7 @@ from matchbox.common.exceptions import (
     MatchboxResolutionExistingData,
     MatchboxResolutionInvalidData,
 )
-from matchbox.common.hash import hash_arrow_table, hash_model_results
+from matchbox.common.hash import hash_arrow_table, hash_clusters, hash_model_results
 from matchbox.common.logging import logger
 from matchbox.common.transform import hash_cluster_leaves
 from matchbox.server.postgresql.db import MBDB
@@ -343,7 +343,7 @@ def insert_resolver_clusters(
         MatchboxResolutionExistingData: If clusters already exist for this resolver
     """
     log_prefix = f"Resolver {path.name}"
-    fingerprint = hash_arrow_table(cluster_assignments)
+    fingerprint = hash_clusters(cluster_assignments)
     cluster_assignment_data = cluster_assignments.select(["parent_id", "child_id"])
 
     # 1) Validate
