@@ -1,12 +1,8 @@
 """Tests for resolver node behaviour and public client API contracts."""
 
-from unittest.mock import patch
-
-import polars as pl
 import pytest
 from sqlalchemy import Engine
 
-from matchbox.client.models import Model
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.client.resolvers import Components, ComponentsSettings
@@ -144,51 +140,3 @@ def test_resolver_run_requires_materialised_inputs(
 
     with pytest.raises(ValueError, match="has no local results"):
         resolver.run()
-
-
-def test_resolver_prepare_downloads_only_missing_inputs(
-    sqla_sqlite_warehouse: Engine,
-) -> None:
-    """Resolver prepare only downloads dependencies with missing local data."""
-    dag = TestkitDAG().dag
-    source_testkit = source_factory(
-        engine=sqla_sqlite_warehouse,
-        name="source",
-    ).write_to_location()
-    target_testkit = source_factory(
-        engine=sqla_sqlite_warehouse,
-        name="target",
-    ).write_to_location()
-    source = dag.source(**source_testkit.into_dag())
-    target = dag.source(**target_testkit.into_dag())
-
-    linker = source.query().linker(
-        target.query(),
-        name="source_target_linker",
-        model_class=DeterministicLinker,
-        model_settings={"comparisons": "l.field=r.field"},
-    )
-    source_dedupe = source.query().deduper(
-        name="source_dedupe",
-        model_class=NaiveDeduper,
-        model_settings={"unique_fields": []},
-    )
-
-    resolver = linker.resolver(
-        source_dedupe,
-        name="root_resolver",
-        resolver_class=Components,
-        resolver_settings=ComponentsSettings(
-            thresholds={linker.name: 0.0, source_dedupe.name: 0.0}
-        ),
-    )
-
-    source_dedupe.results = pl.DataFrame(
-        {"left_id": ["1"], "right_id": ["1"], "probability": [1.0]}
-    )
-
-    with patch.object(Model, "download", autospec=True) as download_mock:
-        resolver.prepare()
-
-    assert download_mock.call_count == 1
-    assert download_mock.call_args.args[0] is linker

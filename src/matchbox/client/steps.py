@@ -171,13 +171,6 @@ class Step(ABC):
         self._local_data = pl.from_arrow(table)
         return self._local_data
 
-    def prepare(self) -> None:
-        """Ensure local execution prerequisites are available."""
-        for dependency_name in self.config.dependencies:
-            dependency = self.dag.nodes[dependency_name]
-            if dependency.local_data is None:
-                dependency.download()
-
     @post_run
     @profile_time(attr="name")
     def sync(self) -> None:

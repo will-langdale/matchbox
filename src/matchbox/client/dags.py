@@ -675,7 +675,6 @@ class DAG:
             status[step_name] = DAGNodeExecutionStatus.DOING
             logger.info("\n" + self.draw(status=status))
             try:
-                node.prepare()
                 if isinstance(node, Source):
                     node.run(batch_size=batch_size)
                 else:

@@ -57,8 +57,6 @@ def test_dag_list(matchbox_api: MockRouter) -> None:
 
 @patch.object(Source, "run")
 @patch.object(Model, "run")
-@patch.object(Source, "prepare")
-@patch.object(Model, "prepare")
 @patch.object(Source, "sync")
 @patch.object(Model, "sync")
 @patch.object(Source, "clear_data")
@@ -68,8 +66,6 @@ def test_dag_run_and_sync(
     source_clear_mock: Mock,
     model_sync_mock: Mock,
     source_sync_mock: Mock,
-    model_prepare_mock: Mock,
-    source_prepare_mock: Mock,
     model_run_mock: Mock,
     source_run_mock: Mock,
     sqla_sqlite_warehouse: Engine,
@@ -132,17 +128,13 @@ def test_dag_run_and_sync(
 
     assert source_run_mock.call_count == 3
     assert source_sync_mock.call_count == 3
-    assert source_prepare_mock.call_count == 3
     assert model_run_mock.call_count == 3
     assert model_sync_mock.call_count == 3
-    assert model_prepare_mock.call_count == 3
     source_clear_mock.assert_not_called()
     model_clear_mock.assert_not_called()
 
     # Running DAG destroys intermediate results
     dag.run_and_sync(low_memory=True)
-    assert source_prepare_mock.call_count == 6
-    assert model_prepare_mock.call_count == 6
     assert source_clear_mock.call_count == 3
     assert model_clear_mock.call_count == 3
 
@@ -150,9 +142,6 @@ def test_dag_run_and_sync(
 @patch.object(Source, "sync")
 @patch.object(Model, "sync")
 @patch.object(Resolver, "sync")
-@patch.object(Source, "prepare")
-@patch.object(Model, "prepare")
-@patch.object(Resolver, "prepare")
 @patch.object(Source, "run", autospec=True)
 @patch.object(Model, "run", autospec=True)
 @patch.object(Resolver, "run", autospec=True)
@@ -160,9 +149,6 @@ def test_dag_run_and_sync_orders_shared_parents_before_children(
     resolver_run_mock: Mock,
     model_run_mock: Mock,
     source_run_mock: Mock,
-    resolver_prepare_mock: Mock,
-    model_prepare_mock: Mock,
-    source_prepare_mock: Mock,
     resolver_sync_mock: Mock,
     model_sync_mock: Mock,
     source_sync_mock: Mock,
@@ -216,7 +202,8 @@ def test_dag_run_and_sync_orders_shared_parents_before_children(
         node: Source | Model | Resolver, *args: object, **kwargs: object
     ) -> pl.DataFrame:
         run_order.append(node.name)
-        return pl.DataFrame()
+        node._local_data = pl.DataFrame()
+        return node._local_data
 
     source_run_mock.side_effect = _record_run
     model_run_mock.side_effect = _record_run
