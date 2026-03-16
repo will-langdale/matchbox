@@ -376,9 +376,8 @@ def test_dag_final_steps(sqla_sqlite_warehouse: Engine) -> None:
     assert dag.final_steps[0].name == "foo_bar"
 
 
-def test_dag_draw(sqla_sqlite_warehouse: Engine) -> None:
-    """Test that the draw method produces a correct string representation of the DAG."""
-    # Set up a simple DAG
+def test_dag_draw_tree(sqla_sqlite_warehouse: Engine) -> None:
+    """Test tree mode rendering of the DAG."""
     foo_tkit = source_factory(
         name="foo", engine=sqla_sqlite_warehouse
     ).write_to_location()
@@ -391,22 +390,18 @@ def test_dag_draw(sqla_sqlite_warehouse: Engine) -> None:
 
     dag = TestkitDAG().dag
 
-    # Structure: sources can be added
     foo = dag.source(**foo_tkit.into_dag())
     bar = dag.source(**bar_tkit.into_dag())
     baz = dag.source(**baz_tkit.into_dag())
-
     d_foo = foo.query().deduper(
         name="d_foo", model_class=NaiveDeduper, model_settings={"unique_fields": []}
     )
-
     foo_bar = foo.query().linker(
         bar.query(),
         name="foo_bar",
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.field=r.field"},
     )
-
     foo_baz = foo.query().linker(
         baz.query(),
         name="foo_baz",
@@ -423,21 +418,6 @@ def test_dag_draw(sqla_sqlite_warehouse: Engine) -> None:
         },
     )
 
-    # Prepare the DAG and draw it
-
-    # Test 1: Drawing without timestamps (original behavior)
-    tree_str = dag.draw()
-
-    # Verify the structure
-    lines = tree_str.strip().split("\n")
-    head_lines, tree_lines = lines[:3], lines[3:]
-    assert "Collection" in head_lines[0]
-    assert "Run" in head_lines[1]
-
-    # The root node should be first
-    assert tree_lines[0].endswith("root")
-
-    # Check that all nodes are present
     node_names = [
         foo.name,
         bar.name,
@@ -448,105 +428,172 @@ def test_dag_draw(sqla_sqlite_warehouse: Engine) -> None:
         root.name,
     ]
 
-    for node in node_names:
-        # Either the node name is at the start of a line or after the tree characters
-        node_present = any(line.endswith(node) for line in tree_lines)
-        assert node_present, f"Node {node} not found in the tree representation"
+    tree_str = dag.draw()
+    lines = tree_str.strip().split("\n")
+    head_lines, tree_lines = lines[:3], lines[3:]
 
+    # Header
+    assert "Collection" in head_lines[0]
+    assert "Run" in head_lines[1]
+
+    # Root node is first
+    assert root.name in tree_lines[0]
+
+    # All nodes present
+    for node in node_names:
+        assert any(node in line for line in tree_lines)
+
+    # Type indicators
     assert "💎" in tree_str
     assert "⚙️" in tree_str
     assert "📄" in tree_str
 
-    # Shared parents should be shown in each branch, not globally suppressed.
-    shared_foo_count = sum(1 for line in tree_lines if line.split()[-1] == foo.name)
+    # Step number badges
+    assert "[1]" in tree_str
+
+    # Shared parents shown in each branch, not globally suppressed
+    shared_foo_count = sum(1 for line in tree_lines if f" {foo.name} [" in line)
     assert shared_foo_count == 3
 
-    # Check that tree has correct formatting with tree characters
-    tree_chars = ["└──", "├──", "│"]
-    has_tree_chars = any(char in tree_str for char in tree_chars)
-    assert has_tree_chars, (
-        "Tree representation doesn't use expected formatting characters"
+    # Tree formatting characters
+    assert any(char in tree_str for char in ["└──", "├──", "│"])
+
+    # __str__
+    assert str(dag) == dag.draw()
+
+    # Empty DAG
+    assert TestkitDAG().dag.draw() == "Empty DAG"
+
+    # Disconnected components
+    disconnected_dag = TestkitDAG().dag
+    _ = disconnected_dag.source(
+        **source_factory(name="qux", engine=sqla_sqlite_warehouse)
+        .write_to_location()
+        .into_dag()
+    )
+    _ = disconnected_dag.source(
+        **source_factory(name="quux", engine=sqla_sqlite_warehouse)
+        .write_to_location()
+        .into_dag()
+    )
+    disconnected_str = disconnected_dag.draw()
+    head_lines, tree_lines = disconnected_str[:3], disconnected_str[3:]
+    assert "qux" in tree_lines
+    assert "quux" in tree_lines
+    assert "\n\n" in tree_lines
+
+
+def test_dag_draw_list(sqla_sqlite_warehouse: Engine) -> None:
+    """Test list mode rendering of the DAG."""
+    foo_tkit = source_factory(
+        name="foo", engine=sqla_sqlite_warehouse
+    ).write_to_location()
+    bar_tkit = source_factory(
+        name="bar", engine=sqla_sqlite_warehouse
+    ).write_to_location()
+
+    dag = TestkitDAG().dag
+
+    foo = dag.source(**foo_tkit.into_dag())
+    bar = dag.source(**bar_tkit.into_dag())
+    foo_bar = foo.query().linker(
+        bar.query(),
+        name="foo_bar",
+        model_class=DeterministicLinker,
+        model_settings={"comparisons": "l.field=r.field"},
     )
 
-    # Test 2: Drawing with status indicators
+    list_str = dag.draw(mode="list")
+    lines = list_str.strip().split("\n")
+    head_lines, list_lines = lines[:3], lines[3:]
 
-    tree_str_with_status = dag.draw(
-        status={
-            foo_bar.name: DAGNodeExecutionStatus.DOING,
-            d_foo.name: DAGNodeExecutionStatus.DONE,
-        }
+    # Same header as tree mode
+    assert "Collection" in head_lines[0]
+    assert "Run" in head_lines[1]
+
+    # All nodes present
+    for node in [foo.name, bar.name, foo_bar.name]:
+        assert any(node in line for line in list_lines)
+
+    # Step numbers prefix each line
+    for i, line in enumerate(list_lines, start=1):
+        assert line.startswith(f"{i}.")
+
+    # Sources appear before linker
+    foo_bar_idx = next(
+        i for i, line in enumerate(list_lines) if line.endswith(foo_bar.name)
     )
-    status_lines = tree_str_with_status.strip().split("\n")[3:]
+    foo_idx = next(i for i, line in enumerate(list_lines) if line.endswith(foo.name))
+    bar_idx = next(i for i, line in enumerate(list_lines) if line.endswith(bar.name))
+    assert foo_bar_idx > foo_idx
+    assert foo_bar_idx > bar_idx
 
-    # Verify status indicators are present
-    status_indicators = ["✅", "🔄", "⏸️"]
-    assert any(indicator in tree_str_with_status for indicator in status_indicators)
-    assert "✅⚙️" in tree_str_with_status
-    assert "🔄⚙️" in tree_str_with_status
-    assert "⏸️📄" in tree_str_with_status
+    # No tree formatting characters in content lines
+    assert not any(char in line for line in list_lines for char in ["└──", "├──", "│"])
 
-    # Check specific statuses: foo_bar done, d_foo working, others awaiting
-    for line in status_lines:
-        name = line.split()[-1]
-        if name == d_foo.name:
-            assert "✅" in line
-        elif name == foo_bar.name:
-            assert "🔄" in line
-        elif name in [foo.name, bar.name, baz.name]:
-            assert "⏸️" in line
 
-    # Test 3: Check that node names are still present with status indicators
-    for node in node_names:
-        node_present = any(node in line for line in status_lines)
-        assert node_present, (
-            f"Node {node} not found in the tree representation with status indicators"
-        )
+@pytest.mark.parametrize(
+    "mode",
+    [
+        pytest.param("tree", id="tree"),
+        pytest.param("list", id="list"),
+    ],
+)
+def test_dag_draw_status(sqla_sqlite_warehouse: Engine, mode: str) -> None:
+    """Test that status indicators render correctly in both draw modes."""
+    foo_tkit = source_factory(
+        name="foo", engine=sqla_sqlite_warehouse
+    ).write_to_location()
+    bar_tkit = source_factory(
+        name="bar", engine=sqla_sqlite_warehouse
+    ).write_to_location()
 
-    # Test 4: Drawing with skipped nodes
-    skipped_nodes = [foo.name, d_foo.name]
-    tree_str_with_skipped = dag.draw(
-        status={node: DAGNodeExecutionStatus.SKIPPED for node in skipped_nodes}
+    dag = TestkitDAG().dag
+
+    foo = dag.source(**foo_tkit.into_dag())
+    bar = dag.source(**bar_tkit.into_dag())
+    d_foo = foo.query().deduper(
+        name="d_foo", model_class=NaiveDeduper, model_settings={"unique_fields": []}
     )
-    skipped_lines = tree_str_with_skipped.strip().split("\n")[3:]
+    foo_bar = foo.query().linker(
+        bar.query(),
+        name="foo_bar",
+        model_class=DeterministicLinker,
+        model_settings={"comparisons": "l.field=r.field"},
+    )
 
-    # Check that skipped nodes have the skipped indicator
-    for line in skipped_lines:
-        name = line.split()[-1]
-        if any(name == skipped for skipped in skipped_nodes):
-            assert "⏭️" in line
-
-    # Test all status indicators together
-    tree_str_all_statuses = dag.draw(
+    draw_str = dag.draw(
+        mode=mode,
         status={
             foo_bar.name: DAGNodeExecutionStatus.DOING,
             d_foo.name: DAGNodeExecutionStatus.DONE,
             foo.name: DAGNodeExecutionStatus.SKIPPED,
-        }
+        },
     )
-    assert all(
-        indicator in tree_str_all_statuses for indicator in ["✅", "🔄", "⏸️", "⏭️"]
-    )
+    content_lines = draw_str.strip().split("\n")[3:]
 
-    # Test 5: Empty DAG
-    empty_dag = TestkitDAG().dag
-    assert empty_dag.draw() == "Empty DAG"
+    # All four indicators present (bar is awaiting)
+    assert "✅" in draw_str
+    assert "🔄" in draw_str
+    assert "⏸️" in draw_str
+    assert "⏭️" in draw_str
 
-    # Test 6: __str__ method
-    assert str(dag) == dag.draw()
+    # Indicators are directly adjacent to type indicators
+    assert "✅⚙️" in draw_str
+    assert "🔄⚙️" in draw_str
+    assert "⏸️📄" in draw_str
+    assert "⏭️📄" in draw_str
 
-    # Test 7: Multiple disconnected components
-    disconnected_dag = TestkitDAG().dag
-    qux_tkit = source_factory(name="qux", engine=sqla_sqlite_warehouse)
-    quux_tkit = source_factory(name="quux", engine=sqla_sqlite_warehouse)
-    _ = disconnected_dag.source(**qux_tkit.into_dag())
-    _ = disconnected_dag.source(**quux_tkit.into_dag())
-
-    tree_str = disconnected_dag.draw()
-    # Both apex nodes should be present
-    assert "qux" in tree_str
-    assert "quux" in tree_str
-    # Should have blank line between components
-    assert "\n\n" in tree_str
+    # Correct indicator per node
+    for line in content_lines:
+        if foo_bar.name in line:
+            assert "🔄" in line
+        elif d_foo.name in line:
+            assert "✅" in line
+        elif f" {foo.name}" in line:
+            assert "⏭️" in line
+        elif bar.name in line:
+            assert "⏸️" in line
 
 
 # Lookups

@@ -5,7 +5,7 @@ import tempfile
 from collections import deque
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Self, TypeAlias
+from typing import Any, Literal, Self, TypeAlias
 
 import polars as pl
 from platformdirs import user_cache_path
@@ -213,6 +213,17 @@ class DAG:
         self._run = run_id
 
     @property
+    def sequence(self) -> list[ResolutionName]:
+        """Return nodes in topological execution order.
+
+        Returns:
+            List of node names in the order they would be executed by run_and_sync.
+            Use as start/finish values to control partial execution.
+        """
+        deps_graph = {name: set(parents) for name, parents in self.graph.items()}
+        return self._topological_sort(deps=deps_graph)
+
+    @property
     def final_steps(self) -> list[Source | Model | Resolver]:
         """Returns all apex nodes in the DAG.
 
@@ -387,8 +398,16 @@ class DAG:
         """Create Query object."""
         return Query(*args, **kwargs, dag=self)
 
-    def draw(self, status: DAGExecutionStatus | None = None) -> str:
-        """Create a string representation of the DAG as a tree structure.
+    def draw(
+        self,
+        status: DAGExecutionStatus | None = None,
+        mode: Literal["tree", "list"] = "tree",
+    ) -> str:
+        """Create a string representation of the DAG.
+
+        In tree mode, nodes are shown in a dependency tree.
+
+        In list mode, nodes are shown in execution order as a numbered list.
 
         If `status` is provided, it will show the status of each node.
         The status indicators are:
@@ -406,6 +425,8 @@ class DAG:
 
         Args:
             status: Object describing the status of each node.
+            mode: "tree" renders the DAG as a tree structure (default).
+                "list" renders nodes in flat execution order.
 
         Returns:
             String representation of the DAG with status indicators.
@@ -414,9 +435,9 @@ class DAG:
         if not self.nodes:
             return "Empty DAG"
 
-        apex_nodes = self.final_steps
-        if not apex_nodes:
-            return "No apex nodes found (possible cycle in DAG)"
+        step_numbers: dict[str, int] = {
+            name: i + 1 for i, name in enumerate(self.sequence)
+        }
 
         def _get_node_indicator(name: str) -> str:
             """Determine the status indicator for a node."""
@@ -439,19 +460,43 @@ class DAG:
             return "📄"
 
         def _format_node(name: str) -> str:
-            """Format node display with status (if present) and type indicator."""
+            """Format node display with step number, status (if present) and type."""
             type_indicator = _get_node_type_indicator(name)
+            step = f"[{step_numbers[name]}]" if name in step_numbers else ""
             if status is None:
-                return f"{type_indicator} {name}"
+                return f"{type_indicator} {name} {step}"
 
             indicator = _get_node_indicator(name)
-            return f"{indicator}{type_indicator} {name}"
+            return f"{indicator}{type_indicator} {name} {step}"
 
-        # Header with collection and run info
-        head_collection: str = f"Collection: {self.name}"
-        head_run: str = f"└── Run: {self._run or '⛓️‍💥 Disconnected'}"
+        header: list[str] = [
+            f"Collection: {self.name}",
+            f"└── Run: {self._run or '⛓️‍💥 Disconnected'}",
+            "",
+        ]
 
-        result: list[str] = [head_collection, head_run, ""]
+        # List mode
+
+        if mode == "list":
+            lines: list[str] = header.copy()
+            for name in self.sequence:
+                step = step_numbers[name]
+                type_indicator = _get_node_type_indicator(name)
+                if status is None:
+                    lines.append(f"{step}. {type_indicator} {name}")
+                else:
+                    lines.append(
+                        f"{step}. {_get_node_indicator(name)}{type_indicator} {name}"
+                    )
+            return "\n".join(lines)
+
+        # Tree mode
+
+        apex_nodes = self.final_steps
+        if not apex_nodes:
+            return "No apex nodes found (possible cycle in DAG)"
+
+        result: list[str] = header.copy()
 
         def format_children(
             node: str, prefix: str = "", ancestors: set[str] | None = None
@@ -596,9 +641,7 @@ class DAG:
         if batch_size is None:
             batch_size = settings.batch_size
 
-        # Determine execution order from structural parent dependencies
-        deps_graph = {name: set(parents) for name, parents in self.graph.items()}
-        sequence = self._topological_sort(deps=deps_graph)
+        sequence: list[ResolutionName] = self.sequence
 
         # Identify skipped nodes
         skipped_nodes = []
