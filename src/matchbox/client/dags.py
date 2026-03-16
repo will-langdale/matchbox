@@ -130,7 +130,7 @@ class DAG:
             for input_node in step.inputs:
                 self._check_dag(input_node.dag)
 
-        self._check_step(step, check_parents=True, check_dependencies=False)
+        self._check_step(step, check_parents=False, check_dependencies=True)
 
         self.graph[step.name] = [parent for parent in step.config.parents]
 
