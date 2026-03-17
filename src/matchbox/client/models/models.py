@@ -242,7 +242,7 @@ class Model(Step):
         left_df = (
             left_data
             if left_data is not None
-            else self.left_query.data(get_leaf_ids=(not low_memory))
+            else self.left_query.data(cache_leaf_ids=(not low_memory))
         )
         right_df = None
 
@@ -251,7 +251,7 @@ class Model(Step):
             right_df = (
                 right_data
                 if right_data is not None
-                else self.right_query.data(get_leaf_ids=(not low_memory))
+                else self.right_query.data(cache_leaf_ids=(not low_memory))
             )
 
         logger.info("Running model logic", prefix=log_prefix)

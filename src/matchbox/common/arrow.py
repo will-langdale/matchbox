@@ -85,7 +85,7 @@ def table_to_buffer(table: pa.Table) -> BytesIO:
     return sink
 
 
-def check_schema(expected: Schema, actual: Schema) -> None:
+def check_schema_subset(expected: Schema, actual: Schema) -> None:
     """Check presence of Arrow fields, ignoring field order, extras and metadata.
 
     Args:

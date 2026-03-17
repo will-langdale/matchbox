@@ -12,7 +12,7 @@ from matchbox.client.queries import Query
 from matchbox.client.resolvers.base import ResolverMethod, ResolverSettings
 from matchbox.client.resolvers.components import Components
 from matchbox.client.steps import Step, post_run
-from matchbox.common.arrow import SCHEMA_CLUSTERS, check_schema
+from matchbox.common.arrow import SCHEMA_CLUSTERS, check_schema_subset
 from matchbox.common.dtos import (
     Resolution,
     ResolutionName,
@@ -188,7 +188,7 @@ class Resolver(Step):
     @post_run
     def _fingerprint(self) -> bytes:
         """Compute resolver fingerprint from semantic cluster membership."""
-        check_schema(
+        check_schema_subset(
             expected=self._local_data_schema, actual=self._local_data.to_arrow().schema
         )
         return hash_clusters(self._local_data.to_arrow())

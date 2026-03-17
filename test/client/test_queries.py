@@ -465,7 +465,7 @@ def test_query_leaf_ids(
     )
 
     query = resolver.query(foo_source, bar_source, combine_type=combine_type)
-    data: pl.DataFrame = query.data(get_leaf_ids=True)
+    data: pl.DataFrame = query.data(cache_leaf_ids=True)
     assert set(data.columns) == {"foo_col", "bar_col", "id"}
 
     assert_frame_equal(
