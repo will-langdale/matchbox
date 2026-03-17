@@ -527,7 +527,7 @@ def probabilities_to_results_entities(
     probabilities: pl.DataFrame,
     left_clusters: tuple[ClusterEntity, ...],
     right_clusters: tuple[ClusterEntity, ...] | None = None,
-    threshold: float | int = 0,
+    threshold: float = 0.0,
 ) -> tuple[ClusterEntity, ...]:
     """Convert probabilities to ClusterEntity objects based on a threshold."""
     left_lookup = {entity.id: entity for entity in left_clusters}
@@ -537,10 +537,6 @@ def probabilities_to_results_entities(
         right_lookup = left_lookup
 
     djs = DisjointSet[ClusterEntity]()
-
-    # Validate threshold
-    if isinstance(threshold, float):
-        threshold = int(threshold * 100)
 
     # Add ALL entities to the disjoint set
     for entity in left_clusters:

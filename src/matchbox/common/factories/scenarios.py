@@ -730,7 +730,7 @@ def create_alt_dedupe_scenario(
         assert len(model_testkit1.probabilities) > 0
         assert_frame_equal(model_testkit1.probabilities, model_testkit2.probabilities)
 
-        for model, threshold in ((model_testkit1, 50), (model_testkit2, 75)):
+        for model, threshold in ((model_testkit1, 0.5), (model_testkit2, 0.75)):
             # Add model to backend and DAG
             backend.create_resolution(
                 path=model.resolution_path,
@@ -747,7 +747,7 @@ def create_alt_dedupe_scenario(
                 name=f"resolver_{model.name}",
                 inputs=[model],
                 true_entities=linked.true_entities,
-                thresholds={model.name: threshold / 100},
+                thresholds={model.name: threshold},
             ).fake_run()
             backend.create_resolution(
                 resolution=resolver_testkit.resolver.to_resolution(),

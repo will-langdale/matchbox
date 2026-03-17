@@ -163,7 +163,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 {
                     "left_id": [1, 2],
                     "right_id": [2, 3],
-                    "probability": [90, 85],
+                    "probability": [0.9, 0.85],
                 }
             ),
             (
@@ -172,7 +172,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 make_cluster_entity(3, "test", ["a3"]),
             ),
             None,
-            80,
+            0.8,
             1,  # One merged entity containing all three records
             id="basic_dedupe_chain",
         ),
@@ -181,7 +181,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 {
                     "left_id": [1],
                     "right_id": [4],
-                    "probability": [95],
+                    "probability": [0.95],
                 }
             ),
             (make_cluster_entity(1, "left", ["a1"]),),
@@ -195,7 +195,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 {
                     "left_id": [1, 2],
                     "right_id": [2, 3],
-                    "probability": [75, 70],
+                    "probability": [0.75, 0.7],
                 }
             ),
             (
@@ -204,7 +204,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 make_cluster_entity(3, "test", ["a3"]),
             ),
             None,
-            80,
+            0.8,
             3,  # No merging due to threshold
             id="threshold_prevents_merge",
         ),
@@ -221,7 +221,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 make_cluster_entity(2, "test", ["a2"]),
             ),
             None,
-            80,
+            0.8,
             2,  # No merging with empty probabilities
             id="empty_probabilities",
         ),

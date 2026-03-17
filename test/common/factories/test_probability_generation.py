@@ -171,8 +171,8 @@ def test_generate_dummy_probabilities(parameters: dict[str, Any]) -> None:
     else:
         assert set(p_left) | set(p_right) <= set(left_values)
 
-    assert probabilities["probability"].max() / 100 <= parameters["prob_range"][1]
-    assert probabilities["probability"].min() / 100 >= parameters["prob_range"][0]
+    assert probabilities["probability"].max() <= parameters["prob_range"][1]
+    assert probabilities["probability"].min() >= parameters["prob_range"][0]
 
     assert len(probabilities) == total_rows
 
@@ -255,7 +255,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
             None,  # Deduplication case
             frozenset([make_source_entity("test", ["a1", "a2"], "a")]),
             (0.8, 1.0),
-            {"edge_count": 1, "prob_range": (80, 100)},
+            {"edge_count": 1, "prob_range": (0.8, 1.0)},
             id="basic_dedupe",
         ),
         pytest.param(
@@ -268,7 +268,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
                 ]
             ),
             (0.8, 1.0),
-            {"edge_count": 0, "prob_range": (80, 100)},
+            {"edge_count": 0, "prob_range": (0.8, 1.0)},
             id="basic_link_no_match",
         ),
         pytest.param(
@@ -276,7 +276,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
             frozenset([make_cluster_entity(2, "test", ["a2"])]),
             frozenset([make_source_entity("test", ["a1", "a2"], "a")]),
             (0.8, 1.0),
-            {"edge_count": 1, "prob_range": (80, 100)},
+            {"edge_count": 1, "prob_range": (0.8, 1.0)},
             id="successful_link",
         ),
         pytest.param(
@@ -292,7 +292,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
                 [make_source_entity("test", ["a1", "a2", "a3", "a4"], "entity_a")]
             ),
             (0.8, 1.0),
-            {"edge_count": 3, "prob_range": (80, 100)},
+            {"edge_count": 3, "prob_range": (0.8, 1.0)},
             id="overlapping_dedupe",
         ),
         pytest.param(
@@ -315,7 +315,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
                 ]
             ),
             (0.8, 1.0),
-            {"edge_count": 2, "prob_range": (80, 100)},
+            {"edge_count": 2, "prob_range": (0.8, 1.0)},
             id="multi_component_link",
         ),
         pytest.param(
@@ -330,7 +330,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
             None,
             frozenset([make_source_entity("test", ["a1", "a2"], "a")]),
             (0.8, 1.0),
-            {"edge_count": 1, "prob_range": (80, 100)},
+            {"edge_count": 1, "prob_range": (0.8, 1.0)},
             id="partial_source_coverage",
         ),
         pytest.param(
@@ -338,7 +338,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
             frozenset(),
             frozenset(),
             (0.8, 1.0),
-            {"edge_count": 0, "prob_range": (80, 100)},
+            {"edge_count": 0, "prob_range": (0.8, 1.0)},
             id="empty_sets",
         ),
         pytest.param(
@@ -351,7 +351,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
             None,
             frozenset([make_source_entity("test", ["a1", "a2"], "a")]),
             (0.5, 0.7),
-            {"edge_count": 1, "prob_range": (50, 70)},
+            {"edge_count": 1, "prob_range": (0.5, 0.7)},
             id="different_prob_range",
         ),
         pytest.param(
@@ -370,7 +370,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
                 ]
             ),
             (0.8, 1.0),
-            {"edge_count": 1, "prob_range": (80, 100)},
+            {"edge_count": 1, "prob_range": (0.8, 1.0)},
             id="mixed_merged_unmerged",
         ),
         pytest.param(
@@ -390,7 +390,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
                 ]
             ),
             (0.8, 1.0),
-            {"edge_count": 0, "prob_range": (80, 100)},
+            {"edge_count": 0, "prob_range": (0.8, 1.0)},
             id="multi_source_entity",
         ),
     ],
@@ -523,7 +523,7 @@ def test_disjoint_set_recovery() -> None:
     # Use DisjointSet to cluster based on high probabilities
     ds = DisjointSet[int]()
     for row in table.to_dicts():
-        if row["probability"] >= 90:  # High confidence matches
+        if row["probability"] >= 0.9:  # High confidence matches
             ds.union(row["left_id"], row["right_id"])
 
     # Get resulting clusters
@@ -603,7 +603,7 @@ def test_complex_entity_recovery() -> None:
     # Use DisjointSet to cluster
     ds = DisjointSet[int]()
     for row in table.to_dicts():
-        if row["probability"] >= 90:
+        if row["probability"] >= 0.9:
             ds.union(row["left_id"], row["right_id"])
 
     # Should recover as a single component

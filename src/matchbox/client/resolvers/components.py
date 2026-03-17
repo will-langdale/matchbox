@@ -9,7 +9,7 @@ from pydantic import Field
 from matchbox.client.resolvers.base import ResolverMethod, ResolverSettings
 from matchbox.common.arrow import SCHEMA_CLUSTERS
 from matchbox.common.dtos import ModelResolutionName, ResolverType
-from matchbox.common.transform import DisjointSet, threshold_float_to_int
+from matchbox.common.transform import DisjointSet
 
 
 class ComponentsSettings(ResolverSettings):
@@ -41,7 +41,7 @@ class Components(ResolverMethod):
             if edges.height == 0:
                 continue
 
-            threshold = threshold_float_to_int(self.settings.thresholds[model_name])
+            threshold = self.settings.thresholds[model_name]
             filtered_edges = edges.filter(pl.col("probability") >= threshold)
 
             for left_id, right_id in filtered_edges.select(

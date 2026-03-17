@@ -4,7 +4,7 @@ from psycopg.errors import LockNotAvailable
 from pyarrow import Table
 from sqlalchemy import CursorResult, delete, select, update
 
-from matchbox.common.arrow import SCHEMA_CLUSTERS
+from matchbox.common.arrow import SCHEMA_CLUSTERS, SCHEMA_MODEL_EDGES
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import (
     Collection,
@@ -410,7 +410,8 @@ class MatchboxPostgresCollectionsMixin:
 
         with MBDB.get_adbc_connection() as conn:
             stmt: str = compile_sql(results_query)
-            return sql_to_df(stmt=stmt, connection=conn, return_type="arrow")
+            res: Table = sql_to_df(stmt=stmt, connection=conn, return_type="arrow")
+            return res.cast(SCHEMA_MODEL_EDGES)
 
     def get_resolver_data(self, path: ResolverResolutionPath) -> Table:  # noqa: D102
         with MBDB.get_session() as session:
@@ -428,6 +429,6 @@ class MatchboxPostgresCollectionsMixin:
             )
 
         with MBDB.get_adbc_connection() as conn:
-            stmt = compile_sql(ordered_query)
-            res = sql_to_df(stmt=stmt, connection=conn, return_type="arrow")
+            stmt: str = compile_sql(ordered_query)
+            res: Table = sql_to_df(stmt=stmt, connection=conn, return_type="arrow")
             return res.cast(SCHEMA_CLUSTERS)

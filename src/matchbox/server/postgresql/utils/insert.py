@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import (
     ARRAY,
     BIGINT,
     BYTEA,
-    SMALLINT,
+    REAL,
     TEXT,
     insert,
 )
@@ -196,7 +196,7 @@ def insert_model_edges(
             column_types={
                 "left_id": BIGINT(),
                 "right_id": BIGINT(),
-                "probability": SMALLINT(),
+                "probability": REAL(),
             },
             data=results,
             max_chunksize=batch_size,

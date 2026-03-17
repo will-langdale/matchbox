@@ -8,7 +8,7 @@ from sqlalchemy import (
     BIGINT,
     BOOLEAN,
     INTEGER,
-    SMALLINT,
+    REAL,
     CheckConstraint,
     DateTime,
     Enum,
@@ -1244,7 +1244,7 @@ class ModelEdges(CountMixin, MBDB.MatchboxBase):
     right_id: Mapped[int] = mapped_column(
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
     )
-    probability: Mapped[int] = mapped_column(SMALLINT, nullable=False)
+    probability: Mapped[float] = mapped_column(REAL, nullable=False)
 
     # Relationships
     proposed_by: Mapped["Resolutions"] = relationship(back_populates="model_edges")
@@ -1252,7 +1252,10 @@ class ModelEdges(CountMixin, MBDB.MatchboxBase):
     # Constraints
     __table_args__ = (
         Index("ix_model_edges_resolution", "resolution_id"),
-        CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
+        CheckConstraint(
+            "probability >= 0.0 AND probability <= 1.0",
+            name="valid_probability",
+        ),
         UniqueConstraint("resolution_id", "left_id", "right_id"),
     )
 

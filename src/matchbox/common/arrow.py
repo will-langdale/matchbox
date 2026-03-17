@@ -28,7 +28,7 @@ SCHEMA_MODEL_EDGES: Final[pa.Schema] = pa.schema(
     [
         ("left_id", pa.uint64()),
         ("right_id", pa.uint64()),
-        ("probability", pa.uint8()),
+        ("probability", pa.float32()),
     ]
 )
 """Data transfer schema for the results of a deduplication or linking process."""

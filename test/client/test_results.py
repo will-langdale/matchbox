@@ -14,11 +14,11 @@ class TestModelProbabilities:
     """Test model probability normalisation."""
 
     def test_duplicate_removal(self) -> None:
-        """Removes redundant pairs, keeping lowest probability."""
+        """Removes redundant pairs, keeping highest probability."""
         simple_duplicate = pl.DataFrame(
             [
-                {"left_id": 4, "right_id": 5, "probability": 50},
-                {"left_id": 4, "right_id": 5, "probability": 100},
+                {"left_id": 4, "right_id": 5, "probability": 0.5},
+                {"left_id": 4, "right_id": 5, "probability": 1.0},
             ]
         )
 
@@ -32,8 +32,8 @@ class TestModelProbabilities:
 
         symmetric_duplicate = pl.DataFrame(
             [
-                {"left_id": 5, "right_id": 4, "probability": 50},
-                {"left_id": 4, "right_id": 5, "probability": 100},
+                {"left_id": 5, "right_id": 4, "probability": 0.5},
+                {"left_id": 4, "right_id": 5, "probability": 1.0},
             ]
         )
 
@@ -47,8 +47,8 @@ class TestModelProbabilities:
 
         no_duplicates = pl.DataFrame(
             [
-                {"left_id": 4, "right_id": 6, "probability": 50},
-                {"left_id": 4, "right_id": 5, "probability": 100},
+                {"left_id": 4, "right_id": 6, "probability": 0.5},
+                {"left_id": 4, "right_id": 5, "probability": 1.0},
             ]
         )
 

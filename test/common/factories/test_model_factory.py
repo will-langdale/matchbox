@@ -347,7 +347,7 @@ def test_model_factory_basic_creation(
     assert len(model.entities) == expected_checks["entity_count"]
 
     # Probability checks
-    probs = model.probabilities["probability"].to_numpy() / 100
+    probs = model.probabilities["probability"].to_numpy()
     assert all(p >= expected_checks["prob_min"] for p in probs)
     assert all(p <= expected_checks["prob_max"] for p in probs)
 
@@ -445,7 +445,7 @@ def test_model_factory_with_sources(source_config: dict, expected_checks: dict) 
     assert (model.right_clusters is not None) == expected_checks["has_right"]
 
     # Verify probabilities
-    probs = model.probabilities["probability"].to_numpy() / 100
+    probs = model.probabilities["probability"].to_numpy()
     assert all(p >= expected_checks["prob_min"] for p in probs)
     assert all(p <= expected_checks["prob_max"] for p in probs)
 
@@ -598,7 +598,7 @@ def test_query_to_model_factory_creation(
     # Verify probabilities
     assert model.probabilities.schema == pl.Schema(SCHEMA_MODEL_EDGES)
     if len(model.probabilities) > 0:
-        probs = model.probabilities["probability"].to_numpy() / 100
+        probs = model.probabilities["probability"].to_numpy()
         assert all(p >= expected_checks["prob_min"] for p in probs)
         assert all(p <= expected_checks["prob_max"] for p in probs)
 
