@@ -104,7 +104,7 @@ class SourceTestkit(BaseModel):
         default=None,
     )
     data: pa.Table = Field(
-        description="The generated data, corresponding to the output of queries."
+        description="Data corresponding to the output of queries, without leaf data."
     )
     data_hashes: pa.Table = Field(description="A PyArrow table of hashes for the data.")
     entities: tuple[ClusterEntity, ...] = Field(

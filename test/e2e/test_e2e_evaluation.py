@@ -117,7 +117,7 @@ class TestE2EModelEvaluation:
                 "unique_fields": [source_a_dag1.f("registration_id")],
             },
         )
-        final_model_1.resolver(
+        self.resolver = final_model_1.resolver(
             name=f"resolver_{final_step_1_name}",
             resolver_class=Components,
             resolver_settings=ComponentsSettings(thresholds={final_model_1.name: 0.0}),
@@ -228,6 +228,9 @@ class TestE2EModelEvaluation:
         assert len(EvalData("eval_session1").judgements)
         assert not len(EvalData("mispelled").judgements)
 
+        p, r = EvalData().precision_recall(self.resolver.results_eval)
+        assert p == r == 1.0  # Only one cluster evaluated, and as in DAG
+
     @pytest.mark.asyncio
     async def test_evaluation_workflow_local(self) -> None:
         """Test end-to-end data pipeline: DAG → samples → judgement → model comparison.
@@ -261,3 +264,6 @@ class TestE2EModelEvaluation:
         # Can filter judgements by tag
         assert len(EvalData("eval_session1").judgements)
         assert not len(EvalData("mispelled").judgements)
+
+        p, r = EvalData().precision_recall(self.resolver.results_eval)
+        assert p == r == 1.0  # Only one cluster evaluated, and as in DAG

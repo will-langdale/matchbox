@@ -670,6 +670,8 @@ class DAG:
             try:
                 if isinstance(node, Source):
                     node.run(batch_size=batch_size)
+                elif isinstance(node, Model):
+                    node.run(low_memory=low_memory)
                 else:
                     node.run()
                 node.sync()

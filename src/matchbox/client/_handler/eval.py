@@ -12,7 +12,7 @@ from matchbox.common.arrow import (
     SCHEMA_CLUSTER_EXPANSION,
     SCHEMA_JUDGEMENTS,
     JudgementsZipFilenames,
-    check_schema,
+    check_schema_subset,
 )
 from matchbox.common.dtos import ResolverStepPath
 from matchbox.common.eval import Judgement
@@ -60,7 +60,7 @@ def download_eval_data(tag: str | None = None) -> tuple[Table, Table]:
 
     logger.debug("Finished retrieving judgements.")
 
-    check_schema(SCHEMA_JUDGEMENTS, judgements.schema)
-    check_schema(SCHEMA_CLUSTER_EXPANSION, expansion.schema)
+    check_schema_subset(SCHEMA_JUDGEMENTS, judgements.schema)
+    check_schema_subset(SCHEMA_CLUSTER_EXPANSION, expansion.schema)
 
     return pl.from_arrow(judgements), pl.from_arrow(expansion)

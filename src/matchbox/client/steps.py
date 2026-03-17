@@ -10,7 +10,7 @@ import polars as pl
 import pyarrow as pa
 
 from matchbox.client import _handler
-from matchbox.common.arrow import check_schema
+from matchbox.common.arrow import check_schema_subset
 from matchbox.common.dtos import (
     SourceStepName,
     Step,
@@ -152,7 +152,7 @@ class StepABC(ABC):
     @post_run
     def _fingerprint(self) -> bytes:
         """Compute a content hash of the local data for fingerprinting."""
-        check_schema(
+        check_schema_subset(
             expected=self._local_data_schema, actual=self._local_data.to_arrow().schema
         )
         return hash_arrow_table(self._local_data.to_arrow())
@@ -167,7 +167,7 @@ class StepABC(ABC):
     def download(self) -> pl.DataFrame:
         """Fetch remote data for this step and store it locally."""
         table = _handler.get_data(path=self.step_path)
-        check_schema(expected=self._local_data_schema, actual=table.schema)
+        check_schema_subset(expected=self._local_data_schema, actual=table.schema)
         self._local_data = pl.from_arrow(table)
         return self._local_data
 

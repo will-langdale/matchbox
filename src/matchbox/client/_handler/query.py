@@ -7,7 +7,7 @@ from matchbox.client._handler.main import CLIENT, http_retry, url_params
 from matchbox.common.arrow import (
     SCHEMA_QUERY,
     SCHEMA_QUERY_WITH_LEAVES,
-    check_schema,
+    check_schema_subset,
 )
 from matchbox.common.dtos import (
     Match,
@@ -48,7 +48,7 @@ def query(
 
     expected_schema = SCHEMA_QUERY_WITH_LEAVES if return_leaf_id else SCHEMA_QUERY
 
-    check_schema(expected_schema, table.schema)
+    check_schema_subset(expected_schema, table.schema)
 
     if table.num_rows == 0:
         raise MatchboxEmptyServerResponse(operation="query")
