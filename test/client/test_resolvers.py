@@ -1,6 +1,8 @@
 """Tests for resolver node behaviour and public client API contracts."""
 
+import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 from sqlalchemy import Engine
 
 from matchbox.client.models.dedupers import NaiveDeduper
@@ -8,6 +10,7 @@ from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.client.resolvers import Components, ComponentsSettings
 from matchbox.common.exceptions import MatchboxResolutionTypeError
 from matchbox.common.factories.dags import TestkitDAG
+from matchbox.common.factories.resolvers import resolver_factory
 from matchbox.common.factories.sources import source_factory
 
 
@@ -140,3 +143,39 @@ def test_resolver_run_requires_materialised_inputs(
 
     with pytest.raises(ValueError, match="has no local results"):
         resolver.run()
+
+
+def test_resolver_eval_results_produced() -> None:
+    """Results ready for evaluation can be produced."""
+    # Set up dummy resolver, with fake results
+    resolver = resolver_factory().resolver
+    model = resolver.inputs[0]
+    resolver.results = pl.DataFrame(
+        [{"parent_id": 345, "child_id": 34}, {"parent_id": 345, "child_id": 5}]
+    )
+
+    # No leaf data means we can't get results for eval
+    with pytest.raises(RuntimeError):
+        _ = resolver.results_eval
+
+    # Now, add fake leaf data
+    model.left_query.leaf_id = pl.DataFrame(
+        [
+            {"id": 12, "leaf_id": 1},
+            {"id": 12, "leaf_id": 2},
+            {"id": 34, "leaf_id": 3},
+            {"id": 34, "leaf_id": 4},
+            {"id": 5, "leaf_id": 5},
+        ]
+    )
+
+    expected_results_eval = pl.DataFrame(
+        [
+            {"root": 345, "leaf": 3},
+            {"root": 345, "leaf": 4},
+            {"root": 345, "leaf": 5},
+        ]
+    )
+    assert_frame_equal(
+        resolver.results_eval, expected_results_eval, check_row_order=False
+    )
