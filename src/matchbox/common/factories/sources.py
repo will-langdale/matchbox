@@ -229,7 +229,7 @@ class LinkedSourcesTestkit(BaseModel):
         sources: list[SourceResolutionName],
         left_clusters: tuple[ClusterEntity, ...],
         right_clusters: tuple[ClusterEntity, ...] | None = None,
-        threshold: int | float = 0,
+        threshold: float = 0.0,
     ) -> tuple[bool, dict]:
         """Diff model edge outputs with the true SourceEntities.
 

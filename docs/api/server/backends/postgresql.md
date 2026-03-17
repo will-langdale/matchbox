@@ -77,14 +77,14 @@ erDiagram
     Probabilities {
         bigint resolution_id PK,FK
         bigint cluster_id PK,FK
-        smallint probability
+        real probability
     }
     Results {
         bigint result_id PK
         bigint resolution_id FK
         bigint left_id FK
         bigint right_id FK
-        smallint probability
+        real probability
     }
     Users {
         bigint user_id PK

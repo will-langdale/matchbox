@@ -334,10 +334,6 @@ def generate_dummy_probabilities(
     # Create seeded random number generator
     rng = np.random.default_rng(seed=seed)
 
-    # Convert probability range to integers (60-80 for 0.60-0.80)
-    prob_min = int(prob_range[0] * 100)
-    prob_max = int(prob_range[1] * 100)
-
     # Split values into completely separate groups for each component
     left_components = np.array_split(np.array(left_values), num_components)
     right_components = np.array_split(np.array(right_values), num_components)
@@ -418,7 +414,9 @@ def generate_dummy_probabilities(
                 e for i, e in enumerate(all_possible_edges) if i in extra_edges_idx
             ]
             component_edges += extra_edges
-        random_probs = rng.integers(prob_min, prob_max + 1, size=len(component_edges))
+        random_probs = rng.uniform(
+            prob_range[0], prob_range[1], size=len(component_edges)
+        ).astype(np.float32)
 
         component_edges = [
             (le, ri, pr)
@@ -432,7 +430,11 @@ def generate_dummy_probabilities(
 
     return pl.DataFrame(
         {"left_id": lefts, "right_id": rights, "probability": probs},
-        schema={"left_id": pl.UInt64, "right_id": pl.UInt64, "probability": pl.UInt8},
+        schema={
+            "left_id": pl.UInt64,
+            "right_id": pl.UInt64,
+            "probability": pl.Float32,
+        },
     )
 
 
@@ -510,10 +512,6 @@ def generate_entity_probabilities(
     edges = []
     rng = np.random.default_rng(seed=seed)
 
-    # Convert probability range to integers (80-100 for 0.80-1.00)
-    prob_min = int(prob_range[0] * 100)
-    prob_max = int(prob_range[1] * 100)
-
     for left_group, right_group in source_groups.values():
         # Skip empty groups
         if not left_group or not right_group:
@@ -531,7 +529,7 @@ def generate_entity_probabilities(
                     continue
 
                 # Generate random probability in range
-                prob = rng.integers(prob_min, prob_max + 1)
+                prob = np.float32(rng.uniform(prob_range[0], prob_range[1]))
                 edges.append((left_entity.id, right_entity.id, prob))
 
     # If no edges were generated, return empty table with correct schema

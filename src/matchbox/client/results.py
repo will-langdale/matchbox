@@ -29,8 +29,28 @@ def normalise_model_probabilities(probabilities: pl.DataFrame) -> pl.DataFrame:
     if probabilities.height == 0:
         probabilities = pl.DataFrame(schema=pl.Schema(SCHEMA_MODEL_EDGES))
 
+    probability_type = probabilities["probability"].dtype
+    if not probability_type.is_numeric():
+        raise ValueError(
+            "Probability column must contain numeric values in the range [0.0, 1.0]."
+        )
+
+    normalised_probabilities = probabilities.with_columns(
+        pl.col("probability").cast(pl.Float32)
+    )
+    invalid_probabilities = normalised_probabilities.filter(
+        pl.col("probability").is_null()
+        | pl.col("probability").is_nan()
+        | (pl.col("probability") < 0.0)
+        | (pl.col("probability") > 1.0)
+    )
+    if invalid_probabilities.height:
+        min_prob = normalised_probabilities["probability"].min()
+        max_prob = normalised_probabilities["probability"].max()
+        raise ValueError(f"Probability range misconfigured: [{min_prob}, {max_prob}]")
+
     unique_probabilities = (
-        probabilities.with_columns(
+        normalised_probabilities.with_columns(
             pl.concat_list(
                 [pl.col("left_id").cast(pl.Utf8), pl.col("right_id").cast(pl.Utf8)]
             )
@@ -45,24 +65,6 @@ def normalise_model_probabilities(probabilities: pl.DataFrame) -> pl.DataFrame:
     ).drop("sorted_ids")
     if len(probabilities) != len(unique_probabilities):
         logger.warning("Duplicate pairs! Keeping only pairs with highest probability.")
-
-    probability_type = unique_probabilities["probability"].dtype
-    if probability_type.is_float() or probability_type.is_decimal():
-        probability_uint8 = pl.Series(
-            unique_probabilities.select(
-                pl.col("probability").mul(100).round(0).cast(pl.UInt8)
-            )
-        )
-
-        max_prob = probability_uint8.max()
-        if max_prob is not None and max_prob > 100:
-            p_max = max_prob
-            p_min = probability_uint8.min()
-            raise ValueError(f"Probability range misconfigured: [{p_min}, {p_max}]")
-
-        unique_probabilities = unique_probabilities.replace_column(
-            unique_probabilities.get_column_index("probability"), probability_uint8
-        )
 
     return unique_probabilities.cast(pl.Schema(SCHEMA_MODEL_EDGES))
 

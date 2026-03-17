@@ -27,10 +27,7 @@ from matchbox.common.dtos import (
 from matchbox.common.factories.entities import ClusterEntity, SourceEntity
 from matchbox.common.factories.models import ModelTestkit, model_factory
 from matchbox.common.factories.sources import linked_sources_factory
-from matchbox.common.transform import (
-    DisjointSet,
-    threshold_float_to_int,
-)
+from matchbox.common.transform import DisjointSet
 
 
 class MockResolverSettings(ResolverSettings):
@@ -58,7 +55,7 @@ def _connected_components_from_edges(
         if edges.height == 0:
             continue
 
-        threshold = threshold_float_to_int(thresholds[model_name])
+        threshold = thresholds[model_name]
         filtered_edges = edges.filter(pl.col("probability") >= threshold)
         for left_id, right_id in filtered_edges.select(
             "left_id", "right_id"

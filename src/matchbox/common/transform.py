@@ -67,19 +67,3 @@ class DisjointSet(Generic[T]):
 def hash_cluster_leaves(leaves: list[bytes]) -> bytes:
     """Canonical method to convert list of cluster IDs to their combined hash."""
     return HASH_FUNC(b"|".join(leaf for leaf in sorted(leaves))).digest()
-
-
-def threshold_float_to_int(threshold: float) -> int:
-    """Convert user input float truth values to int."""
-    if isinstance(threshold, float) and 0.0 <= threshold <= 1.0:
-        return round(threshold * 100)
-    else:
-        raise ValueError(f"Truth value {threshold} not a valid probability")
-
-
-def threshold_int_to_float(threshold: int) -> float:
-    """Convert backend int truth values to float."""
-    if isinstance(threshold, int) and 0 <= threshold <= 100:
-        return float(threshold / 100)
-    else:
-        raise ValueError(f"Truth value {threshold} not valid")
