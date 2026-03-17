@@ -14,8 +14,6 @@ from matchbox.common.dtos import (
 )
 from matchbox.common.eval import Judgement, precision_recall
 from matchbox.common.exceptions import (
-    MatchboxResolutionNotFoundError,
-    MatchboxResolutionNotQueriable,
     MatchboxSourceTableError,
 )
 
@@ -243,9 +241,6 @@ def get_samples(
     return results_by_root
 
 
-# TODO: overhaul this to work with the new resolver system
-# Evaluation needs a resolver and list of models, so should be an .eval method
-# on a resolver that takes a list of alternative configs to run point metrics on
 class EvalData:
     """Object which caches evaluation data to measure model performance."""
 
@@ -254,20 +249,15 @@ class EvalData:
         self.tag = tag
         self.judgements, self.expansion = _handler.download_eval_data(tag)
 
-    def precision_recall(self, resolver: Resolver) -> tuple[float, float]:
-        """Compute precision and recall for a synced resolver."""
-        try:
-            resolved = resolver.dag.get_matches(node=resolver.name)
-        except (MatchboxResolutionNotFoundError, MatchboxResolutionNotQueriable) as exc:
-            raise ValueError(
-                f"Resolver '{resolver.name}' must be run and synced before scoring."
-            ) from exc
+    def precision_recall(self, results_eval: pl.DataFrame) -> tuple[float, float]:
+        """Compute precision and recall for cluster data.
 
-        root_leaf = (
-            resolved.as_dump()
-            .select(["id", "leaf_id"])
-            .rename({"id": "root", "leaf_id": "leaf"})
-            .unique()
-        )
-        values = precision_recall([root_leaf], self.judgements, self.expansion)[0]
+        Args:
+            results_eval: a dataframe with id and leaf_id columns, where leaf_id must
+                correspond to server leaf IDs.
+
+        Returns:
+            Precision and recall values as a tuple
+        """
+        values = precision_recall([results_eval], self.judgements, self.expansion)[0]
         return values[0], values[1]

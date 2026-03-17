@@ -24,7 +24,6 @@ from matchbox.common.arrow import (
 )
 from matchbox.common.dtos import Collection, Resolution, ResolutionType, Run
 from matchbox.common.exceptions import (
-    MatchboxResolutionNotQueriable,
     MatchboxSourceTableError,
 )
 from matchbox.common.factories.dags import TestkitDAG
@@ -353,41 +352,9 @@ def test_evaldata_precision_recall_from_resolver(
 
     mock_download_eval_data.return_value = (judgements, expansion)
 
-    resolved = Mock()
-    resolved.as_dump.return_value = pl.DataFrame({"id": [1, 1], "leaf_id": [1, 2]})
+    dummy_results = pl.DataFrame({"root": [1, 1], "leaf": [1, 2]})
 
-    resolver = Mock()
-    resolver.name = "resolver"
-    resolver.dag.get_matches.return_value = resolved
+    precision, recall = EvalData().precision_recall(results_eval=dummy_results)
 
-    precision, recall = EvalData().precision_recall(resolver=resolver)
-
-    resolver.dag.get_matches.assert_called_once_with(node="resolver")
     assert precision == 1.0
     assert recall == 1.0
-
-
-@patch("matchbox.client.eval.samples._handler.download_eval_data")
-def test_evaldata_precision_recall_requires_synced_resolver(
-    mock_download_eval_data: Mock,
-) -> None:
-    """EvalData emits a clear error when resolver cannot be queried."""
-    judgements = pl.DataFrame(
-        [{"user_name": "alice", "shown": 1, "endorsed": 1}],
-        schema={"user_name": pl.String, "shown": pl.UInt64, "endorsed": pl.UInt64},
-    )
-    expansion = pl.DataFrame(
-        [{"root": 1, "leaves": [1, 2]}],
-        schema={"root": pl.UInt64, "leaves": pl.List(pl.UInt64)},
-    )
-
-    mock_download_eval_data.return_value = (judgements, expansion)
-
-    resolver = Mock()
-    resolver.name = "resolver"
-    resolver.dag.get_matches.side_effect = MatchboxResolutionNotQueriable(
-        "Resolver is not complete"
-    )
-
-    with pytest.raises(ValueError, match="must be run and synced before scoring"):
-        EvalData().precision_recall(resolver=resolver)

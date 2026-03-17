@@ -67,6 +67,7 @@ class Query:
                 expression that will populate a new column.
         """
         self.raw_data: PolarsDataFrame | None = None
+        self.leaf_id: PolarsDataFrame | None = None
         self.dag = dag
         self.sources = sources
         self.resolver = resolver
@@ -118,34 +119,34 @@ class Query:
     def data_raw(
         self,
         return_type: Literal[QueryReturnType.POLARS] = ...,
-        return_leaf_id: bool = False,
+        get_leaf_ids: bool = False,
     ) -> PolarsDataFrame: ...
 
     @overload
     def data_raw(
         self,
         return_type: Literal[QueryReturnType.PANDAS] = ...,
-        return_leaf_id: bool = False,
+        get_leaf_ids: bool = False,
     ) -> PandasDataFrame: ...
 
     @overload
     def data_raw(
         self,
         return_type: Literal[QueryReturnType.ARROW] = ...,
-        return_leaf_id: bool = False,
+        get_leaf_ids: bool = False,
     ) -> ArrowTable: ...
 
     def data_raw(
         self,
         return_type: QueryReturnType = QueryReturnType.POLARS,
-        return_leaf_id: bool = False,
+        get_leaf_ids: bool = False,
     ) -> QueryReturnClass:
         """Fetches raw query data by joining source data and matchbox matches.
 
         Args:
             return_type (optional): Type of dataframe returned, defaults to "polars".
                 Other options are "pandas" and "arrow".
-            return_leaf_id (optional): Whether matchbox IDs for source clusters should
+            get_leaf_ids (optional): Whether matchbox IDs for source clusters should
                 be saved as a byproduct in the `leaf_ids` attribute.
 
         Returns: Data in the requested return type
@@ -162,7 +163,7 @@ class Query:
                 res = _handler.query(
                     source=source.resolution_path,
                     resolution=self.resolver.resolution_path if self.resolver else None,
-                    return_leaf_id=return_leaf_id,
+                    return_leaf_id=get_leaf_ids,
                 )
 
                 res = res.append_column(
@@ -190,7 +191,7 @@ class Query:
 
             mb_ids = pl.scan_parquet(mb_ids_path)
 
-            if return_leaf_id:
+            if get_leaf_ids:
                 self.leaf_id = mb_ids.select("id", "leaf_id").collect()
                 mb_ids = mb_ids.drop("leaf_id")
 
@@ -213,7 +214,7 @@ class Query:
         self,
         raw_data: pl.DataFrame | None = None,
         return_type: QueryReturnType = QueryReturnType.POLARS,
-        return_leaf_id: bool = False,
+        get_leaf_ids: bool = False,
     ) -> QueryReturnClass:
         """Returns final data from defined query.
 
@@ -221,14 +222,14 @@ class Query:
             raw_data: If passed, will only apply cleaning instead of fetching raw data.
             return_type (optional): Type of dataframe returned, defaults to "polars".
                 Other options are "pandas" and "arrow".
-            return_leaf_id (optional): Whether matchbox IDs for source clusters should
+            get_leaf_ids (optional): Whether matchbox IDs for source clusters should
                 be saved as a byproduct in the `leaf_ids` attribute. If pre-fetched raw
                 data is passed, this argument is ignored.
 
         Returns: Data in the requested return type
         """
         if raw_data is None:
-            raw_data = self.data_raw(return_leaf_id=return_leaf_id)
+            raw_data = self.data_raw(get_leaf_ids=get_leaf_ids)
 
         clean_data = _clean(data=raw_data, cleaning_dict=self.config.cleaning)
 

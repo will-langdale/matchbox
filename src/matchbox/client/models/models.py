@@ -224,6 +224,7 @@ class Model(Step):
         self,
         left_data: DataFrame | None = None,
         right_data: DataFrame | None = None,
+        low_memory: bool = False,
     ) -> pl.DataFrame:
         """Execute the model pipeline and return results.
 
@@ -232,16 +233,26 @@ class Model(Step):
                 a deduper, or link on the left if the model is a linker.
             right_data (optional): Pre-fetched query data to link on the right, if the
                 model is a linker. If the model is a deduper, this argument is ignored.
+            low_memory: If True, it will not download data from the server to support
+                evaluation.
         """
         log_prefix = f"Run {self.name}"
         logger.info("Executing left query", prefix=log_prefix)
 
-        left_df = left_data if left_data is not None else self.left_query.data()
+        left_df = (
+            left_data
+            if left_data is not None
+            else self.left_query.data(get_leaf_ids=(not low_memory))
+        )
         right_df = None
 
         if self.config.type == ModelType.LINKER:
             logger.info("Executing right query", prefix=log_prefix)
-            right_df = right_data if right_data is not None else self.right_query.data()
+            right_df = (
+                right_data
+                if right_data is not None
+                else self.right_query.data(get_leaf_ids=(not low_memory))
+            )
 
         logger.info("Running model logic", prefix=log_prefix)
         probabilities = self.compute_probabilities(left_df, right_df)

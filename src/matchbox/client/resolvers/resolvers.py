@@ -108,6 +108,37 @@ class Resolver(Step):
         self._local_data = value
 
     @property
+    def results_eval(self) -> pl.DataFrame:
+        """Get mapping of result clusters to leaf IDs from the server."""
+        if self.results is None:
+            raise RuntimeError("Results are not available on this resolver")
+
+        leaf_id_mappings: list[pl.DataFrame] = []
+
+        for model in self.inputs:
+            error_str = (
+                f"Model {model.name} has no leaf data. Re-run with low_memory=False"
+            )
+
+            if (left := model.left_query.leaf_id) is None:
+                raise RuntimeError(error_str)
+            leaf_id_mappings.append(left)
+
+            if model.right_query:
+                if (right := model.left_query.leaf_id) is None:
+                    raise RuntimeError(error_str)
+                leaf_id_mappings.append(right)
+
+        all_mappings = pl.concat(leaf_id_mappings)
+
+        return (
+            self.results.join(all_mappings, left_on="child_id", right_on="id")
+            .select("parent_id", "leaf_id")
+            .rename({"parent_id": "root", "leaf_id": "leaf"})
+            .unique()
+        )
+
+    @property
     def config(self) -> ResolverConfig:
         """Generate config DTO from Resolver."""
         return ResolverConfig(
