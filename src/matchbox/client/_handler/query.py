@@ -11,8 +11,8 @@ from matchbox.common.arrow import (
 )
 from matchbox.common.dtos import (
     Match,
-    ResolverResolutionPath,
-    SourceResolutionPath,
+    ResolverStepPath,
+    SourceStepPath,
 )
 from matchbox.common.exceptions import MatchboxEmptyServerResponse
 from matchbox.common.logging import logger
@@ -20,21 +20,21 @@ from matchbox.common.logging import logger
 
 @http_retry
 def query(
-    source: SourceResolutionPath,
+    source: SourceStepPath,
     return_leaf_id: bool,
-    resolution: ResolverResolutionPath | None = None,
+    resolver: ResolverStepPath | None = None,
     limit: int | None = None,
 ) -> Table:
     """Query a source in Matchbox."""
     log_prefix = f"Query {source}"
-    logger.debug(f"Using {resolution}", prefix=log_prefix)
+    logger.debug(f"Using {resolver}", prefix=log_prefix)
 
     params = url_params(
         {
             "collection": source.collection,
             "run_id": source.run,
             "source": source.name,
-            "resolution": resolution.name if resolution else None,
+            "resolver": resolver.name if resolver else None,
             "return_leaf_id": return_leaf_id,
             "limit": limit,
         }
@@ -58,27 +58,27 @@ def query(
 
 @http_retry
 def match(
-    targets: list[SourceResolutionPath],
-    source: SourceResolutionPath,
+    targets: list[SourceStepPath],
+    source: SourceStepPath,
     key: str,
-    resolution: ResolverResolutionPath,
+    resolver: ResolverStepPath,
 ) -> list[Match]:
     """Match a source against a list of targets."""
     log_prefix = f"Query {source}"
     target_names = ", ".join(str(target) for target in targets)
     logger.debug(
-        f"{key} to {target_names} using {resolution}",
+        f"{key} to {target_names} using {resolver}",
         prefix=log_prefix,
     )
 
     params = url_params(
         {
-            "collection": resolution.collection,
-            "run_id": resolution.run,
+            "collection": resolver.collection,
+            "run_id": resolver.run,
             "targets": [t.name for t in targets],
             "source": source.name,
             "key": key,
-            "resolution": resolution.name,
+            "resolver": resolver.name,
         }
     )
     res = CLIENT.get("/match", params=params)

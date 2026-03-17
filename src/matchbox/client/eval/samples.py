@@ -8,15 +8,15 @@ from matchbox.client import _handler
 from matchbox.client.dags import DAG
 from matchbox.client.resolvers import Resolver
 from matchbox.common.dtos import (
-    ResolverResolutionName,
-    ResolverResolutionPath,
+    ResolverStepName,
+    ResolverStepPath,
     SourceConfig,
 )
 from matchbox.common.eval import Judgement, precision_recall
 from matchbox.common.exceptions import (
-    MatchboxResolutionNotFoundError,
-    MatchboxResolutionNotQueriable,
     MatchboxSourceTableError,
+    MatchboxStepNotFoundError,
+    MatchboxStepNotQueriable,
 )
 
 
@@ -142,32 +142,28 @@ def create_evaluation_item(
 
 
 def _read_sample_file(sample_file: str, n: int) -> pl.DataFrame:
-    resolved_matches_dump = pl.read_parquet(sample_file)
-    clusters = resolved_matches_dump["id"].unique()
+    resolver_matches_dump = pl.read_parquet(sample_file)
+    clusters = resolver_matches_dump["id"].unique()
     select_clusters = clusters.sample(min(n, len(clusters)), shuffle=True).to_list()
-    select_rows = resolved_matches_dump.filter(pl.col("id").is_in(select_clusters))
+    select_rows = resolver_matches_dump.filter(pl.col("id").is_in(select_clusters))
     return select_rows.rename({"id": "root", "leaf_id": "leaf"})
 
 
 def _get_samples_from_server(
-    dag: DAG, n: int, resolution: ResolverResolutionName | None = None
+    dag: DAG, n: int, resolver: ResolverStepName | None = None
 ) -> pl.DataFrame:
-    if resolution:
-        resolution_path: ResolverResolutionPath = dag.get_resolver(
-            resolution
-        ).resolution_path
+    if resolver:
+        resolver_path: ResolverStepPath = dag.get_resolver(resolver).step_path
     else:
-        if not isinstance(dag.final_step, Resolver):
-            raise ValueError("Sampling requires a resolver as point-of-truth")
-        resolution_path = dag.final_step.resolution_path
-    return pl.from_arrow(_handler.sample_for_eval(n=n, resolution=resolution_path))
+        resolver_path = dag.default_resolver.step_path
+    return pl.from_arrow(_handler.sample_for_eval(n=n, resolver=resolver_path))
 
 
 @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
 def get_samples(
     n: int,
     dag: DAG,
-    resolution: ResolverResolutionName | None = None,
+    resolver: ResolverStepName | None = None,
     sample_file: str | None = None,
 ) -> dict[int, EvaluationItem]:
     """Retrieve samples enriched with source data as EvaluationItems.
@@ -175,10 +171,10 @@ def get_samples(
     Args:
         n: Number of clusters to sample
         dag: DAG for which to retrieve samples
-        resolution: The optional resolution from which to sample. If not set, the final
-            step in the DAG is used. If sample_file is set, resolution is ignored
-        sample_file: path to parquet file output by ResolvedMatches. If specified,
-            won't sample from server, ignoring the resolution argument
+        resolver: The optional resolver from which to sample. If not set, the
+            DAG's default resolver is used. If sample_file is set, resolver is ignored
+        sample_file: Path to a parquet file output by ResolverMatches. If specified,
+            won't sample from server, ignoring the resolver argument
 
     Returns:
         Dictionary of cluster ID to EvaluationItems describing the cluster
@@ -190,7 +186,7 @@ def get_samples(
     if sample_file:
         samples = _read_sample_file(sample_file=sample_file, n=n)
     else:
-        samples = _get_samples_from_server(dag=dag, n=n, resolution=resolution)
+        samples = _get_samples_from_server(dag=dag, n=n, resolver=resolver)
 
     if not len(samples):
         return {}
@@ -198,18 +194,18 @@ def get_samples(
     results_by_source: list[pl.DataFrame] = []
     source_configs: list[tuple[str, SourceConfig]] = []
 
-    for source_resolution in samples["source"].unique():
+    for source_step in samples["source"].unique():
         try:
-            source = dag.get_source(source_resolution)
+            source = dag.get_source(source_step)
         except ValueError as exc:  # pragma: no cover - defensive path
             raise MatchboxSourceTableError(
-                f"Source '{source_resolution}' not found in DAG. "
-                "Ensure DAG was loaded with all resolutions."
+                f"Source '{source_step}' not found in DAG. "
+                "Ensure DAG was loaded with all steps."
             ) from exc
 
-        source_configs.append((source_resolution, source.config))
+        source_configs.append((source_step, source.config))
 
-        samples_by_source = samples.filter(pl.col("source") == source_resolution)
+        samples_by_source = samples.filter(pl.col("source") == source_step)
         keys_by_source = samples_by_source["key"].to_list()
 
         try:
@@ -218,7 +214,7 @@ def get_samples(
             )
         except OperationalError as exc:
             raise MatchboxSourceTableError(
-                f"Could not query source '{source_resolution}' from warehouse. "
+                f"Could not query source '{source_step}' from warehouse. "
                 "Check warehouse connection and ensure source table exists."
             ) from exc
 
@@ -258,7 +254,7 @@ class EvalData:
         """Compute precision and recall for a synced resolver."""
         try:
             resolved = resolver.dag.get_matches(node=resolver.name)
-        except (MatchboxResolutionNotFoundError, MatchboxResolutionNotQueriable) as exc:
+        except (MatchboxStepNotFoundError, MatchboxStepNotQueriable) as exc:
             raise ValueError(
                 f"Resolver '{resolver.name}' must be run and synced before scoring."
             ) from exc

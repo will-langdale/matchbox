@@ -3,14 +3,14 @@ import pytest
 from matchbox.common.dtos import (
     Collection,
     Match,
-    ResolutionPath,
+    StepPath,
 )
 
 
 def test_match_validates() -> None:
     """Match objects are validated when they're instantiated."""
-    source_path = ResolutionPath(name="source", collection="default", run=1)
-    target_path = ResolutionPath(name="target", collection="default", run=1)
+    source_path = StepPath(name="source", collection="default", run=1)
+    target_path = StepPath(name="target", collection="default", run=1)
     Match(
         cluster=1,
         source=source_path,

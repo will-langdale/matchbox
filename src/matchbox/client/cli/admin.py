@@ -16,7 +16,7 @@ def delete_orphans() -> None:
     """Deletes orphans from Matchbox database.
 
     Orphan clusters are clusters that are not linked to any other table, because they
-    have become isolated as a result of the change or removal of resolutions.
+    have become isolated as a result of the change or removal of steps.
     This command will remove them from the database.
     """
     response: ResourceOperationStatus = _handler.delete_orphans()

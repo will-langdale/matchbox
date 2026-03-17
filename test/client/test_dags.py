@@ -26,18 +26,18 @@ from matchbox.common.dtos import (
     Match,
     PermissionGrant,
     PermissionType,
-    Resolution,
-    ResolutionName,
-    ResolutionPath,
-    ResolutionType,
     ResourceOperationStatus,
     Run,
+    Step,
+    StepName,
+    StepPath,
+    StepType,
 )
 from matchbox.common.exceptions import (
     MatchboxCollectionNotFoundError,
     MatchboxEmptyServerResponse,
-    MatchboxResolutionNotFoundError,
-    MatchboxResolutionTypeError,
+    MatchboxStepNotFoundError,
+    MatchboxStepTypeError,
 )
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.models import model_factory
@@ -335,7 +335,7 @@ def test_dag_name_clash(sqla_sqlite_warehouse: Engine) -> None:
     assert dag.graph[linker.name] == [foo.name, bar.name]
 
 
-def test_dag_final_steps(sqla_sqlite_warehouse: Engine) -> None:
+def test_dag_default_resolvers(sqla_sqlite_warehouse: Engine) -> None:
     """Test final_steps property returns all apex nodes."""
     dag = TestkitDAG().dag
 
@@ -632,7 +632,7 @@ def test_resolve(matchbox_api: MockRouter) -> None:
     matchbox_api.post(f"/collections/{dag.name}/runs").mock(
         return_value=Response(
             200,
-            json=Run(run_id=1, resolutions={}).model_dump(),
+            json=Run(run_id=1, steps={}).model_dump(),
         )
     )
 
@@ -675,7 +675,7 @@ def test_resolve(matchbox_api: MockRouter) -> None:
             "source": "foo",
             "run_id": 1,
             "collection": dag.name,
-            "resolution": foo_bar_baz.name,
+            "resolver": foo_bar_baz.name,
             "return_leaf_id": "True",
         },
     ).mock(return_value=Response(200, content=table_to_buffer(foo_data).read()))
@@ -686,7 +686,7 @@ def test_resolve(matchbox_api: MockRouter) -> None:
             "source": "bar",
             "run_id": 1,
             "collection": dag.name,
-            "resolution": foo_bar_baz.name,
+            "resolver": foo_bar_baz.name,
             "return_leaf_id": "True",
         },
     ).mock(return_value=Response(200, content=table_to_buffer(bar_data).read()))
@@ -697,7 +697,7 @@ def test_resolve(matchbox_api: MockRouter) -> None:
             "source": "baz",
             "run_id": 1,
             "collection": dag.name,
-            "resolution": foo_bar_baz.name,
+            "resolver": foo_bar_baz.name,
             "return_leaf_id": "True",
         },
     ).mock(return_value=Response(200, content=table_to_buffer(baz_data).read()))
@@ -720,7 +720,7 @@ def test_resolve(matchbox_api: MockRouter) -> None:
             "source": "foo",
             "run_id": 1,
             "collection": dag.name,
-            "resolution": foo_bar_resolver.name,
+            "resolver": foo_bar_resolver.name,
             "return_leaf_id": "True",
         },
     ).mock(return_value=Response(200, content=table_to_buffer(foo_data).read()))
@@ -730,7 +730,7 @@ def test_resolve(matchbox_api: MockRouter) -> None:
             "source": "bar",
             "run_id": 1,
             "collection": dag.name,
-            "resolution": foo_bar_resolver.name,
+            "resolver": foo_bar_resolver.name,
             "return_leaf_id": "True",
         },
     ).mock(return_value=Response(200, content=table_to_buffer(bar_data).read()))
@@ -748,33 +748,33 @@ def test_resolve(matchbox_api: MockRouter) -> None:
             200,
             json=Run(
                 run_id=1,
-                resolutions={
-                    foo.name: foo.fake_run().source.to_resolution(),
-                    bar.name: bar.fake_run().source.to_resolution(),
-                    baz.name: baz.fake_run().source.to_resolution(),
-                    foo_dedupe.name: Resolution(
+                steps={
+                    foo.name: foo.fake_run().source.to_dto(),
+                    bar.name: bar.fake_run().source.to_dto(),
+                    baz.name: baz.fake_run().source.to_dto(),
+                    foo_dedupe.name: Step(
                         fingerprint=b"mock_dedupe",
-                        resolution_type=ResolutionType.MODEL,
+                        step_type=StepType.MODEL,
                         config=foo_dedupe.config,
                     ),
-                    foo_bar.name: Resolution(
+                    foo_bar.name: Step(
                         fingerprint=b"mock_model_1",
-                        resolution_type=ResolutionType.MODEL,
+                        step_type=StepType.MODEL,
                         config=foo_bar.config,
                     ),
-                    bar_baz.name: Resolution(
+                    bar_baz.name: Step(
                         fingerprint=b"mock_model_2",
-                        resolution_type=ResolutionType.MODEL,
+                        step_type=StepType.MODEL,
                         config=bar_baz.config,
                     ),
-                    foo_bar_resolver.name: Resolution(
+                    foo_bar_resolver.name: Step(
                         fingerprint=b"mock_resolver_1",
-                        resolution_type=ResolutionType.RESOLVER,
+                        step_type=StepType.RESOLVER,
                         config=foo_bar_resolver.config,
                     ),
-                    foo_bar_baz.name: Resolution(
+                    foo_bar_baz.name: Step(
                         fingerprint=b"mock_resolver_2",
-                        resolution_type=ResolutionType.RESOLVER,
+                        step_type=StepType.RESOLVER,
                         config=foo_bar_baz.config,
                     ),
                 },
@@ -783,10 +783,10 @@ def test_resolve(matchbox_api: MockRouter) -> None:
     )
 
     # No sources are found
-    with pytest.raises(MatchboxResolutionNotFoundError):
+    with pytest.raises(MatchboxStepNotFoundError):
         dag.get_matches(node=foo_bar_baz.name, source_filter=["nonexistent"])
 
-    with pytest.raises(MatchboxResolutionNotFoundError):
+    with pytest.raises(MatchboxStepNotFoundError):
         dag.get_matches(node=foo_bar_baz.name, location_names=["nonexistent"])
 
     # With URI filter
@@ -885,9 +885,9 @@ def test_lookup_key_ok(matchbox_api: MockRouter, sqla_sqlite_warehouse: Engine) 
         },
     )
 
-    foo_path = ResolutionPath(name="foo", collection=dag.name, run=dag.run)
-    bar_path = ResolutionPath(name="bar", collection=dag.name, run=dag.run)
-    baz_path = ResolutionPath(name="baz", collection=dag.name, run=dag.run)
+    foo_path = StepPath(name="foo", collection=dag.name, run=dag.run)
+    bar_path = StepPath(name="bar", collection=dag.name, run=dag.run)
+    baz_path = StepPath(name="baz", collection=dag.name, run=dag.run)
 
     mock_match1 = Match(
         cluster=1, source=foo_path, source_id={"a"}, target=bar_path, target_id={"b"}
@@ -915,7 +915,7 @@ def test_lookup_key_ok(matchbox_api: MockRouter, sqla_sqlite_warehouse: Engine) 
     assert request.url.params.get_list("targets") == ["bar", "baz"]
     assert request.url.params["source"] == "foo"
     assert request.url.params["key"] == "pk1"
-    assert request.url.params["resolution"] == "root"
+    assert request.url.params["resolver"] == "root"
 
 
 def test_resolver_rejects_resolver_inputs(sqla_sqlite_warehouse: Engine) -> None:
@@ -937,7 +937,7 @@ def test_resolver_rejects_resolver_inputs(sqla_sqlite_warehouse: Engine) -> None
         resolver_settings={"thresholds": {dedupe.name: 0}},
     )
 
-    with pytest.raises(MatchboxResolutionTypeError, match="Expected one of: model"):
+    with pytest.raises(MatchboxStepTypeError, match="Expected one of: model"):
         dedupe.resolver(
             first_resolver,
             name="resolver_2",
@@ -947,7 +947,7 @@ def test_resolver_rejects_resolver_inputs(sqla_sqlite_warehouse: Engine) -> None
 
 
 def test_lookup_key_404_source(matchbox_api: MockRouter) -> None:
-    """Key lookup throws a resolution not found error."""
+    """Key lookup throws a step not found error."""
     # Set up dummy data
     source_testkit = source_factory(name="source")
     target_testkit = source_factory(name="target")
@@ -978,14 +978,14 @@ def test_lookup_key_404_source(matchbox_api: MockRouter) -> None:
         return_value=Response(
             404,
             json=ErrorResponse(
-                exception_type="MatchboxResolutionNotFoundError",
-                message="Resolution 42 not found",
+                exception_type="MatchboxStepNotFoundError",
+                message="Step 42 not found",
             ).model_dump(),
         )
     )
 
     # Use match function
-    with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
+    with pytest.raises(MatchboxStepNotFoundError, match="42"):
         dag.lookup_key(from_source="source", to_sources=["target"], key="pk1")
 
 
@@ -1033,8 +1033,8 @@ def test_lookup_key_no_matches(
         dag.lookup_key(from_source="source", to_sources=["target"], key="pk1")
 
 
-def test_from_resolution() -> None:
-    """Test reconstructing Sources, Models and Resolvers from a Resolution."""
+def test_from_dto() -> None:
+    """Test reconstructing Sources, Models and Resolvers from a Step."""
     # Setup
     dag_testkit = TestkitDAG()
     linked_testkit = linked_sources_factory(dag=dag_testkit.dag)
@@ -1067,41 +1067,37 @@ def test_from_resolution() -> None:
     ).fake_run()
     dag_testkit.add_resolver(resolver_testkit)
 
-    # Test 1: Add all resolutions in dependency order
+    # Test 1: Add all steps in dependency order
     t1_dag = TestkitDAG().dag
     for testkit in [crn_testkit, dh_testkit, cdms_testkit]:
-        t1_dag.add_resolution(
-            name=testkit.name, resolution=testkit.source.to_resolution()
-        )
+        t1_dag.add_step(name=testkit.name, step=testkit.source.to_dto())
     for testkit in [crn_dh_model, crn_cdms_model]:
-        t1_dag.add_resolution(
-            name=testkit.name, resolution=testkit.model.to_resolution()
-        )
-    t1_dag.add_resolution(
+        t1_dag.add_step(name=testkit.name, step=testkit.model.to_dto())
+    t1_dag.add_step(
         name=resolver_testkit.name,
-        resolution=resolver_testkit.resolver.to_resolution(),
+        step=resolver_testkit.resolver.to_dto(),
     )
 
     assert t1_dag.name == dag_testkit.dag.name
     assert t1_dag.run == dag_testkit.dag.run
-    for name, resolution in t1_dag.nodes.items():
-        assert resolution.config == dag_testkit.dag.nodes[name].config
+    for name, step in t1_dag.nodes.items():
+        assert step.config == dag_testkit.dag.nodes[name].config
     assert t1_dag.graph == dag_testkit.dag.graph
 
     # Test 2: Resolver added before its model dependencies raises
     t2_dag = TestkitDAG().dag
     with pytest.raises(RuntimeError, match="must reference an available model"):
-        t2_dag.add_resolution(
+        t2_dag.add_step(
             name=resolver_testkit.name,
-            resolution=resolver_testkit.resolver.to_resolution(),
+            step=resolver_testkit.resolver.to_dto(),
         )
 
     # Test 3: Model added before its source dependencies raises
     t3_dag = TestkitDAG().dag
     with pytest.raises(ValueError, match="not found in DAG"):
-        t3_dag.add_resolution(
+        t3_dag.add_step(
             name=crn_dh_model.name,
-            resolution=crn_dh_model.model.to_resolution(),
+            step=crn_dh_model.model.to_dto(),
         )
 
 
@@ -1146,7 +1142,7 @@ def test_dag_creates_new_collection(matchbox_api: MockRouter) -> None:
     matchbox_api.post("/collections/test_collection/runs").mock(
         return_value=Response(
             200,
-            json=Run(run_id=1, resolutions={}).model_dump(),
+            json=Run(run_id=1, steps={}).model_dump(),
         )
     )
 
@@ -1208,7 +1204,7 @@ def test_dag_creates_new_collection_with_custom_admin(
     matchbox_api.post("/collections/test_collection/runs").mock(
         return_value=Response(
             200,
-            json=Run(run_id=1, resolutions={}).model_dump(),
+            json=Run(run_id=1, steps={}).model_dump(),
         )
     )
 
@@ -1266,7 +1262,7 @@ def test_dag_uses_existing_collection(
     matchbox_api.post("/collections/test_collection/runs").mock(
         return_value=Response(
             200,
-            json=Run(run_id=expected_run_id, resolutions={}).model_dump(),
+            json=Run(run_id=expected_run_id, steps={}).model_dump(),
         )
     )
 
@@ -1313,16 +1309,16 @@ def test_dag_load_server_run(matchbox_api: MockRouter) -> None:
     dag_testkit.add_resolver(resolver_testkit)
 
     # Full pipeline: 3 sources, 2 linkers, 1 resolver
-    resolutions: dict[ResolutionName, Resolution] = {
-        crn_testkit.name: crn_testkit.source.to_resolution(),
-        dh_testkit.name: dh_testkit.source.to_resolution(),
-        cdms_testkit.name: cdms_testkit.source.to_resolution(),
-        crn_dh_model.name: crn_dh_model.model.to_resolution(),
-        crn_cdms_model.name: crn_cdms_model.model.to_resolution(),
-        resolver_testkit.name: resolver_testkit.resolver.to_resolution(),
+    steps: dict[StepName, Step] = {
+        crn_testkit.name: crn_testkit.source.to_dto(),
+        dh_testkit.name: dh_testkit.source.to_dto(),
+        cdms_testkit.name: cdms_testkit.source.to_dto(),
+        crn_dh_model.name: crn_dh_model.model.to_dto(),
+        crn_cdms_model.name: crn_cdms_model.model.to_dto(),
+        resolver_testkit.name: resolver_testkit.resolver.to_dto(),
     }
 
-    run = Run(run_id=1, resolutions=resolutions)
+    run = Run(run_id=1, steps=steps)
 
     matchbox_api.get(f"/collections/{dag_testkit.dag.name}").mock(
         return_value=Response(
@@ -1440,9 +1436,9 @@ def test_dag_load_run_complex_dependencies(matchbox_api: MockRouter) -> None:
         inputs=[model_inner_testkit, model_side_testkit],
         true_entities=tuple(linked_testkit.true_entities),
     ).fake_run()
-    test_dag.add_resolution(
+    test_dag.add_step(
         name=resolver_inner_testkit.name,
-        resolution=resolver_inner_testkit.resolver.to_resolution(),
+        step=resolver_inner_testkit.resolver.to_dto(),
     )
     resolver_inner = test_dag.get_resolver(resolver_inner_testkit.name)
 
@@ -1458,21 +1454,21 @@ def test_dag_load_run_complex_dependencies(matchbox_api: MockRouter) -> None:
 
     # Intentionally place model_outer first: dependency count ties with model_inner,
     # but model_outer depends on resolver_inner and must therefore be delayed.
-    resolutions: dict[ResolutionName, Resolution] = {
-        model_outer.name: Resolution(
+    steps: dict[StepName, Step] = {
+        model_outer.name: Step(
             fingerprint=b"model_outer",
-            resolution_type=ResolutionType.MODEL,
+            step_type=StepType.MODEL,
             config=model_outer.config,
         ),
-        crn_testkit.name: crn_testkit.source.to_resolution(),
-        dh_testkit.name: dh_testkit.source.to_resolution(),
-        cdms_testkit.name: cdms_testkit.source.to_resolution(),
-        model_inner_testkit.name: model_inner_testkit.model.to_resolution(),
-        model_side_testkit.name: model_side_testkit.model.to_resolution(),
-        resolver_inner_testkit.name: resolver_inner_testkit.resolver.to_resolution(),
+        crn_testkit.name: crn_testkit.source.to_dto(),
+        dh_testkit.name: dh_testkit.source.to_dto(),
+        cdms_testkit.name: cdms_testkit.source.to_dto(),
+        model_inner_testkit.name: model_inner_testkit.model.to_dto(),
+        model_side_testkit.name: model_side_testkit.model.to_dto(),
+        resolver_inner_testkit.name: resolver_inner_testkit.resolver.to_dto(),
     }
 
-    run = Run(run_id=1, resolutions=resolutions)
+    run = Run(run_id=1, steps=steps)
 
     # Mock API
     matchbox_api.get(f"/collections/{test_dag.name}").mock(

@@ -19,10 +19,10 @@ from matchbox.client.resolvers import (
 )
 from matchbox.common.arrow import SCHEMA_CLUSTERS
 from matchbox.common.dtos import (
-    ModelResolutionName,
-    ResolverResolutionName,
+    ModelStepName,
+    ResolverStepName,
     ResolverType,
-    SourceResolutionName,
+    SourceStepName,
 )
 from matchbox.common.factories.entities import ClusterEntity, SourceEntity
 from matchbox.common.factories.models import ModelTestkit, model_factory
@@ -34,19 +34,19 @@ class MockResolverSettings(ResolverSettings):
     """Settings type for MockResolver."""
 
     thresholds: dict[
-        ModelResolutionName,
+        ModelStepName,
         Annotated[float, Field(ge=0.0, le=1.0)],
     ] = Field(default_factory=dict)
 
-    def validate_inputs(self, model_names: Iterable[ModelResolutionName]) -> None:
+    def validate_inputs(self, model_names: Iterable[ModelStepName]) -> None:
         """Validate all model names are present in thresholds."""
         if missing := set(model_names) - set(self.thresholds.keys()):
             raise RuntimeError(f"Missing thresholds for models: {missing}")
 
 
 def _connected_components_from_edges(
-    model_edges: Mapping[ModelResolutionName, pl.DataFrame],
-    thresholds: Mapping[ModelResolutionName, float],
+    model_edges: Mapping[ModelStepName, pl.DataFrame],
+    thresholds: Mapping[ModelStepName, float],
 ) -> pl.DataFrame:
     """Generate clusters from model edge tables and per-model thresholds."""
     djs = DisjointSet[int]()
@@ -56,7 +56,7 @@ def _connected_components_from_edges(
             continue
 
         threshold = thresholds[model_name]
-        filtered_edges = edges.filter(pl.col("probability") >= threshold)
+        filtered_edges = edges.filter(pl.col("score") >= threshold)
         for left_id, right_id in filtered_edges.select(
             "left_id", "right_id"
         ).iter_rows():
@@ -80,7 +80,7 @@ class MockResolver(ResolverMethod):
     settings: MockResolverSettings
 
     def compute_clusters(
-        self, model_edges: Mapping[ModelResolutionName, pl.DataFrame]
+        self, model_edges: Mapping[ModelStepName, pl.DataFrame]
     ) -> pl.DataFrame:
         """Compute mock clusters with connected components."""
         self.settings.validate_inputs(model_edges.keys())
@@ -132,9 +132,9 @@ def resolver_factory(
     dag: DAG | None = None,
     inputs: Iterable[ModelTestkit] | None = None,
     true_entities: Iterable[SourceEntity] | None = None,
-    name: ResolverResolutionName | None = None,
+    name: ResolverStepName | None = None,
     description: str | None = None,
-    thresholds: Mapping[ModelResolutionName, float] | None = None,
+    thresholds: Mapping[ModelStepName, float] | None = None,
     seed: int = 42,
 ) -> ResolverTestkit:
     """Generate a complete resolver testkit.
@@ -157,7 +157,7 @@ def resolver_factory(
         name: Name of the resolver. Defaults to a randomly generated word suffixed
             with '_resolver'.
         description: Description of the resolver.
-        thresholds: Per-model probability thresholds in [0.0, 1.0]. If omitted,
+        thresholds: Per-model score thresholds in [0.0, 1.0]. If omitted,
             defaults to 0.0 for all resolver inputs.
         seed: Random seed for reproducibility.
 
@@ -180,10 +180,10 @@ def resolver_factory(
             seed=seed,
         ).fake_run()
         inputs = (default_model,)
-        source_names: set[SourceResolutionName] = set(linked.sources.keys())
+        source_names: set[SourceStepName] = set(linked.sources.keys())
     else:
         inputs = tuple(inputs)
-        source_names: set[SourceResolutionName] = set()
+        source_names: set[SourceStepName] = set()
         for testkit in inputs:
             if not isinstance(testkit, ModelTestkit):
                 raise TypeError("resolver_factory inputs must be ModelTestkit.")
@@ -195,14 +195,14 @@ def resolver_factory(
         input_map.setdefault(testkit.name, testkit)
 
     resolver_inputs: list[Model] = []
-    model_edges: dict[ModelResolutionName, pl.DataFrame] = {}
+    model_edges: dict[ModelStepName, pl.DataFrame] = {}
     for testkit in input_map.values():
         if testkit.model.dag != dag:
             raise ValueError("Cannot mix DAGs when building a resolver testkit.")
         if testkit.model.results is None:
             testkit.fake_run()
         resolver_inputs.append(testkit.model)
-        model_edges[testkit.name] = testkit.probabilities
+        model_edges[testkit.name] = testkit.scores
 
     expected_model_names = set(input_map.keys())
     if thresholds is None:

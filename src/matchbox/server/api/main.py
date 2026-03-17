@@ -25,12 +25,12 @@ from matchbox.common.dtos import (
     ErrorResponse,
     Match,
     OKMessage,
-    ResolverResolutionName,
-    ResolverResolutionPath,
+    ResolverStepName,
+    ResolverStepPath,
     ResourceOperationStatus,
     RunID,
-    SourceResolutionName,
-    SourceResolutionPath,
+    SourceStepName,
+    SourceStepPath,
 )
 from matchbox.common.exceptions import MatchboxHttpException
 from matchbox.common.logging import logger
@@ -137,20 +137,20 @@ def query(
     backend: BackendDependency,
     collection: CollectionName,
     run_id: RunID,
-    source: SourceResolutionName,
+    source: SourceStepName,
     return_leaf_id: bool,
-    resolution: ResolverResolutionName | None = None,
+    resolver: ResolverStepName | None = None,
     limit: int | None = None,
 ) -> ParquetResponse:
-    """Query Matchbox for matches based on a source resolution name."""
-    point_of_truth = (
-        ResolverResolutionPath(collection=collection, run=run_id, name=resolution)
-        if resolution
+    """Query Matchbox for matches based on a source step name."""
+    resolves_from = (
+        ResolverStepPath(collection=collection, run=run_id, name=resolver)
+        if resolver
         else None
     )
     res = backend.query(
-        source=SourceResolutionPath(collection=collection, run=run_id, name=source),
-        point_of_truth=point_of_truth,
+        source=SourceStepPath(collection=collection, run=run_id, name=source),
+        resolves_from=resolves_from,
         return_leaf_id=return_leaf_id,
         limit=limit,
     )
@@ -171,23 +171,23 @@ def match(
     backend: BackendDependency,
     collection: CollectionName,
     run_id: RunID,
-    targets: Annotated[list[SourceResolutionName], Query()],
-    source: SourceResolutionName,
+    targets: Annotated[list[SourceStepName], Query()],
+    source: SourceStepName,
     key: str,
-    resolution: ResolverResolutionName,
+    resolver: ResolverStepName,
 ) -> list[Match]:
-    """Match a source key against a list of target source resolutions."""
+    """Match a source key against a list of target source steps."""
     return backend.match(
         key=key,
-        source=SourceResolutionPath(collection=collection, run=run_id, name=source),
+        source=SourceStepPath(collection=collection, run=run_id, name=source),
         targets=[
-            SourceResolutionPath(collection=collection, run=run_id, name=target)
+            SourceStepPath(collection=collection, run=run_id, name=target)
             for target in targets
         ],
-        point_of_truth=ResolverResolutionPath(
+        resolves_from=ResolverStepPath(
             collection=collection,
             run=run_id,
-            name=resolution,
+            name=resolver,
         ),
     )
 

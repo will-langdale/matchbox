@@ -8,18 +8,18 @@ from pydantic import Field
 
 from matchbox.client.resolvers.base import ResolverMethod, ResolverSettings
 from matchbox.common.arrow import SCHEMA_CLUSTERS
-from matchbox.common.dtos import ModelResolutionName, ResolverType
+from matchbox.common.dtos import ModelStepName, ResolverType
 from matchbox.common.transform import DisjointSet
 
 
 class ComponentsSettings(ResolverSettings):
     """Settings for the Components resolver methodology."""
 
-    thresholds: dict[ModelResolutionName, Annotated[float, Field(ge=0.0, le=1.0)]] = (
-        Field(default_factory=dict)
+    thresholds: dict[ModelStepName, Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
+        default_factory=dict
     )
 
-    def validate_inputs(self, model_names: Iterable[ModelResolutionName]) -> None:  # noqa: D102
+    def validate_inputs(self, model_names: Iterable[ModelStepName]) -> None:  # noqa: D102
         if missing := set(model_names) - set(self.thresholds.keys()):
             raise RuntimeError(f"Missing thresholds for models: {missing}")
 
@@ -31,7 +31,7 @@ class Components(ResolverMethod):
     settings: ComponentsSettings
 
     def compute_clusters(  # noqa: D102
-        self, model_edges: Mapping[ModelResolutionName, pl.DataFrame]
+        self, model_edges: Mapping[ModelStepName, pl.DataFrame]
     ) -> pl.DataFrame:
         self.settings.validate_inputs(model_edges.keys())
 
@@ -42,7 +42,7 @@ class Components(ResolverMethod):
                 continue
 
             threshold = self.settings.thresholds[model_name]
-            filtered_edges = edges.filter(pl.col("probability") >= threshold)
+            filtered_edges = edges.filter(pl.col("score") >= threshold)
 
             for left_id, right_id in filtered_edges.select(
                 "left_id", "right_id"

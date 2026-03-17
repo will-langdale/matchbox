@@ -41,7 +41,7 @@ def test_get_collection(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> 
     """Test retrieving a specific collection."""
     test_client, mock_backend, _ = api_client_and_mocks
 
-    # Mock collection data with runs and resolutions
+    # Mock collection data with runs and steps
     collection = Collection(default_run=1, runs=[1, 2])
 
     mock_backend.get_collection = Mock(return_value=collection)
@@ -293,7 +293,7 @@ def test_get_run(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
     source = source_factory().fake_run().source
     run = Run(
         run_id=1,
-        resolutions={source.name: source.to_resolution()},
+        steps={source.name: source.to_dto()},
         is_default=True,
         is_mutable=False,
     )
@@ -385,7 +385,7 @@ def test_create_run(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None
     source = source_factory().fake_run().source
     run = Run(
         run_id=1,
-        resolutions={source.name: source.to_resolution()},
+        steps={source.name: source.to_dto()},
         is_default=False,
         is_mutable=False,
     )
@@ -403,7 +403,7 @@ def test_set_run_mutable(api_client_and_mocks: tuple[TestClient, Mock, Mock]) ->
     """Test setting run mutability."""
     test_client, mock_backend, _ = api_client_and_mocks
 
-    updated_run = Run(run_id=1, is_default=False, is_mutable=False, resolutions={})
+    updated_run = Run(run_id=1, is_default=False, is_mutable=False, steps={})
     mock_backend.set_run_mutable = Mock(return_value=updated_run)
 
     response = test_client.patch(
@@ -433,7 +433,7 @@ def test_set_run_default(api_client_and_mocks: tuple[TestClient, Mock, Mock]) ->
     """Test setting run as default."""
     test_client, mock_backend, _ = api_client_and_mocks
 
-    updated_run = Run(run_id=1, is_default=True, is_mutable=False, resolutions={})
+    updated_run = Run(run_id=1, is_default=True, is_mutable=False, steps={})
     mock_backend.set_run_default = Mock(return_value=updated_run)
 
     response = test_client.patch(

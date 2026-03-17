@@ -9,15 +9,15 @@ from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import (
     Collection,
     CollectionName,
-    ModelResolutionPath,
+    ModelStepPath,
     PermissionGrant,
-    Resolution,
-    ResolutionPath,
-    ResolutionType,
-    ResolverResolutionPath,
+    ResolverStepPath,
     Run,
     RunID,
-    SourceResolutionPath,
+    SourceStepPath,
+    Step,
+    StepPath,
+    StepType,
     UploadStage,
 )
 from matchbox.common.dtos import ModelConfig as CommonModelConfig
@@ -27,8 +27,8 @@ from matchbox.common.exceptions import (
     MatchboxCollectionAlreadyExists,
     MatchboxDeletionNotConfirmed,
     MatchboxLockError,
-    MatchboxResolutionUpdateError,
     MatchboxRunNotWriteable,
+    MatchboxStepUpdateError,
 )
 from matchbox.common.logging import logger
 from matchbox.server.postgresql.db import MBDB
@@ -36,18 +36,18 @@ from matchbox.server.postgresql.orm import (
     Collections,
     ModelConfigs,
     ModelEdges,
-    Resolutions,
     ResolverConfigs,
     Runs,
     SourceConfigs,
     SourceFields,
+    Steps,
     insert,
 )
 from matchbox.server.postgresql.utils.db import compile_sql, grant_permission
 from matchbox.server.postgresql.utils.insert import (
     insert_hashes,
     insert_model_edges,
-    insert_resolver_clusters,
+    insert_resolver_steps,
 )
 from matchbox.server.postgresql.utils.query import (
     require_complete_resolver,
@@ -184,70 +184,64 @@ class MatchboxPostgresCollectionsMixin:
             run_orm = Runs.from_id(collection, run_id, session)
 
             if not certain:
-                resolution_names = [res.name for res in run_orm.resolutions]
-                raise MatchboxDeletionNotConfirmed(children=resolution_names)
+                step_names = [res.name for res in run_orm.steps]
+                raise MatchboxDeletionNotConfirmed(children=step_names)
 
             session.execute(delete(Runs).where(Runs.run_id == run_orm.run_id))
             session.commit()
 
-    # Resolution management
+    # Step management
 
-    def _check_writeable(self, path: ResolutionPath) -> None:
+    def _check_writeable(self, path: StepPath) -> None:
         run = Runs.from_id(collection=path.collection, run_id=path.run)
         if not run.is_mutable:
             raise MatchboxRunNotWriteable(
                 f"Version {path.run} in collection {path.collection} is immutable"
             )
 
-    def create_resolution(  # noqa: D102
-        self, resolution: Resolution, path: ResolutionPath
+    def create_step(  # noqa: D102
+        self, step: Step, path: StepPath
     ) -> None:
         self._check_writeable(path)
         log_prefix = f"Insert {path.name}"
         with MBDB.get_session() as session:
-            resolution_orm = Resolutions.from_dto(
-                resolution=resolution, path=path, session=session
-            )
+            step_orm = Steps.from_dto(step=step, path=path, session=session)
             session.commit()
 
-            logger.info(
-                f"Inserted with ID {resolution_orm.resolution_id}", prefix=log_prefix
-            )
+            logger.info(f"Inserted with ID {step_orm.step_id}", prefix=log_prefix)
 
-    def get_resolution(  # noqa: D102
-        self, path: ResolutionPath
-    ) -> Resolution:
+    def get_step(  # noqa: D102
+        self, path: StepPath
+    ) -> Step:
         with MBDB.get_session() as session:
-            resolution = Resolutions.from_path(path=path, session=session)
-            return resolution.to_dto()
+            step = Steps.from_path(path=path, session=session)
+            return step.to_dto()
 
-    def update_resolution(  # noqa: D102
-        self, resolution: Resolution, path: ResolutionPath
+    def update_step(  # noqa: D102
+        self, step: Step, path: StepPath
     ) -> None:
-        new_config = resolution.config
+        new_config = step.config
         with MBDB.get_session() as session:
             # Get current ORM entry
-            old_resolution = Resolutions.from_path(path=path, session=session)
+            old_step = Steps.from_path(path=path, session=session)
             # Check current ORM entry can be updated
-            if old_resolution.fingerprint != resolution.fingerprint:
-                raise MatchboxResolutionUpdateError(
-                    "Cannot update resolution with non-matching fingerprint."
+            if old_step.fingerprint != step.fingerprint:
+                raise MatchboxStepUpdateError(
+                    "Cannot update step with non-matching fingerprint."
                 )
-            # The following condition also protects against change of resolution type:
+            # The following condition also protects against change of step type:
             # sources must have 0 parents, models must have 1 or more
-            if old_resolution.to_dto().config.parents != new_config.parents:
-                raise MatchboxResolutionUpdateError(
-                    "Cannot change parents of a resolution."
-                )
+            if old_step.to_dto().config.parents != new_config.parents:
+                raise MatchboxStepUpdateError("Cannot change parents of a step.")
 
             # Update top-level metadata
-            old_resolution.description = resolution.description
+            old_step.description = step.description
 
             # Update config
-            if old_resolution.type == "source":
-                old_config: SourceConfigs = old_resolution.source_config
+            if old_step.type == "source":
+                old_config: SourceConfigs = old_step.source_config
                 if not isinstance(new_config, CommonSourceConfig):
-                    raise ValueError("Config for source resolution expected.")
+                    raise ValueError("Config for source step expected.")
                 old_config.location_name = new_config.location_config.name
                 old_config.location_type = str(new_config.location_config.type)
                 old_config.extract_transform = new_config.extract_transform
@@ -283,10 +277,10 @@ class MatchboxPostgresCollectionsMixin:
 
                     old_config.fields = new_fields
 
-            elif old_resolution.type == ResolutionType.MODEL:
-                old_config: ModelConfigs = old_resolution.model_config
+            elif old_step.type == StepType.MODEL:
+                old_config: ModelConfigs = old_step.model_config
                 if not isinstance(new_config, CommonModelConfig):
-                    raise ValueError("Config for model resolution expected.")
+                    raise ValueError("Config for model step expected.")
                 old_config.model_class = new_config.model_class
                 old_config.model_settings = new_config.model_settings
                 old_config.left_query = new_config.left_query.model_dump_json()
@@ -295,129 +289,121 @@ class MatchboxPostgresCollectionsMixin:
                     if not new_config.right_query
                     else new_config.right_query.model_dump_json()
                 )
-            elif old_resolution.type == ResolutionType.RESOLVER:
-                old_config: ResolverConfigs = old_resolution.resolver_config
+            elif old_step.type == StepType.RESOLVER:
+                old_config: ResolverConfigs = old_step.resolver_config
                 if not isinstance(new_config, CommonResolverConfig):
-                    raise ValueError("Config for resolver resolution expected.")
+                    raise ValueError("Config for resolver step expected.")
                 old_config.resolver_class = new_config.resolver_class
                 old_config.resolver_settings = new_config.resolver_settings
             else:
-                raise ValueError(
-                    f"Unsupported resolution type for update: {old_resolution.type}"
-                )
+                raise ValueError(f"Unsupported step type for update: {old_step.type}")
 
             session.commit()
 
-    def delete_resolution(self, path: ResolutionPath, certain: bool) -> None:  # noqa: D102
+    def delete_step(self, path: StepPath, certain: bool) -> None:  # noqa: D102
         self._check_writeable(path)
         with MBDB.get_session() as session:
-            resolution = Resolutions.from_path(path=path, session=session)
+            step = Steps.from_path(path=path, session=session)
             if certain:
-                delete_stmt = delete(Resolutions).where(
-                    Resolutions.resolution_id.in_(
+                delete_stmt = delete(Steps).where(
+                    Steps.step_id.in_(
                         [
-                            resolution.resolution_id,
-                            *(d.resolution_id for d in resolution.descendants),
+                            step.step_id,
+                            *(d.step_id for d in step.descendants),
                         ]
                     )
                 )
                 session.execute(delete_stmt)
                 session.commit()
             else:
-                children = [r.name for r in resolution.descendants]
+                children = [r.name for r in step.descendants]
                 raise MatchboxDeletionNotConfirmed(children=children)
 
     # Data insertion
 
-    def lock_resolution_data(self, path: ResolutionPath) -> None:  # noqa: D102
+    def lock_step_data(self, path: StepPath) -> None:  # noqa: D102
         self._check_writeable(path)
         with MBDB.get_session() as session:
-            # Lock resolution so only one client can initiate the upload
+            # Lock step so only one client can initiate the upload
             # Will fail if already locked
             try:
-                resolution = Resolutions.from_path(
-                    path=path, session=session, for_update=True
-                )
+                step = Steps.from_path(path=path, session=session, for_update=True)
             except LockNotAvailable as e:
-                raise MatchboxLockError("Resolution is locked.") from e
+                raise MatchboxLockError("Step is locked.") from e
 
             # Check status
             # Will fail if stage not READY
-            if resolution.upload_stage == UploadStage.COMPLETE:
+            if step.upload_stage == UploadStage.COMPLETE:
                 session.rollback()
                 raise MatchboxLockError(
-                    "Once set to complete, resolution data stage cannot be changed."
+                    "Once set to complete, step data stage cannot be changed."
                 )
-            elif resolution.upload_stage == UploadStage.PROCESSING:
+            elif step.upload_stage == UploadStage.PROCESSING:
                 session.rollback()
                 raise MatchboxLockError("Upload already being processed.")
 
-            resolution.upload_stage = UploadStage.PROCESSING
+            step.upload_stage = UploadStage.PROCESSING
             session.commit()
 
-    def unlock_resolution_data(  # noqa: D102
-        self, path: ResolutionPath, complete: bool = False
+    def unlock_step_data(  # noqa: D102
+        self, path: StepPath, complete: bool = False
     ) -> None:
         self._check_writeable(path)
         with MBDB.get_session() as session:
-            resolution = Resolutions.from_path(
-                path=path, session=session, for_update=True
-            )
+            step = Steps.from_path(path=path, session=session, for_update=True)
             if complete:
-                resolution.upload_stage = UploadStage.COMPLETE
+                step.upload_stage = UploadStage.COMPLETE
             else:
-                resolution.upload_stage = UploadStage.READY
+                step.upload_stage = UploadStage.READY
             session.commit()
 
-    def get_resolution_stage(self, path: ResolutionPath) -> UploadStage:  # noqa: D102
-        resolution = Resolutions.from_path(path)
-        return UploadStage(resolution.upload_stage)
+    def get_step_stage(self, path: StepPath) -> UploadStage:  # noqa: D102
+        step = Steps.from_path(path)
+        return UploadStage(step.upload_stage)
 
     def insert_source_data(  # noqa: D102
-        self, path: SourceResolutionPath, data_hashes: Table
+        self, path: SourceStepPath, data_hashes: Table
     ) -> None:
         self._check_writeable(path)
         insert_hashes(
             path=path, data_hashes=data_hashes, batch_size=self.settings.batch_size
         )
-        self.unlock_resolution_data(path=path, complete=True)
+        self.unlock_step_data(path=path, complete=True)
 
-    def insert_model_data(self, path: ModelResolutionPath, results: Table) -> None:  # noqa: D102
+    def insert_model_data(self, path: ModelStepPath, results: Table) -> None:  # noqa: D102
         self._check_writeable(path)
         insert_model_edges(
             path=path, results=results, batch_size=self.settings.batch_size
         )
-        self.unlock_resolution_data(path=path, complete=True)
+        self.unlock_step_data(path=path, complete=True)
 
-    def insert_resolver_data(self, path: ResolverResolutionPath, data: Table) -> None:  # noqa: D102
+    def insert_resolver_data(self, path: ResolverStepPath, data: Table) -> None:  # noqa: D102
         self._check_writeable(path)
-        insert_resolver_clusters(
+        insert_resolver_steps(
             path=path,
             cluster_assignments=data,
             batch_size=self.settings.batch_size,
         )
-        self.unlock_resolution_data(path=path, complete=True)
+        self.unlock_step_data(path=path, complete=True)
 
-    def get_model_data(self, path: ModelResolutionPath) -> Table:  # noqa: D102
+    def get_model_data(self, path: ModelStepPath) -> Table:  # noqa: D102
         with MBDB.get_session() as session:
-            resolution = Resolutions.from_path(
-                path=path, res_type=ResolutionType.MODEL, session=session
-            )
+            step = Steps.from_path(path=path, res_type=StepType.MODEL, session=session)
 
             results_query = select(
-                ModelEdges.left_id, ModelEdges.right_id, ModelEdges.probability
-            ).where(ModelEdges.resolution_id == resolution.resolution_id)
+                ModelEdges.left_id, ModelEdges.right_id, ModelEdges.score
+            ).where(ModelEdges.step_id == step.step_id)
 
         with MBDB.get_adbc_connection() as conn:
             stmt: str = compile_sql(results_query)
             res: Table = sql_to_df(stmt=stmt, connection=conn, return_type="arrow")
             return res.cast(SCHEMA_MODEL_EDGES)
 
-    def get_resolver_data(self, path: ResolverResolutionPath) -> Table:  # noqa: D102
+    def get_resolver_data(self, path: ResolverStepPath) -> Table:  # noqa: D102
         with MBDB.get_session() as session:
-            resolution = require_complete_resolver(session=session, path=path)
+            step = require_complete_resolver(session=session, path=path)
             assignments_query = resolver_membership_subquery(
-                resolution_id=resolution.resolution_id,
+                step_id=step.step_id,
                 alias="assignments",
             )
             ordered_query = select(

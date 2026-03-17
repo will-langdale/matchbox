@@ -13,11 +13,11 @@ from matchbox.common.arrow import (
     SCHEMA_EVAL_SAMPLES,
     SCHEMA_JUDGEMENTS,
 )
-from matchbox.common.dtos import ResolutionPath, User
+from matchbox.common.dtos import StepPath, User
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
-    MatchboxResolutionNotFoundError,
+    MatchboxStepNotFoundError,
 )
 from matchbox.common.factories.scenarios import setup_scenario
 from matchbox.server.base import MatchboxDBAdapter
@@ -39,7 +39,7 @@ class TestMatchboxEvaluationBackend:
             crn_testkit = dag_testkit.sources.get("crn")
             naive_crn_resolver_path = dag_testkit.resolvers[
                 "resolver_naive_test_crn"
-            ].resolver.resolution_path
+            ].resolver.step_path
 
             # To begin with, no judgements to retrieve
             judgements, expansion = self.backend.get_judgements()
@@ -48,14 +48,12 @@ class TestMatchboxEvaluationBackend:
             # Do some queries to find real source cluster IDs
             deduped_query = pl.from_arrow(
                 self.backend.query(
-                    source=crn_testkit.resolution_path,
-                    point_of_truth=naive_crn_resolver_path,
+                    source=crn_testkit.step_path,
+                    resolves_from=naive_crn_resolver_path,
                 )
             )
             unique_ids = deduped_query["id"].unique()
-            all_leaves = pl.from_arrow(
-                self.backend.query(source=crn_testkit.resolution_path)
-            )
+            all_leaves = pl.from_arrow(self.backend.query(source=crn_testkit.step_path))
 
             def get_leaf_ids(cluster_id: int) -> list[int]:
                 return (
@@ -180,19 +178,17 @@ class TestMatchboxEvaluationBackend:
             assert sorted(clust1_leaves + clust2_leaves) in expansion_leaf_sets
 
     def test_sample_for_eval(self) -> None:
-        """Can extract samples for a user and a resolution."""
+        """Can extract samples for a user and a step."""
 
-        # Missing resolution raises error
+        # Missing step raises error
         with (
             self.scenario(self.backend, "admin"),
-            pytest.raises(
-                MatchboxResolutionNotFoundError, match="resolver_naive_test_crn"
-            ),
+            pytest.raises(MatchboxStepNotFoundError, match="resolver_naive_test_crn"),
         ):
             bob: User = self.backend.login(User(user_name="bob")).user
             self.backend.sample_for_eval(
                 n=10,
-                path=ResolutionPath(
+                path=StepPath(
                     collection="collection", run=1, name="resolver_naive_test_crn"
                 ),
                 user_name=bob.user_name,
@@ -204,30 +200,30 @@ class TestMatchboxEvaluationBackend:
             source_testkit = dag_testkit.sources.get("foo_a")
             model_resolver_path = dag_testkit.resolvers[
                 "resolver_naive_test_foo_a"
-            ].resolver.resolution_path
+            ].resolver.step_path
 
             bob: User = self.backend.login(User(user_name="bob")).user
 
             # Source clusters should not be returned
-            # So if we sample from a source resolution, we get nothing
+            # So if we sample from a source step, we get nothing
             samples_source = self.backend.sample_for_eval(
-                n=10, path=source_testkit.resolution_path, user_name=bob.user_name
+                n=10, path=source_testkit.step_path, user_name=bob.user_name
             )
             assert len(samples_source) == 0
 
             # We now look at more interesting cases
             # Query backend to form expectations
-            resolution_clusters = pl.from_arrow(
+            resolver_clusters = pl.from_arrow(
                 self.backend.query(
-                    source=source_testkit.resolution_path,
-                    point_of_truth=model_resolver_path,
+                    source=source_testkit.step_path,
+                    resolves_from=model_resolver_path,
                 )
             )
             source_clusters = pl.from_arrow(
-                self.backend.query(source=source_testkit.resolution_path)
+                self.backend.query(source=source_testkit.step_path)
             )
             # We can request more than available
-            assert len(resolution_clusters["id"].unique()) < 99
+            assert len(resolver_clusters["id"].unique()) < 99
 
             samples_99 = self.backend.sample_for_eval(
                 n=99, path=model_resolver_path, user_name=bob.user_name
@@ -235,9 +231,9 @@ class TestMatchboxEvaluationBackend:
 
             assert samples_99.schema.equals(SCHEMA_EVAL_SAMPLES)
 
-            # We can reconstruct the expected sample from resolution and source queries
+            # We can reconstruct the expected sample from step and source queries
             expected_sample = (
-                resolution_clusters.join(source_clusters, on="key", suffix="_source")
+                resolver_clusters.join(source_clusters, on="key", suffix="_source")
                 .rename({"id": "root", "id_source": "leaf"})
                 .with_columns(pl.lit("foo_a").alias("source"))
             )
@@ -251,15 +247,15 @@ class TestMatchboxEvaluationBackend:
             )
 
             # We can request less than available
-            assert len(resolution_clusters["id"].unique()) > 5
+            assert len(resolver_clusters["id"].unique()) > 5
             samples_5 = self.backend.sample_for_eval(
                 n=5, path=model_resolver_path, user_name=bob.user_name
             )
             assert len(samples_5["root"].unique()) == 5
 
             # If user has recent judgements, exclude clusters
-            first_cluster_id = resolution_clusters["id"][0]
-            first_cluster = resolution_clusters.filter(pl.col("id") == first_cluster_id)
+            first_cluster_id = resolver_clusters["id"][0]
+            first_cluster = resolver_clusters.filter(pl.col("id") == first_cluster_id)
             first_cluster_leaves = (
                 first_cluster.join(source_clusters, on="key", suffix="_source")[
                     "id_source"
@@ -288,8 +284,8 @@ class TestMatchboxEvaluationBackend:
             assert first_cluster_id not in samples_without_cluster["root"].to_pylist()
 
             # If a user has judged all available clusters, nothing is returned
-            for cluster_id in resolution_clusters["id"].unique():
-                cluster = resolution_clusters.filter(pl.col("id") == cluster_id)
+            for cluster_id in resolver_clusters["id"].unique():
+                cluster = resolver_clusters.filter(pl.col("id") == cluster_id)
                 cluster_leaves = (
                     cluster.join(source_clusters, on="key", suffix="_source")[
                         "id_source"

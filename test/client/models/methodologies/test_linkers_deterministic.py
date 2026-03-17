@@ -336,7 +336,7 @@ def test_exact_match_linking(
 
     # Validate results against ground truth
     identical, report = linked.diff_model_edges(
-        probabilities=results,
+        scores=results,
         left_clusters=left_source.entities,
         right_clusters=right_source.entities,
         sources=["source_left", "source_right"],
@@ -402,7 +402,7 @@ def test_exact_match_with_duplicates_linking(
 
     # Validate results against ground truth
     identical, report = linked.diff_model_edges(
-        probabilities=results,
+        scores=results,
         left_clusters=left_source.entities,
         right_clusters=right_source.entities,
         sources=["source_left", "source_right"],
@@ -473,7 +473,7 @@ def test_partial_entity_linking(
 
     # Validate results against ground truth
     identical, report = linked.diff_model_edges(
-        probabilities=results,
+        scores=results,
         left_clusters=left_source.entities,
         right_clusters=right_source.entities,
         sources=["source_left", "source_right"],
@@ -536,7 +536,7 @@ def test_no_matching_entities_linking(
 
     # Validate results against ground truth
     identical, report = linked.diff_model_edges(
-        probabilities=results,
+        scores=results,
         left_clusters=left_source.entities,
         right_clusters=right_source.entities,
         sources=["source_left", "source_right"],

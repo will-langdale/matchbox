@@ -77,12 +77,12 @@ def test_resolver_testkit_fake_run_materialises_results() -> None:
     resolver_testkit = resolver_factory(dag=dag_testkit.dag, inputs=[model_testkit])
 
     with pytest.raises(RuntimeError, match="must be run"):
-        resolver_testkit.resolver.to_resolution()
+        resolver_testkit.resolver.to_dto()
 
     resolver_testkit.fake_run()
     assert_frame_equal(resolver_testkit.resolver.results, resolver_testkit.assignments)
-    resolution = resolver_testkit.resolver.to_resolution()
-    assert resolution.config.resolver_class == "MockResolver"
+    step = resolver_testkit.resolver.to_dto()
+    assert step.config.resolver_class == "MockResolver"
 
 
 def test_resolver_factory_requires_testkit_inputs() -> None:
@@ -135,9 +135,9 @@ def test_resolver_factory_honours_explicit_thresholds() -> None:
         dag=dag_testkit.dag,
         left_testkit=linked.sources["crn"],
         true_entities=tuple(linked.true_entities),
-        prob_range=(0.5, 0.99),
+        score_range=(0.5, 0.99),
     ).fake_run()
-    assert model_testkit.probabilities.height > 0
+    assert model_testkit.scores.height > 0
 
     low_threshold = resolver_factory(
         dag=dag_testkit.dag,

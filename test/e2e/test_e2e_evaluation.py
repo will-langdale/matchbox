@@ -48,8 +48,8 @@ class TestE2EModelEvaluation:
         """Set up warehouse and database using fixtures."""
         # Persist shared setup for use in the test body
         n_true_entities = 10
-        final_resolution_1_name = "final_1"
-        final_resolution_2_name = "final_2"
+        final_step_1_name = "final_1"
+        final_step_2_name = "final_2"
         self.warehouse_engine = sqla_postgres_warehouse
         self.client = matchbox_client
 
@@ -109,7 +109,7 @@ class TestE2EModelEvaluation:
         )
 
         final_model_1 = source_a_dag1.query().deduper(
-            name=final_resolution_1_name,
+            name=final_step_1_name,
             description="Deduplicate by registration ID",
             model_class=NaiveDeduper,
             model_settings={
@@ -118,7 +118,7 @@ class TestE2EModelEvaluation:
             },
         )
         final_model_1.resolver(
-            name=f"resolver_{final_resolution_1_name}",
+            name=f"resolver_{final_step_1_name}",
             resolver_class=Components,
             resolver_settings=ComponentsSettings(thresholds={final_model_1.name: 0.0}),
         )
@@ -154,13 +154,13 @@ class TestE2EModelEvaluation:
                 )
             }
         ).deduper(
-            name=final_resolution_2_name,
+            name=final_step_2_name,
             description="Deduplicate by company name",
             model_class=NaiveDeduper,
             model_settings={"id": "id", "unique_fields": ["company_name"]},
         )
         final_model_2.resolver(
-            name=f"resolver_{final_resolution_2_name}",
+            name=f"resolver_{final_step_2_name}",
             resolver_class=Components,
             resolver_settings=ComponentsSettings(thresholds={final_model_2.name: 0.0}),
         )
@@ -216,7 +216,7 @@ class TestE2EModelEvaluation:
 
         # Create app and verify it can load samples from real data
         app = EntityResolutionApp(
-            resolution=dag.final_step.resolution_path,
+            resolver=dag.default_resolver.step_path,
             num_samples=2,
             session_tag="eval_session1",
             dag=dag,

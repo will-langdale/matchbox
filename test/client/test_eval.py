@@ -16,16 +16,16 @@ from matchbox.client.dags import DAG
 from matchbox.client.eval import EvalData, get_samples
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.client.resolvers import Components, ComponentsSettings
-from matchbox.client.results import ResolvedMatches
+from matchbox.client.results import ResolverMatches
 from matchbox.common.arrow import (
     SCHEMA_EVAL_SAMPLES,
     SCHEMA_QUERY_WITH_LEAVES,
     table_to_buffer,
 )
-from matchbox.common.dtos import Collection, Resolution, ResolutionType, Run
+from matchbox.common.dtos import Collection, Run, Step, StepType
 from matchbox.common.exceptions import (
-    MatchboxResolutionNotQueriable,
     MatchboxSourceTableError,
+    MatchboxStepNotQueriable,
 )
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.sources import source_from_tuple
@@ -88,7 +88,7 @@ def test_get_samples_local(sqlite_in_memory_warehouse: Engine) -> None:
         schema=pl.Schema(SCHEMA_QUERY_WITH_LEAVES),
     )
 
-    rm = ResolvedMatches(
+    rm = ResolverMatches(
         sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
     )
 
@@ -110,7 +110,7 @@ def test_get_samples_remote(
     sqlite_in_memory_warehouse: Engine,
     env_setter: Callable[[str, str], None],
 ) -> None:
-    """We can sample from a resolution on the server."""
+    """We can sample from a step on the server."""
     # Foo has two identical rows
     foo_testkit = source_from_tuple(
         data_tuple=({"col": 1}, {"col": 1}, {"col": 2}, {"col": 3}, {"col": 4}),
@@ -168,23 +168,23 @@ def test_get_samples_remote(
     run_data = Run(
         run_id=dag.run,
         mutable=True,
-        resolutions={
-            "foo": foo_testkit.fake_run().source.to_resolution(),
-            "bar": bar_testkit.fake_run().source.to_resolution(),
-            "baz": baz_testkit.fake_run().source.to_resolution(),
-            "linker1": Resolution(
+        steps={
+            "foo": foo_testkit.fake_run().source.to_dto(),
+            "bar": bar_testkit.fake_run().source.to_dto(),
+            "baz": baz_testkit.fake_run().source.to_dto(),
+            "linker1": Step(
                 fingerprint=b"mock",
-                resolution_type=ResolutionType.MODEL,
+                step_type=StepType.MODEL,
                 config=foo_bar.config,
             ),
-            "linker2": Resolution(
+            "linker2": Step(
                 fingerprint=b"mock2",
-                resolution_type=ResolutionType.MODEL,
+                step_type=StepType.MODEL,
                 config=bar_baz.config,
             ),
-            "resolver": Resolution(
+            "resolver": Step(
                 fingerprint=b"mock3",
-                resolution_type=ResolutionType.RESOLVER,
+                step_type=StepType.RESOLVER,
                 config=resolver.config,
             ),
         },
@@ -235,7 +235,7 @@ def test_get_samples_remote(
     # All three sources (foo, bar, baz) are in loaded_dag with the warehouse location
     samples_all = get_samples(
         n=10,
-        resolution=dag.final_step.resolution_path.name,
+        resolver=dag.default_resolver.step_path.name,
         dag=loaded_dag,
     )
 
@@ -264,7 +264,7 @@ def test_get_samples_remote(
 
     samples = get_samples(
         n=10,
-        resolution=dag.final_step.resolution_path.name,
+        resolver=dag.default_resolver.step_path.name,
         dag=loaded_dag,
     )
 
@@ -314,7 +314,7 @@ def test_get_samples_remote(
 
     no_samples = get_samples(
         n=10,
-        resolution=dag.final_step.resolution_path.name,
+        resolver=dag.default_resolver.step_path.name,
         dag=loaded_dag,
     )
     assert no_samples == {}
@@ -332,7 +332,7 @@ def test_get_samples_remote(
     with pytest.raises(MatchboxSourceTableError, match="Could not query source"):
         get_samples(
             n=10,
-            resolution=dag.final_step.resolution_path.name,
+            resolver=dag.default_resolver.step_path.name,
             dag=bad_dag,
         )
 
@@ -385,7 +385,7 @@ def test_evaldata_precision_recall_requires_synced_resolver(
 
     resolver = Mock()
     resolver.name = "resolver"
-    resolver.dag.get_matches.side_effect = MatchboxResolutionNotQueriable(
+    resolver.dag.get_matches.side_effect = MatchboxStepNotQueriable(
         "Resolver is not complete"
     )
 

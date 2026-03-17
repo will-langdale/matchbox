@@ -157,7 +157,7 @@ class DeterministicLinker(Linker):
                 SELECT
                     l.{self.settings.left_id} AS left_id,
                     r.{self.settings.right_id} AS right_id,
-                    1.0 AS probability
+                    1.0 AS score
                 FROM left_df l
                 INNER JOIN right_df r
                     ON {condition}
@@ -225,9 +225,7 @@ class DeterministicLinker(Linker):
     def _finalise_results(self, all_matches: list[pl.DataFrame]) -> pl.DataFrame:
         """Combine matches from all rounds and ensure correct schema."""
         if all_matches:
-            return pl.concat(all_matches).with_columns(
-                pl.col("probability").cast(pl.Float32)
-            )
-        return pl.DataFrame(
-            {"left_id": [], "right_id": [], "probability": []}
-        ).with_columns(pl.col("probability").cast(pl.Float32))
+            return pl.concat(all_matches).with_columns(pl.col("score").cast(pl.Float32))
+        return pl.DataFrame({"left_id": [], "right_id": [], "score": []}).with_columns(
+            pl.col("score").cast(pl.Float32)
+        )

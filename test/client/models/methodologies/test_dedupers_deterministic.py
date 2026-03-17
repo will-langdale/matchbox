@@ -105,7 +105,7 @@ def test_no_deduplication(
 
     # Validate results against ground truth
     identical, report = linked.diff_model_edges(
-        probabilities=results,
+        scores=results,
         left_clusters=source_testkit.entities,
         right_clusters=None,
         sources=["source_exact"],
@@ -158,7 +158,7 @@ def test_exact_duplicate_deduplication(
 
     # Validate results against ground truth
     identical, report = linked.diff_model_edges(
-        probabilities=results,
+        scores=results,
         left_clusters=source.entities,
         right_clusters=None,
         sources=["source_exact"],

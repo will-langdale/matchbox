@@ -1,4 +1,4 @@
-"""Resolutions API routes for the Matchbox server."""
+"""Steps API routes for the Matchbox server."""
 
 import zipfile
 from io import BytesIO
@@ -18,8 +18,8 @@ from matchbox.common.dtos import (
     DefaultUser,
     ErrorResponse,
     PermissionType,
-    ResolverResolutionName,
-    ResolverResolutionPath,
+    ResolverStepName,
+    ResolverStepPath,
     RunID,
     User,
 )
@@ -92,7 +92,7 @@ def sample(
     backend: BackendDependency,
     collection: CollectionName,
     run_id: RunID,
-    resolution: ResolverResolutionName,
+    resolver: ResolverStepName,
     n: int,
     user: Annotated[
         User,
@@ -107,7 +107,7 @@ def sample(
 ) -> ParquetResponse:
     """Sample n cluster to validate."""
     sample = backend.sample_for_eval(
-        path=ResolverResolutionPath(collection=collection, run=run_id, name=resolution),
+        path=ResolverStepPath(collection=collection, run=run_id, name=resolver),
         n=n,
         user_name=user.user_name,
     )

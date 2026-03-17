@@ -12,17 +12,17 @@ from matchbox.client.models import dedupers, linkers
 from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.queries import Query
-from matchbox.client.results import normalise_model_probabilities
-from matchbox.client.steps import Step, post_run
+from matchbox.client.results import normalise_model_scores
+from matchbox.client.steps import StepABC, post_run
 from matchbox.common.arrow import SCHEMA_MODEL_EDGES
 from matchbox.common.dtos import (
     ModelConfig,
-    ModelResolutionName,
-    ModelResolutionPath,
+    ModelStepName,
+    ModelStepPath,
     ModelType,
-    Resolution,
-    ResolutionType,
-    SourceResolutionName,
+    SourceStepName,
+    Step,
+    StepType,
 )
 from matchbox.common.hash import hash_arrow_table
 from matchbox.common.logging import logger, profile_time
@@ -53,7 +53,7 @@ def add_model_class(ModelClass: type[Linker] | type[Deduper]) -> None:
         raise ValueError("The argument is not a proper subclass of Deduper or Linker.")
 
 
-class Model(Step):
+class Model(StepABC):
     """Unified model class for both linking and deduping operations."""
 
     _local_data_schema: ClassVar[pa.Schema] = SCHEMA_MODEL_EDGES
@@ -129,7 +129,7 @@ class Model(Step):
 
     @property
     def results(self) -> pl.DataFrame | None:
-        """The locally computed model probabilities. Alias for local_data."""
+        """The locally computed model scores. Alias for local_data."""
         return self._local_data
 
     @results.setter
@@ -148,12 +148,12 @@ class Model(Step):
         )
 
     @property
-    def sources(self) -> set[SourceResolutionName]:
+    def sources(self) -> set[SourceStepName]:
         """Set of source names upstream of this node."""
-        left_input = self.dag.nodes[self.left_query.config.point_of_truth]
+        left_input = self.dag.nodes[self.left_query.config.resolves_from]
         model_sources = left_input.sources
         if self.right_query:
-            right_input = self.dag.nodes[self.right_query.config.point_of_truth]
+            right_input = self.dag.nodes[self.right_query.config.resolves_from]
             model_sources.update(right_input.sources)
         return model_sources
 
@@ -165,60 +165,60 @@ class Model(Step):
         )
 
     @post_run
-    def to_resolution(self) -> Resolution:
-        """Convert to Resolution for API calls."""
-        return Resolution(
+    def to_dto(self) -> Step:
+        """Convert to Step DTO for API calls."""
+        return Step(
             description=self.description,
-            resolution_type=ResolutionType.MODEL,
+            step_type=StepType.MODEL,
             config=self.config,
             fingerprint=self._fingerprint(),
         )
 
     @classmethod
-    def from_resolution(
+    def from_dto(
         cls,
-        resolution: Resolution,
-        resolution_name: str,
+        step: Step,
+        step_name: str,
         dag: DAG,
         **kwargs: Any,
     ) -> "Model":
-        """Reconstruct from Resolution."""
-        if resolution.resolution_type != ResolutionType.MODEL:
-            raise ValueError("Resolution must be of type 'model'")
+        """Reconstruct from Step DTO."""
+        if step.step_type != StepType.MODEL:
+            raise ValueError("Step must be of type 'model'")
 
         return cls(
             dag=dag,
-            name=ModelResolutionName(resolution_name),
-            description=resolution.description,
-            model_class=resolution.config.model_class,
-            model_settings=json.loads(resolution.config.model_settings),
-            left_query=Query.from_config(resolution.config.left_query, dag=dag),
-            right_query=Query.from_config(resolution.config.right_query, dag=dag)
-            if resolution.config.right_query
+            name=ModelStepName(step_name),
+            description=step.description,
+            model_class=step.config.model_class,
+            model_settings=json.loads(step.config.model_settings),
+            left_query=Query.from_config(step.config.left_query, dag=dag),
+            right_query=Query.from_config(step.config.right_query, dag=dag)
+            if step.config.right_query
             else None,
         )
 
     @property
-    def resolution_path(self) -> ModelResolutionPath:
-        """Returns the model resolution path."""
-        return ModelResolutionPath(
+    def step_path(self) -> ModelStepPath:
+        """Return the model step path."""
+        return ModelStepPath(
             collection=self.dag.name,
             run=self.dag.run,
             name=self.name,
         )
 
     @profile_time(attr="name")
-    def compute_probabilities(
+    def compute_scores(
         self, left_df: DataFrame, right_df: DataFrame | None = None
     ) -> DataFrame:
         """Run model instance against data."""
         if self.config.type == ModelType.LINKER:
             self.model_instance.prepare(left_df, right_df)
-            probabilities = self.model_instance.link(left=left_df, right=right_df)
+            scores = self.model_instance.link(left=left_df, right=right_df)
         else:
             self.model_instance.prepare(left_df)
-            probabilities = self.model_instance.dedupe(data=left_df)
-        return probabilities
+            scores = self.model_instance.dedupe(data=left_df)
+        return scores
 
     def run(
         self,
@@ -244,8 +244,8 @@ class Model(Step):
             right_df = right_data if right_data is not None else self.right_query.data()
 
         logger.info("Running model logic", prefix=log_prefix)
-        probabilities = self.compute_probabilities(left_df, right_df)
-        self._local_data = normalise_model_probabilities(probabilities)
+        scores = self.compute_scores(left_df, right_df)
+        self._local_data = normalise_model_scores(scores)
 
         return self._local_data
 

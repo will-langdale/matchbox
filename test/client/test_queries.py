@@ -20,7 +20,7 @@ from matchbox.common.arrow import (
 from matchbox.common.dtos import ErrorResponse
 from matchbox.common.exceptions import (
     MatchboxEmptyServerResponse,
-    MatchboxResolutionNotFoundError,
+    MatchboxStepNotFoundError,
 )
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.sources import (
@@ -169,14 +169,14 @@ def test_query_multiple_sources(
         "collection": testkit1.source.dag.name,
         "run_id": str(testkit1.source.dag.run),
         "source": testkit1.source.name,
-        "resolution": resolver.name,
+        "resolver": resolver.name,
         "return_leaf_id": "False",
     }
     assert dict(query_route.calls[-1].request.url.params) == {
         "collection": testkit2.source.dag.name,
         "run_id": str(testkit2.source.dag.run),
         "source": testkit2.source.name,
-        "resolution": resolver.name,
+        "resolver": resolver.name,
         "return_leaf_id": "False",
     }
 
@@ -485,7 +485,7 @@ def test_query_leaf_ids(
     )
 
 
-def test_query_404_resolution(
+def test_query_404_step(
     matchbox_api: MockRouter, sqla_sqlite_warehouse: Engine
 ) -> None:
     testkit = source_factory(
@@ -497,14 +497,14 @@ def test_query_404_resolution(
         return_value=Response(
             404,
             json=ErrorResponse(
-                exception_type="MatchboxResolutionNotFoundError",
-                message="Resolution 42 not found",
+                exception_type="MatchboxStepNotFoundError",
+                message="Step 42 not found",
             ).model_dump(),
         )
     )
 
     # Test with no optional params
-    with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
+    with pytest.raises(MatchboxStepNotFoundError, match="42"):
         testkit.source.query().data()
 
 

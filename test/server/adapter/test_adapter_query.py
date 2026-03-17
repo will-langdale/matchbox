@@ -31,14 +31,14 @@ class TestMatchboxQueryBackend:
             crn_testkit = dag_testkit.sources.get("crn")
 
             df_crn_sample = self.backend.query(
-                source=crn_testkit.resolution_path,
+                source=crn_testkit.step_path,
                 limit=10,
             )
 
             assert isinstance(df_crn_sample, pa.Table)
             assert df_crn_sample.num_rows == 10
 
-            df_crn_full = self.backend.query(source=crn_testkit.resolution_path)
+            df_crn_full = self.backend.query(source=crn_testkit.step_path)
 
             assert df_crn_full.num_rows == crn_testkit.data.num_rows
             assert df_crn_full.schema.equals(SCHEMA_QUERY)
@@ -49,7 +49,7 @@ class TestMatchboxQueryBackend:
             crn_testkit = dag_testkit.sources.get("crn")
 
             df_crn_full = self.backend.query(
-                source=crn_testkit.resolution_path, return_leaf_id=True
+                source=crn_testkit.step_path, return_leaf_id=True
             )
 
             assert df_crn_full.num_rows == crn_testkit.data.num_rows
@@ -61,11 +61,11 @@ class TestMatchboxQueryBackend:
             crn_testkit = dag_testkit.sources.get("crn")
             dedupe_resolver_path = dag_testkit.resolvers[
                 "resolver_naive_test_crn"
-            ].resolver.resolution_path
+            ].resolver.step_path
 
             df_crn = self.backend.query(
-                source=crn_testkit.resolution_path,
-                point_of_truth=dedupe_resolver_path,
+                source=crn_testkit.step_path,
+                resolves_from=dedupe_resolver_path,
             )
 
             assert isinstance(df_crn, pa.Table)
@@ -86,11 +86,11 @@ class TestMatchboxQueryBackend:
             dh_testkit = dag_testkit.sources.get("dh")
             linker_resolver_path = dag_testkit.resolvers[
                 f"resolver_{linker_name}"
-            ].resolver.resolution_path
+            ].resolver.step_path
 
             df_crn = self.backend.query(
-                source=crn_testkit.resolution_path,
-                point_of_truth=linker_resolver_path,
+                source=crn_testkit.step_path,
+                resolves_from=linker_resolver_path,
             )
 
             assert isinstance(df_crn, pa.Table)
@@ -98,8 +98,8 @@ class TestMatchboxQueryBackend:
             assert df_crn.schema.equals(SCHEMA_QUERY)
 
             df_dh = self.backend.query(
-                source=dh_testkit.resolution_path,
-                point_of_truth=linker_resolver_path,
+                source=dh_testkit.step_path,
+                resolves_from=linker_resolver_path,
             )
 
             assert isinstance(df_dh, pa.Table)
@@ -125,7 +125,7 @@ class TestMatchboxQueryBackend:
             dh_testkit = dag_testkit.sources.get("dh")
             linker_resolver_path = dag_testkit.resolvers[
                 f"resolver_{linker_name}"
-            ].resolver.resolution_path
+            ].resolver.step_path
 
             # Assumes CRN and DH come from same LinkedSourcesTestkit
             linked = dag_testkit.source_to_linked["crn"]
@@ -138,15 +138,15 @@ class TestMatchboxQueryBackend:
 
             res = self.backend.match(
                 key=next(iter(source_entity.keys["dh"])),
-                source=dh_testkit.resolution_path,
-                targets=[crn_testkit.resolution_path],
-                point_of_truth=linker_resolver_path,
+                source=dh_testkit.step_path,
+                targets=[crn_testkit.step_path],
+                resolves_from=linker_resolver_path,
             )
 
             assert len(res) == 1
             assert isinstance(res[0], Match)
-            assert res[0].source == dh_testkit.source.resolution_path
-            assert res[0].target == crn_testkit.source.resolution_path
+            assert res[0].source == dh_testkit.source.step_path
+            assert res[0].target == crn_testkit.source.step_path
             assert res[0].cluster is not None
             assert res[0].source_id == source_entity.keys["dh"]
             assert res[0].target_id == source_entity.keys["crn"]
@@ -159,7 +159,7 @@ class TestMatchboxQueryBackend:
             dh_testkit = dag_testkit.sources.get("dh")
             linker_resolver_path = dag_testkit.resolvers[
                 f"resolver_{linker_name}"
-            ].resolver.resolution_path
+            ].resolver.step_path
 
             # Assumes CRN and DH come from same LinkedSourcesTestkit
             linked = dag_testkit.source_to_linked["crn"]
@@ -172,15 +172,15 @@ class TestMatchboxQueryBackend:
 
             res = self.backend.match(
                 key=next(iter(source_entity.keys["crn"])),
-                source=crn_testkit.resolution_path,
-                targets=[dh_testkit.resolution_path],
-                point_of_truth=linker_resolver_path,
+                source=crn_testkit.step_path,
+                targets=[dh_testkit.step_path],
+                resolves_from=linker_resolver_path,
             )
 
             assert len(res) == 1
             assert isinstance(res[0], Match)
-            assert res[0].source == crn_testkit.source.resolution_path
-            assert res[0].target == dh_testkit.source.resolution_path
+            assert res[0].source == crn_testkit.source.step_path
+            assert res[0].target == dh_testkit.source.step_path
             assert res[0].cluster is not None
             assert res[0].source_id == source_entity.keys["crn"]
             assert res[0].target_id == source_entity.keys["dh"]
@@ -193,7 +193,7 @@ class TestMatchboxQueryBackend:
             dh_testkit = dag_testkit.sources.get("dh")
             linker_resolver_path = dag_testkit.resolvers[
                 f"resolver_{linker_name}"
-            ].resolver.resolution_path
+            ].resolver.step_path
 
             # Assumes CRN and DH come from same LinkedSourcesTestkit
             linked = dag_testkit.source_to_linked["crn"]
@@ -206,15 +206,15 @@ class TestMatchboxQueryBackend:
 
             res = self.backend.match(
                 key=next(iter(source_entity.keys["crn"])),
-                source=crn_testkit.resolution_path,
-                targets=[dh_testkit.resolution_path],
-                point_of_truth=linker_resolver_path,
+                source=crn_testkit.step_path,
+                targets=[dh_testkit.step_path],
+                resolves_from=linker_resolver_path,
             )
 
             assert len(res) == 1
             assert isinstance(res[0], Match)
-            assert res[0].source == crn_testkit.source.resolution_path
-            assert res[0].target == dh_testkit.source.resolution_path
+            assert res[0].source == crn_testkit.source.step_path
+            assert res[0].target == dh_testkit.source.step_path
             assert res[0].cluster is not None
             assert res[0].source_id == source_entity.keys["crn"]
             assert res[0].target_id == source_entity.keys.get("dh", set())
@@ -227,22 +227,22 @@ class TestMatchboxQueryBackend:
             dh_testkit = dag_testkit.sources.get("dh")
             linker_resolver_path = dag_testkit.resolvers[
                 f"resolver_{linker_name}"
-            ].resolver.resolution_path
+            ].resolver.step_path
 
             # Use a non-existent source key
             non_existent_key = "foo"
 
             res = self.backend.match(
                 key=non_existent_key,
-                source=crn_testkit.resolution_path,
-                targets=[dh_testkit.resolution_path],
-                point_of_truth=linker_resolver_path,
+                source=crn_testkit.step_path,
+                targets=[dh_testkit.step_path],
+                resolves_from=linker_resolver_path,
             )
 
             assert len(res) == 1
             assert isinstance(res[0], Match)
-            assert res[0].source == crn_testkit.source.resolution_path
-            assert res[0].target == dh_testkit.source.resolution_path
+            assert res[0].source == crn_testkit.source.step_path
+            assert res[0].target == dh_testkit.source.step_path
             assert res[0].cluster is None
             assert res[0].source_id == set()
             assert res[0].target_id == set()

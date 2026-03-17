@@ -1,4 +1,4 @@
-"""Test probabilistic behavior of linkers."""
+"""Test scored behavior of linkers."""
 
 from collections.abc import Callable
 from typing import Any
@@ -34,10 +34,10 @@ LinkerConfigurator = Callable[[SourceTestkit, SourceTestkit], dict[str, Any]]
 # Methodology configuration adapters
 
 
-def configure_weighted_probabilistic(
+def configure_weighted_scored(
     left_testkit: SourceTestkit, right_testkit: SourceTestkit
 ) -> dict[str, Any]:
-    """Configure WeightedDeterministicLinker with probabilistic-like behavior.
+    """Configure WeightedDeterministicLinker with scored-like behavior.
 
     Args:
         left_testkit: Left source object from linked_sources_factory
@@ -88,10 +88,10 @@ def configure_weighted_probabilistic(
     return settings_dict
 
 
-def configure_splink_probabilistic(
+def configure_splink_scored(
     left_testkit: SourceTestkit, right_testkit: SourceTestkit
 ) -> dict[str, Any]:
-    """Configure SplinkLinker for probabilistic matching.
+    """Configure SplinkLinker for scored matching.
 
     Args:
         left_testkit: Left source object from linked_sources_factory
@@ -183,11 +183,11 @@ def configure_splink_probabilistic(
     return settings_dict
 
 
-PROBABILISTIC_LINKERS = [
-    pytest.param(SplinkLinker, configure_splink_probabilistic, id="Splink"),
+SCORED_LINKERS = [
+    pytest.param(SplinkLinker, configure_splink_scored, id="Splink"),
     pytest.param(
         WeightedDeterministicLinker,
-        configure_weighted_probabilistic,
+        configure_weighted_scored,
         id="WeightedDeterministic",
     ),
 ]
@@ -195,12 +195,12 @@ PROBABILISTIC_LINKERS = [
 # Test cases
 
 
-@pytest.mark.parametrize(("Linker", "configure_linker"), PROBABILISTIC_LINKERS)
+@pytest.mark.parametrize(("Linker", "configure_linker"), SCORED_LINKERS)
 @patch.object(Query, "data")
-def test_probabilistic_scores_generation(
+def test_scored_model_scores_generation(
     mock_query_run: Mock, Linker: Linker, configure_linker: LinkerConfigurator
 ) -> None:
-    """Test that linkers can generate varying probability scores."""
+    """Test that linkers can generate varying score scores."""
 
     # Create sources with variations
     features = (
@@ -242,8 +242,8 @@ def test_probabilistic_scores_generation(
     # Configure and run the linker
     linker = Model(
         dag=linked.dag,
-        name="prob_test_linker",
-        description="Testing probability generation",
+        name="score_test_linker",
+        description="Testing score generation",
         model_class=Linker,
         model_settings=configure_linker(left_source, right_source),
         left_query=Query(left_source, dag=linked.dag),
@@ -254,7 +254,7 @@ def test_probabilistic_scores_generation(
 
     # Validate results against ground truth
     identical, report = linked.diff_model_edges(
-        probabilities=results,
+        scores=results,
         left_clusters=left_source.entities,
         right_clusters=right_source.entities,
         sources=["source_left", "source_right"],
@@ -265,11 +265,11 @@ def test_probabilistic_scores_generation(
 
     # Validate results over a threshold as a subset of the ground truth
     identical, report = linked.diff_model_edges(
-        probabilities=results,
+        scores=results,
         left_clusters=left_source.entities,
         right_clusters=right_source.entities,
         sources=["source_left", "source_right"],
-        threshold=results["probability"].mean(),
+        threshold=results["score"].mean(),
     )
 
     assert not identical, f"Expected imperfect results but got: {report}"

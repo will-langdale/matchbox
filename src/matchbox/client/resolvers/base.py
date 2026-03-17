@@ -7,7 +7,7 @@ from typing import ClassVar
 import polars as pl
 from pydantic import BaseModel, ConfigDict
 
-from matchbox.common.dtos import ModelResolutionName, ResolverType
+from matchbox.common.dtos import ModelStepName, ResolverType
 
 
 class ResolverSettings(BaseModel, ABC):
@@ -16,7 +16,7 @@ class ResolverSettings(BaseModel, ABC):
     model_config = ConfigDict(extra="forbid")
 
     @abstractmethod
-    def validate_inputs(self, model_names: Iterable[ModelResolutionName]) -> None:
+    def validate_inputs(self, model_names: Iterable[ModelStepName]) -> None:
         """Validates whether the models' clusters can be computed with this object.
 
         Should be used in conjunction with ResolverMethod.compute_clusters().
@@ -39,7 +39,7 @@ class ResolverMethod(BaseModel, ABC):
 
     @abstractmethod
     def compute_clusters(
-        self, model_edges: Mapping[ModelResolutionName, pl.DataFrame]
+        self, model_edges: Mapping[ModelStepName, pl.DataFrame]
     ) -> pl.DataFrame:
         """Compute cluster assignments from model edges.
 

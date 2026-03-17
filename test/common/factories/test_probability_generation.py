@@ -13,8 +13,8 @@ from matchbox.common.factories.entities import (
 from matchbox.common.factories.models import (
     calculate_min_max_edges,
     component_report,
-    generate_dummy_probabilities,
-    generate_entity_probabilities,
+    generate_dummy_scores,
+    generate_entity_scores,
 )
 from matchbox.common.transform import DisjointSet
 from test.common.factories.test_entity_factory import (
@@ -68,7 +68,7 @@ def test_calculate_min_max_edges(
             {
                 "left_count": 5,
                 "right_count": None,
-                "prob_range": (0.6, 0.8),
+                "score_range": (0.6, 0.8),
                 "num_components": 3,
                 "total_rows": 2,
             },
@@ -78,7 +78,7 @@ def test_calculate_min_max_edges(
             {
                 "left_count": 1_000,
                 "right_count": None,
-                "prob_range": (0.6, 0.8),
+                "score_range": (0.6, 0.8),
                 "num_components": 10,
                 "total_rows": calculate_min_max_edges(1_000, 1_000, 10, True)[0],
             },
@@ -88,7 +88,7 @@ def test_calculate_min_max_edges(
             {
                 "left_count": 1_000,
                 "right_count": None,
-                "prob_range": (0.6, 0.8),
+                "score_range": (0.6, 0.8),
                 "num_components": 10,
                 "total_rows": calculate_min_max_edges(1_000, 1_000, 10, True)[1],
             },
@@ -98,7 +98,7 @@ def test_calculate_min_max_edges(
             {
                 "left_count": 1_000,
                 "right_count": 1_000,
-                "prob_range": (0.6, 0.8),
+                "score_range": (0.6, 0.8),
                 "num_components": 10,
                 "total_rows": calculate_min_max_edges(1_000, 1_000, 10, False)[0],
             },
@@ -108,7 +108,7 @@ def test_calculate_min_max_edges(
             {
                 "left_count": 1_000,
                 "right_count": 1_000,
-                "prob_range": (0.6, 0.8),
+                "score_range": (0.6, 0.8),
                 "num_components": 10,
                 "total_rows": calculate_min_max_edges(1_000, 1_000, 10, False)[1],
             },
@@ -118,7 +118,7 @@ def test_calculate_min_max_edges(
             {
                 "left_count": 1_000,
                 "right_count": 1_000,
-                "prob_range": (0.6, 0.8),
+                "score_range": (0.6, 0.8),
                 "num_components": 10,
                 "total_rows": None,
             },
@@ -126,7 +126,7 @@ def test_calculate_min_max_edges(
         ),
     ],
 )
-def test_generate_dummy_probabilities(parameters: dict[str, Any]) -> None:
+def test_generate_dummy_scores(parameters: dict[str, Any]) -> None:
     len_left = parameters["left_count"]
     len_right = parameters["right_count"]
     if len_right:
@@ -150,16 +150,16 @@ def test_generate_dummy_probabilities(parameters: dict[str, Any]) -> None:
     )
     total_rows = total_rows or min_edges
 
-    probabilities = generate_dummy_probabilities(
+    scores = generate_dummy_scores(
         left_values=left_values,
         right_values=right_values,
-        prob_range=parameters["prob_range"],
+        score_range=parameters["score_range"],
         num_components=n_components,
         total_rows=total_rows,
     )
-    report = component_report(table=probabilities, all_nodes=rand_vals)
-    p_left = probabilities["left_id"].to_list()
-    p_right = probabilities["right_id"].to_list()
+    report = component_report(table=scores, all_nodes=rand_vals)
+    p_left = scores["left_id"].to_list()
+    p_right = scores["right_id"].to_list()
 
     assert report["num_components"] == n_components
 
@@ -171,10 +171,10 @@ def test_generate_dummy_probabilities(parameters: dict[str, Any]) -> None:
     else:
         assert set(p_left) | set(p_right) <= set(left_values)
 
-    assert probabilities["probability"].max() <= parameters["prob_range"][1]
-    assert probabilities["probability"].min() >= parameters["prob_range"][0]
+    assert scores["score"].max() <= parameters["score_range"][1]
+    assert scores["score"].min() >= parameters["score_range"][0]
 
-    assert len(probabilities) == total_rows
+    assert len(scores) == total_rows
 
     edges = zip(p_left, p_right, strict=True)
     edges_set = {tuple(sorted(e)) for e in edges}
@@ -184,15 +184,15 @@ def test_generate_dummy_probabilities(parameters: dict[str, Any]) -> None:
     assert len(self_references) == 0
 
 
-def test_generate_dummy_probabilities_no_self_references() -> None:
+def test_generate_dummy_scores_no_self_references() -> None:
     # Create input with repeated values
     left_values = tuple([1] * 4 + [2] * 4 + [3] * 4)
 
     try:
-        probabilities = generate_dummy_probabilities(
+        scores = generate_dummy_scores(
             left_values=left_values,
             right_values=None,
-            prob_range=(0.6, 0.8),
+            score_range=(0.6, 0.8),
             num_components=3,
             total_rows=3,
         )
@@ -200,8 +200,8 @@ def test_generate_dummy_probabilities_no_self_references() -> None:
         return
 
     # If no ValueError was raised, continue with the rest of the checks
-    p_left = probabilities["left_id"].to_list()
-    p_right = probabilities["right_id"].to_list()
+    p_left = scores["left_id"].to_list()
+    p_right = scores["right_id"].to_list()
 
     # Check for self-references
     self_references = [
@@ -228,22 +228,22 @@ def test_generate_dummy_probabilities_no_self_references() -> None:
     ],
     ids=["lower_than_min", "higher_than_max"],
 )
-def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None:
+def test_generate_dummy_scores_errors(parameters: dict[str, Any]) -> None:
     left_values = tuple(range(*parameters["left_range"]))
     right_values = tuple(range(*parameters["right_range"]))
 
     with pytest.raises(ValueError):
-        generate_dummy_probabilities(
+        generate_dummy_scores(
             left_values=left_values,
             right_values=right_values,
-            prob_range=(0.6, 0.8),
+            score_range=(0.6, 0.8),
             num_components=parameters["num_components"],
             total_rows=parameters["total_rows"],
         )
 
 
 @pytest.mark.parametrize(
-    ("left_entities", "right_entities", "source_entities", "prob_range", "expected"),
+    ("left_entities", "right_entities", "source_entities", "score_range", "expected"),
     [
         pytest.param(
             frozenset(
@@ -255,7 +255,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
             None,  # Deduplication case
             frozenset([make_source_entity("test", ["a1", "a2"], "a")]),
             (0.8, 1.0),
-            {"edge_count": 1, "prob_range": (0.8, 1.0)},
+            {"edge_count": 1, "score_range": (0.8, 1.0)},
             id="basic_dedupe",
         ),
         pytest.param(
@@ -268,7 +268,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
                 ]
             ),
             (0.8, 1.0),
-            {"edge_count": 0, "prob_range": (0.8, 1.0)},
+            {"edge_count": 0, "score_range": (0.8, 1.0)},
             id="basic_link_no_match",
         ),
         pytest.param(
@@ -276,7 +276,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
             frozenset([make_cluster_entity(2, "test", ["a2"])]),
             frozenset([make_source_entity("test", ["a1", "a2"], "a")]),
             (0.8, 1.0),
-            {"edge_count": 1, "prob_range": (0.8, 1.0)},
+            {"edge_count": 1, "score_range": (0.8, 1.0)},
             id="successful_link",
         ),
         pytest.param(
@@ -292,7 +292,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
                 [make_source_entity("test", ["a1", "a2", "a3", "a4"], "entity_a")]
             ),
             (0.8, 1.0),
-            {"edge_count": 3, "prob_range": (0.8, 1.0)},
+            {"edge_count": 3, "score_range": (0.8, 1.0)},
             id="overlapping_dedupe",
         ),
         pytest.param(
@@ -315,7 +315,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
                 ]
             ),
             (0.8, 1.0),
-            {"edge_count": 2, "prob_range": (0.8, 1.0)},
+            {"edge_count": 2, "score_range": (0.8, 1.0)},
             id="multi_component_link",
         ),
         pytest.param(
@@ -330,7 +330,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
             None,
             frozenset([make_source_entity("test", ["a1", "a2"], "a")]),
             (0.8, 1.0),
-            {"edge_count": 1, "prob_range": (0.8, 1.0)},
+            {"edge_count": 1, "score_range": (0.8, 1.0)},
             id="partial_source_coverage",
         ),
         pytest.param(
@@ -338,7 +338,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
             frozenset(),
             frozenset(),
             (0.8, 1.0),
-            {"edge_count": 0, "prob_range": (0.8, 1.0)},
+            {"edge_count": 0, "score_range": (0.8, 1.0)},
             id="empty_sets",
         ),
         pytest.param(
@@ -351,8 +351,8 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
             None,
             frozenset([make_source_entity("test", ["a1", "a2"], "a")]),
             (0.5, 0.7),
-            {"edge_count": 1, "prob_range": (0.5, 0.7)},
-            id="different_prob_range",
+            {"edge_count": 1, "score_range": (0.5, 0.7)},
+            id="different_score_range",
         ),
         pytest.param(
             frozenset(
@@ -370,7 +370,7 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
                 ]
             ),
             (0.8, 1.0),
-            {"edge_count": 1, "prob_range": (0.8, 1.0)},
+            {"edge_count": 1, "score_range": (0.8, 1.0)},
             id="mixed_merged_unmerged",
         ),
         pytest.param(
@@ -390,22 +390,22 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]) -> None
                 ]
             ),
             (0.8, 1.0),
-            {"edge_count": 0, "prob_range": (0.8, 1.0)},
+            {"edge_count": 0, "score_range": (0.8, 1.0)},
             id="multi_source_entity",
         ),
     ],
 )
-def test_generate_entity_probabilities_scenarios(
+def test_generate_entity_scores_scenarios(
     left_entities: frozenset[ClusterEntity],
     right_entities: frozenset[ClusterEntity] | None,
     source_entities: frozenset[SourceEntity],
-    prob_range: tuple[float, float],
+    score_range: tuple[float, float],
     expected: dict,
 ) -> None:
-    """Comprehensive test for generate_entity_probabilities with various scenarios."""
+    """Comprehensive test for generate_entity_scores with various scenarios."""
     # Run the function
-    result = generate_entity_probabilities(
-        left_entities, right_entities, source_entities, prob_range
+    result = generate_entity_scores(
+        left_entities, right_entities, source_entities, score_range
     )
 
     # Check schema
@@ -423,11 +423,11 @@ def test_generate_entity_probabilities_scenarios(
     # Check number of edges matches expected
     assert len(edges) == expected["edge_count"]
 
-    # For non-empty results, validate probability ranges
+    # For non-empty results, validate score ranges
     if edges:
-        probs = result["probability"].to_numpy()
-        prob_min, prob_max = expected["prob_range"]
-        assert all(prob_min <= p <= prob_max for p in probs)
+        score_values = result["score"].to_numpy()
+        score_min, score_max = expected["score_range"]
+        assert all(score_min <= p <= score_max for p in score_values)
 
 
 @pytest.mark.parametrize(
@@ -469,19 +469,19 @@ def test_seed_determinism(
         )
 
     # Generate results with the two seeds
-    result1 = generate_entity_probabilities(
+    result1 = generate_entity_scores(
         left_entities=entities,
         right_entities=right_entities,
         source_entities=frozenset([source]),
-        prob_range=(0.8, 1.0),
+        score_range=(0.8, 1.0),
         seed=seed1,
     )
 
-    result2 = generate_entity_probabilities(
+    result2 = generate_entity_scores(
         left_entities=entities,
         right_entities=right_entities,
         source_entities=frozenset([source]),
-        prob_range=(0.8, 1.0),
+        score_range=(0.8, 1.0),
         seed=seed2,
     )
 
@@ -495,7 +495,7 @@ def test_seed_determinism(
 
 
 def test_disjoint_set_recovery() -> None:
-    """Test that DisjointSet can recover the entity structure from probabilities."""
+    """Test that DisjointSet can recover the entity structure from scores."""
     # Create source entities
     source1 = make_source_entity("source1", ["1", "2", "3"], "entity1")
     source2 = make_source_entity("source1", ["4", "5", "6"], "entity2")
@@ -512,18 +512,18 @@ def test_disjoint_set_recovery() -> None:
         ]
     )
 
-    # Generate probabilities
-    table = generate_entity_probabilities(
+    # Generate scores
+    table = generate_entity_scores(
         left_entities=clusters,
         right_entities=None,
         source_entities=frozenset([source1, source2]),
-        prob_range=(0.9, 1.0),
+        score_range=(0.9, 1.0),
     )
 
-    # Use DisjointSet to cluster based on high probabilities
+    # Use DisjointSet to cluster based on high scores
     ds = DisjointSet[int]()
     for row in table.to_dicts():
-        if row["probability"] >= 0.9:  # High confidence matches
+        if row["score"] >= 0.9:  # High confidence matches
             ds.union(row["left_id"], row["right_id"])
 
     # Get resulting clusters
@@ -538,15 +538,15 @@ def test_disjoint_set_recovery() -> None:
 
 
 @pytest.mark.parametrize(
-    "prob_range",
+    "score_range",
     [
         pytest.param((-0.1, 0.5), id="negative_lower_bound"),  # Negative lower bound
         pytest.param((0.5, 1.1), id="upper_bound_too_high"),  # Upper bound > 1.0
         pytest.param((0.8, 0.7), id="decreasing_range"),  # Decreasing range
     ],
 )
-def test_invalid_probability_ranges(prob_range: tuple[float, float]) -> None:
-    """Test that invalid probability ranges raise appropriate errors."""
+def test_invalid_score_ranges(score_range: tuple[float, float]) -> None:
+    """Test that invalid score ranges raise appropriate errors."""
     source = make_source_entity("test", ["a1", "a2"], "entity")
     entities = frozenset(
         [
@@ -555,12 +555,12 @@ def test_invalid_probability_ranges(prob_range: tuple[float, float]) -> None:
         ]
     )
 
-    with pytest.raises(ValueError, match="Probabilities must be"):
-        generate_entity_probabilities(
+    with pytest.raises(ValueError, match="Scores must be"):
+        generate_entity_scores(
             left_entities=entities,
             right_entities=None,
             source_entities=frozenset([source]),
-            prob_range=prob_range,
+            score_range=score_range,
         )
 
 
@@ -589,12 +589,12 @@ def test_complex_entity_recovery() -> None:
         ]
     )
 
-    # Generate probabilities
-    table = generate_entity_probabilities(
+    # Generate scores
+    table = generate_entity_scores(
         left_entities=clusters,
         right_entities=None,
         source_entities=frozenset([source]),
-        prob_range=(0.9, 1.0),
+        score_range=(0.9, 1.0),
     )
 
     # There should be edges connecting all entities (n*(n-1))/2 = 10 edges
@@ -603,7 +603,7 @@ def test_complex_entity_recovery() -> None:
     # Use DisjointSet to cluster
     ds = DisjointSet[int]()
     for row in table.to_dicts():
-        if row["probability"] >= 0.9:
+        if row["score"] >= 0.9:
             ds.union(row["left_id"], row["right_id"])
 
     # Should recover as a single component

@@ -94,7 +94,7 @@ class BackendResourceType(StrEnum):
 
     COLLECTION = "collection"
     RUN = "run"
-    RESOLUTION = "resolution"
+    STEP = "step"
     CLUSTER = "cluster"
     USER = "user"
     GROUP = "group"
@@ -187,47 +187,45 @@ CollectionName: TypeAlias = MatchboxName
 RunID: TypeAlias = int
 """Type alias for run IDs."""
 
-SourceResolutionName: TypeAlias = MatchboxName
-"""Type alias for source resolution names."""
+SourceStepName: TypeAlias = MatchboxName
+"""Type alias for source step names."""
 
-ModelResolutionName: TypeAlias = MatchboxName
-"""Type alias for model resolution names."""
+ModelStepName: TypeAlias = MatchboxName
+"""Type alias for model step names."""
 
-ResolverResolutionName: TypeAlias = MatchboxName
-"""Type alias for resolver resolution names."""
+ResolverStepName: TypeAlias = MatchboxName
+"""Type alias for resolver step names."""
 
-ResolutionName: TypeAlias = (
-    SourceResolutionName | ModelResolutionName | ResolverResolutionName
-)
-"""Type alias for any resolution names."""
+StepName: TypeAlias = SourceStepName | ModelStepName | ResolverStepName
+"""Type alias for any step names."""
 
 
-class ResolutionPath(BaseModel):
-    """Base resolution identifier with collection, run, and name."""
+class StepPath(BaseModel):
+    """Base step identifier with collection, run, and name."""
 
     model_config = ConfigDict(frozen=True)
 
     collection: CollectionName
     run: RunID
-    name: ResolutionName
+    name: StepName
 
     def __str__(self) -> str:
-        """String representation of the resolution path."""
+        """String representation of the step path."""
         return f"{self.collection}/{self.run}/{self.name}"
 
 
-SourceResolutionPath: TypeAlias = ResolutionPath
-"""Type alias for source resolution paths."""
+SourceStepPath: TypeAlias = StepPath
+"""Type alias for source step paths."""
 
-ModelResolutionPath: TypeAlias = ResolutionPath
-"""Type alias for model resolution paths."""
+ModelStepPath: TypeAlias = StepPath
+"""Type alias for model step paths."""
 
-ResolverResolutionPath: TypeAlias = ResolutionPath
-"""Type alias for resolver resolution paths."""
+ResolverStepPath: TypeAlias = StepPath
+"""Type alias for resolver step paths."""
 
 
-class ResolutionType(StrEnum):
-    """Types of nodes in a resolution."""
+class StepType(StrEnum):
+    """Types of nodes in a DAG."""
 
     SOURCE = "source"
     MODEL = "model"
@@ -263,7 +261,7 @@ class SourceConfig(BaseModel):
     """Configuration of a source that can, or has been, indexed in the backend.
 
     They are foundational processes on top of which linking and deduplication models can
-    build new resolutions.
+        build new steps.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -324,7 +322,7 @@ class SourceConfig(BaseModel):
         return self
 
     @property
-    def dependencies(self) -> list[ResolutionName]:
+    def dependencies(self) -> list[StepName]:
         """Local execution prerequisites.
 
         While this can contain information about graph topology, it should only be used
@@ -333,7 +331,7 @@ class SourceConfig(BaseModel):
         return []
 
     @property
-    def parents(self) -> list[ResolutionName]:
+    def parents(self) -> list[StepName]:
         """Direct DAG edges to this node."""
         return []
 
@@ -408,48 +406,48 @@ class QueryCombineType(StrEnum):
 class QueryConfig(BaseModel):
     """Configuration of query generating model inputs.
 
-    A QueryConfig is a view onto the resolution subgraph, a triangulation of
+    A QueryConfig is a view onto the step subgraph, a triangulation of
     a set of sources and an optional resolver. It doesn't describe topology,
     which is why it has no .parents attribute.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    source_resolutions: tuple[SourceResolutionName, ...]
-    resolver_resolution: ResolverResolutionName | None = None
+    source_steps: tuple[SourceStepName, ...]
+    resolver: ResolverStepName | None = None
     combine_type: QueryCombineType = QueryCombineType.CONCAT
     cleaning: dict[str, str] | None = None
 
     @model_validator(mode="after")
-    def validate_resolutions(self) -> Self:
-        """Ensure that resolution settings are compatible."""
-        if not self.source_resolutions:
-            raise ValueError("At least one source resolution required.")
-        if len(self.source_resolutions) > 1 and not self.resolver_resolution:
+    def validate_steps(self) -> Self:
+        """Ensure that step settings are compatible."""
+        if not self.source_steps:
+            raise ValueError("At least one source step required.")
+        if len(self.source_steps) > 1 and not self.resolver:
             raise ValueError(
-                "A resolver resolution must be set if querying from multiple sources"
+                "A resolver step must be set if querying from multiple sources"
             )
         return self
 
     @property
-    def dependencies(self) -> list[ResolutionName]:
+    def dependencies(self) -> list[StepName]:
         """Local execution prerequisites.
 
         While this can contain information about graph topology, it should only be used
         to check validity, never to reconstruct it.
         """
-        deps = list(self.source_resolutions)
-        if self.resolver_resolution:
-            deps.append(self.resolver_resolution)
+        deps = list(self.source_steps)
+        if self.resolver:
+            deps.append(self.resolver)
 
         return deps
 
     @property
-    def point_of_truth(self) -> ResolutionName:
-        """Return path of resolution that will be used as point of truth."""
-        if self.resolver_resolution:
-            return self.resolver_resolution
-        return self.source_resolutions[0]
+    def resolves_from(self) -> StepName:
+        """Return the step name that the query resolves from."""
+        if self.resolver:
+            return self.resolver
+        return self.source_steps[0]
 
 
 class ModelType(StrEnum):
@@ -471,7 +469,7 @@ class ModelConfig(BaseModel):
     def __eq__(self, other: object) -> bool:
         """Check equality of model configurations.
 
-        Model configurations don't care about the order of left and right resolutions.
+        Model configurations don't care about the order of left and right steps.
         """
         if not isinstance(other, ModelConfig):
             return NotImplemented
@@ -501,7 +499,7 @@ class ModelConfig(BaseModel):
         return value
 
     @property
-    def dependencies(self) -> list[ResolutionName]:
+    def dependencies(self) -> list[StepName]:
         """Local execution prerequisites.
 
         While this can contain information about graph topology, it should only be used
@@ -514,14 +512,14 @@ class ModelConfig(BaseModel):
         return deps
 
     @property
-    def parents(self) -> list[ResolutionName]:
+    def parents(self) -> list[StepName]:
         """Direct DAG edges to this node."""
         if self.right_query:
             return [
-                self.left_query.point_of_truth,
-                self.right_query.point_of_truth,
+                self.left_query.resolves_from,
+                self.right_query.resolves_from,
             ]
-        return [self.left_query.point_of_truth]
+        return [self.left_query.resolves_from]
 
 
 class ResolverType(StrEnum):
@@ -535,7 +533,7 @@ class ResolverConfig(BaseModel):
 
     resolver_class: str
     resolver_settings: str
-    inputs: tuple[ModelResolutionName, ...]
+    inputs: tuple[ModelStepName, ...]
 
     @model_validator(mode="after")
     def validate_inputs(self) -> Self:
@@ -555,7 +553,7 @@ class ResolverConfig(BaseModel):
         return value
 
     @property
-    def dependencies(self) -> list[ModelResolutionName]:
+    def dependencies(self) -> list[ModelStepName]:
         """Local execution prerequisites.
 
         While this can contain information about graph topology, it should only be used
@@ -564,7 +562,7 @@ class ResolverConfig(BaseModel):
         return list(self.inputs)
 
     @property
-    def parents(self) -> list[ModelResolutionName]:
+    def parents(self) -> list[ModelStepName]:
         """Direct DAG edges to this node."""
         return list(self.inputs)
 
@@ -573,9 +571,9 @@ class Match(BaseModel):
     """A match between primary keys in the Matchbox database."""
 
     cluster: int | None
-    source: SourceResolutionPath
+    source: SourceStepPath
     source_id: set[str] = Field(default_factory=set)
-    target: SourceResolutionPath
+    target: SourceStepPath
     target_id: set[str] = Field(default_factory=set)
 
     @model_validator(mode="after")
@@ -595,8 +593,8 @@ class Match(BaseModel):
         return sorted(id_set)
 
 
-class Resolution(BaseModel):
-    """Unified resolution type with common fields and discriminated config."""
+class Step(BaseModel):
+    """Unified step type with common fields and discriminated config."""
 
     description: str | None = Field(default=None, description="Description")
     fingerprint: Annotated[
@@ -606,7 +604,7 @@ class Resolution(BaseModel):
     ]
 
     # Discriminator field
-    resolution_type: ResolutionType
+    step_type: StepType
 
     # Type-specific config as discriminated union
     config: SourceConfig | ModelConfig | ResolverConfig
@@ -620,19 +618,19 @@ class Resolution(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_resolution_type_matches_config(self) -> Self:
-        """Ensure resolution_type matches the config type."""
-        if self.resolution_type == ResolutionType.SOURCE:
+    def validate_step_type_matches_config(self) -> Self:
+        """Ensure step_type matches the config type."""
+        if self.step_type == StepType.SOURCE:
             assert isinstance(self.config, SourceConfig), (
-                "Config must be SourceConfig when resolution_type is 'source'"
+                "Config must be SourceConfig when step_type is 'source'"
             )
-        elif self.resolution_type == ResolutionType.MODEL:
+        elif self.step_type == StepType.MODEL:
             assert isinstance(self.config, ModelConfig), (
-                "Config must be ModelConfig when resolution_type is 'model'"
+                "Config must be ModelConfig when step_type is 'model'"
             )
         else:
             assert isinstance(self.config, ResolverConfig), (
-                "Config must be ResolverConfig when resolution_type is 'resolver'"
+                "Config must be ResolverConfig when step_type is 'resolver'"
             )
         return self
 
@@ -648,9 +646,9 @@ class Run(BaseModel):
     is_mutable: bool = Field(
         default=False, description="Whether this run can be modified"
     )
-    resolutions: dict[ResolutionName, Resolution] = Field(
+    steps: dict[StepName, Step] = Field(
         default_factory=dict,
-        description="Dict of resolution objects by name within this run",
+        description="Dict of step objects by name within this run",
     )
 
 
@@ -695,7 +693,7 @@ class ResourceOperationStatus(BaseModel):
                             "value": cls(
                                 success=False,
                                 target=str(
-                                    ModelResolutionPath(
+                                    ModelStepPath(
                                         collection="default",
                                         run=1,
                                         name="example_model",
@@ -703,12 +701,12 @@ class ResourceOperationStatus(BaseModel):
                                 ),
                                 operation=CRUDOperation.DELETE,
                                 details=(
-                                    "This operation will delete the resolutions "
+                                    "This operation will delete the steps "
                                     "deduper_1, deduper_2, linker_1, "
-                                    "as well as all probabilities they have created. "
+                                    "as well as all scores they have created. "
                                     "\n\n"
                                     "It won't delete validation associated with these "
-                                    "probabilities. \n\n"
+                                    "scores. \n\n"
                                     "If you're sure you want to continue, rerun with "
                                     "certain=True"
                                 ),
@@ -722,7 +720,7 @@ class ResourceOperationStatus(BaseModel):
                             "value": cls(
                                 success=False,
                                 target=str(
-                                    ModelResolutionPath(
+                                    ModelStepPath(
                                         collection="default",
                                         run=1,
                                         name="example_model",
