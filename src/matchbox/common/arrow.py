@@ -86,13 +86,12 @@ def table_to_buffer(table: pa.Table) -> BytesIO:
 
 
 def check_schema(expected: Schema, actual: Schema) -> None:
-    """Validate equality of Arrow schemas, ignoring field order and metadata.
+    """Check presence of Arrow fields, ignoring field order, extras and metadata.
 
     Args:
-        expected: Schema to check against
+        expected: Schema with fields that must be present
         actual: Schema to check
     """
-    # Make comparison invariant to order
     actual = pa.schema(
         [
             (name, actual.field(name).type)

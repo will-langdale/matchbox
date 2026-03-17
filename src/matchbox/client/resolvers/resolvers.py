@@ -108,11 +108,9 @@ class Resolver(Step):
         self._local_data = value
 
     @property
+    @post_run
     def results_eval(self) -> pl.DataFrame:
         """Get mapping of result clusters to leaf IDs from the server."""
-        if self.results is None:
-            raise RuntimeError("Results are not available on this resolver")
-
         leaf_id_mappings: list[pl.DataFrame] = []
 
         for model in self.inputs:

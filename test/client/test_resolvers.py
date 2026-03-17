@@ -8,10 +8,9 @@ from sqlalchemy import Engine
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.client.resolvers import Components, ComponentsSettings
-from matchbox.client.resolvers.resolvers import Resolver
 from matchbox.common.exceptions import MatchboxResolutionTypeError
 from matchbox.common.factories.dags import TestkitDAG
-from matchbox.common.factories.models import model_factory
+from matchbox.common.factories.resolvers import resolver_factory
 from matchbox.common.factories.sources import source_factory
 
 
@@ -149,15 +148,8 @@ def test_resolver_run_requires_materialised_inputs(
 def test_resolver_eval_results_produced() -> None:
     """Results ready for evaluation can be produced."""
     # Set up dummy resolver, with fake results
-    dag = TestkitDAG().dag
-    model = model_factory().model
-    resolver = Resolver(
-        dag=dag,
-        name="resolver",
-        inputs=[model],
-        resolver_class=Components,
-        resolver_settings={"thresholds": {model.name: 0.0}},
-    )
+    resolver = resolver_factory().resolver
+    model = resolver.inputs[0]
     resolver.results = pl.DataFrame(
         [{"parent_id": 345, "child_id": 34}, {"parent_id": 345, "child_id": 5}]
     )

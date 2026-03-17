@@ -43,15 +43,23 @@ def test_init_and_run_model(
     bar = source_factory(engine=sqla_sqlite_warehouse).write_to_location()
     bar.source.run()
 
+    # Return data with leaf IDs (default)
+    foo_query_data = (
+        pl.from_arrow(foo.data).with_columns(pl.col("id").alias("leaf_id")).to_arrow()
+    )
+    bar_query_data = (
+        pl.from_arrow(bar.data).with_columns(pl.col("id").alias("leaf_id")).to_arrow()
+    )
+
     # Mock API
     query_endpoint = matchbox_api.get("/query").mock(
         side_effect=[
             # First query
-            Response(200, content=table_to_buffer(foo.data).read()),
-            Response(200, content=table_to_buffer(bar.data).read()),
+            Response(200, content=table_to_buffer(foo_query_data).read()),
+            Response(200, content=table_to_buffer(bar_query_data).read()),
             # Second query (for pre-fetching)
-            Response(200, content=table_to_buffer(foo.data).read()),
-            Response(200, content=table_to_buffer(bar.data).read()),
+            Response(200, content=table_to_buffer(foo_query_data).read()),
+            Response(200, content=table_to_buffer(bar_query_data).read()),
         ]
     )
     dag = DAG("collection")
