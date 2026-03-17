@@ -413,7 +413,7 @@ class QueryConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    source_steps: tuple[SourceStepName, ...]
+    sources: tuple[SourceStepName, ...]
     resolver: ResolverStepName | None = None
     combine_type: QueryCombineType = QueryCombineType.CONCAT
     cleaning: dict[str, str] | None = None
@@ -421,9 +421,9 @@ class QueryConfig(BaseModel):
     @model_validator(mode="after")
     def validate_steps(self) -> Self:
         """Ensure that step settings are compatible."""
-        if not self.source_steps:
+        if not self.sources:
             raise ValueError("At least one source step required.")
-        if len(self.source_steps) > 1 and not self.resolver:
+        if len(self.sources) > 1 and not self.resolver:
             raise ValueError(
                 "A resolver step must be set if querying from multiple sources"
             )
@@ -436,7 +436,7 @@ class QueryConfig(BaseModel):
         While this can contain information about graph topology, it should only be used
         to check validity, never to reconstruct it.
         """
-        deps = list(self.source_steps)
+        deps = list(self.sources)
         if self.resolver:
             deps.append(self.resolver)
 
@@ -447,7 +447,7 @@ class QueryConfig(BaseModel):
         """Return the step name that the query resolves from."""
         if self.resolver:
             return self.resolver
-        return self.source_steps[0]
+        return self.sources[0]
 
 
 class ModelType(StrEnum):

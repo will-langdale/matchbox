@@ -216,7 +216,7 @@ class TestE2EModelEvaluation:
 
         # Create app and verify it can load samples from real data
         app = EntityResolutionApp(
-            resolver=dag.default_resolver.step_path,
+            resolver=dag.default_resolver.path,
             num_samples=2,
             session_tag="eval_session1",
             dag=dag,

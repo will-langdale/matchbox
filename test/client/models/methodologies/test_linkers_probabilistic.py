@@ -200,7 +200,7 @@ SCORED_LINKERS = [
 def test_scored_model_scores_generation(
     mock_query_run: Mock, Linker: Linker, configure_linker: LinkerConfigurator
 ) -> None:
-    """Test that linkers can generate varying score scores."""
+    """Test that linkers can generate varying scores."""
 
     # Create sources with variations
     features = (

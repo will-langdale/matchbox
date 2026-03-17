@@ -17,13 +17,13 @@ class MatchboxPostgresQueryMixin:
     def query(  # noqa: D102
         self,
         source: SourceStepPath,
-        resolves_from: ResolverStepPath | None = None,
+        resolver: ResolverStepPath | None = None,
         return_leaf_id: bool = False,
         limit: int | None = None,
     ) -> ArrowTable:
         return query(
             source=source,
-            resolves_from=resolves_from,
+            resolver=resolver,
             return_leaf_id=return_leaf_id,
             limit=limit,
         )
@@ -33,11 +33,11 @@ class MatchboxPostgresQueryMixin:
         key: str,
         source: SourceStepPath,
         targets: list[SourceStepPath],
-        resolves_from: ResolverStepPath,
+        resolver: ResolverStepPath,
     ) -> list[Match]:
         return match(
             key=key,
             source=source,
             targets=targets,
-            resolves_from=resolves_from,
+            resolver=resolver,
         )

@@ -266,23 +266,21 @@ class TestMatchboxCollectionsBackend:
 
             with pytest.raises(MatchboxRunNotWriteable):
                 self.backend.create_step(
-                    path=source_testkit.step_path.model_copy(
-                        update={"name": "new_source"}
-                    ),
+                    path=source_testkit.path.model_copy(update={"name": "new_source"}),
                     step=source_testkit.fake_run().source.to_dto(),
                 )
 
             with pytest.raises(MatchboxRunNotWriteable):
-                self.backend.delete_step(source_testkit.step_path, certain=True)
+                self.backend.delete_step(source_testkit.path, certain=True)
 
             with pytest.raises(MatchboxRunNotWriteable):
                 self.backend.insert_source_data(
-                    source_testkit.step_path, source_testkit.data_hashes
+                    source_testkit.path, source_testkit.data_hashes
                 )
 
             with pytest.raises(MatchboxRunNotWriteable):
                 self.backend.insert_model_data(
-                    model_testkit.step_path,
+                    model_testkit.path,
                     model_testkit.scores.to_arrow(),
                 )
 
@@ -293,7 +291,7 @@ class TestMatchboxCollectionsBackend:
         with self.scenario(self.backend, "index") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
 
-            crn_retrieved = self.backend.get_step(crn_testkit.step_path)
+            crn_retrieved = self.backend.get_step(crn_testkit.path)
             assert isinstance(crn_retrieved, Step)
             assert crn_testkit.source_config == crn_retrieved.config
 
@@ -330,7 +328,7 @@ class TestMatchboxCollectionsBackend:
             assert proposed_merge_probs_pre_delete > 0
 
             # Perform deletion
-            self.backend.delete_step(to_delete.step_path, certain=True)
+            self.backend.delete_step(to_delete.path, certain=True)
 
             source_configs_post_delete = self.backend.sources.count()
             sources_post_delete = self.backend.source_steps.count()
@@ -360,35 +358,35 @@ class TestMatchboxCollectionsBackend:
 
             self.backend.create_step(
                 crn_testkit.source.to_dto(),
-                path=crn_testkit.step_path,
+                path=crn_testkit.path,
             )
 
             # Step can't be re-added
             with pytest.raises(MatchboxStepAlreadyExists):
                 self.backend.create_step(
                     crn_testkit.source.to_dto(),
-                    path=crn_testkit.step_path,
+                    path=crn_testkit.path,
                 )
 
             # After step metadata is present, we can add data
             self.backend.insert_source_data(
-                crn_testkit.source.step_path, crn_testkit.data_hashes
+                crn_testkit.source.path, crn_testkit.data_hashes
             )
 
             # Data can't be re-added
             with pytest.raises(MatchboxStepExistingData):
                 self.backend.insert_source_data(
-                    crn_testkit.source.step_path, crn_testkit.data_hashes
+                    crn_testkit.source.path, crn_testkit.data_hashes
                 )
 
             # Step marked as complete
             assert (
-                self.backend.get_step_stage(crn_testkit.source.step_path)
+                self.backend.get_step_stage(crn_testkit.source.path)
                 == UploadStage.COMPLETE
             )
 
             # We can retrieve the step
-            crn_retrieved = self.backend.get_step(crn_testkit.source.step_path)
+            crn_retrieved = self.backend.get_step(crn_testkit.source.path)
 
             assert crn_testkit.source_config == crn_retrieved.config
             assert self.backend.source_clusters.count() == len(crn_testkit.data_hashes)
@@ -417,13 +415,13 @@ class TestMatchboxCollectionsBackend:
                     }
                 )
             )
-            self.backend.update_step(updated_step, path=crn_testkit.source.step_path)
+            self.backend.update_step(updated_step, path=crn_testkit.source.path)
 
             # We cannot update source step with different fingerprint
             with pytest.raises(MatchboxStepUpdateError, match="fingerprint"):
                 self.backend.update_step(
                     updated_step.model_copy(update={"fingerprint": 123}),
-                    path=crn_testkit.source.step_path,
+                    path=crn_testkit.source.path,
                 )
 
             # We cannot update source step with a model step
@@ -438,11 +436,11 @@ class TestMatchboxCollectionsBackend:
                 )
                 self.backend.update_step(
                     model_step,
-                    path=crn_testkit.source.step_path,
+                    path=crn_testkit.source.path,
                 )
 
             # We can retrieve the updated step
-            crn_retrieved = self.backend.get_step(crn_testkit.source.step_path)
+            crn_retrieved = self.backend.get_step(crn_testkit.source.path)
             assert crn_retrieved.description == "updated"
             assert crn_retrieved.config.key_field == updated_key_field
             assert crn_retrieved.config.index_fields == updated_index_fields
@@ -455,15 +453,15 @@ class TestMatchboxCollectionsBackend:
             crn_testkit.fake_run()
             self.backend.create_step(
                 crn_testkit.source.to_dto(),
-                path=crn_testkit.step_path,
+                path=crn_testkit.path,
             )
 
             self.backend.insert_source_data(
-                crn_testkit.source.step_path, crn_testkit.data_hashes
+                crn_testkit.source.path, crn_testkit.data_hashes
             )
             # Step marked as complete
             assert (
-                self.backend.get_step_stage(crn_testkit.source.step_path)
+                self.backend.get_step_stage(crn_testkit.source.path)
                 == UploadStage.COMPLETE
             )
 
@@ -478,18 +476,14 @@ class TestMatchboxCollectionsBackend:
             dh_testkit.fake_run()
 
             # Add original source
-            self.backend.create_step(
-                crn_testkit.source.to_dto(), path=crn_testkit.step_path
-            )
+            self.backend.create_step(crn_testkit.source.to_dto(), path=crn_testkit.path)
             self.backend.insert_source_data(
-                crn_testkit.source.step_path, crn_testkit.data_hashes
+                crn_testkit.source.path, crn_testkit.data_hashes
             )
             # Add different source, with same hashes
-            self.backend.create_step(
-                dh_testkit.source.to_dto(), path=dh_testkit.step_path
-            )
+            self.backend.create_step(dh_testkit.source.to_dto(), path=dh_testkit.path)
             self.backend.insert_source_data(
-                dh_testkit.source.step_path, crn_testkit.data_hashes
+                dh_testkit.source.path, crn_testkit.data_hashes
             )
             assert self.backend.source_clusters.count() == len(crn_testkit.data_hashes)
             assert self.backend.source_steps.count() == 2
@@ -514,7 +508,7 @@ class TestMatchboxCollectionsBackend:
             )
             self.backend.create_step(
                 step=dedupe_1_testkit.fake_run().model.to_dto(),
-                path=dedupe_1_testkit.step_path,
+                path=dedupe_1_testkit.path,
             )
 
             dedupe_2_testkit = model_factory(
@@ -526,7 +520,7 @@ class TestMatchboxCollectionsBackend:
             )
             self.backend.create_step(
                 step=dedupe_2_testkit.fake_run().model.to_dto(),
-                path=dedupe_2_testkit.step_path,
+                path=dedupe_2_testkit.path,
             )
 
             for dedupe_testkit in (dedupe_1_testkit, dedupe_2_testkit):
@@ -537,7 +531,7 @@ class TestMatchboxCollectionsBackend:
                 ).fake_run()
                 self.backend.create_step(
                     step=resolver_testkit.resolver.to_dto(),
-                    path=resolver_testkit.resolver.step_path,
+                    path=resolver_testkit.resolver.path,
                 )
 
             assert self.backend.models.count() == models_count + 2
@@ -552,7 +546,7 @@ class TestMatchboxCollectionsBackend:
             )
             self.backend.create_step(
                 step=linker_testkit.fake_run().model.to_dto(),
-                path=linker_testkit.step_path,
+                path=linker_testkit.path,
             )
 
             assert self.backend.models.count() == models_count + 3
@@ -561,7 +555,7 @@ class TestMatchboxCollectionsBackend:
             with pytest.raises(MatchboxStepAlreadyExists):
                 self.backend.create_step(
                     linker_testkit.fake_run().model.to_dto(),
-                    path=linker_testkit.step_path,
+                    path=linker_testkit.path,
                 )
 
             assert self.backend.models.count() == models_count + 3
@@ -587,11 +581,11 @@ class TestMatchboxCollectionsBackend:
             )
             self.backend.update_step(
                 step=updated_step,
-                path=linker_testkit.step_path,
+                path=linker_testkit.path,
             )
 
             # We can retrieve the updated step
-            linker_retrieved = self.backend.get_step(linker_testkit.step_path)
+            linker_retrieved = self.backend.get_step(linker_testkit.path)
             assert linker_retrieved.description == "updated"
             assert (
                 linker_retrieved.config.left_query.combine_type
@@ -603,7 +597,7 @@ class TestMatchboxCollectionsBackend:
                 old_step.config.model_copy(
                     update={
                         "left_query": old_step.config.left_query.model_copy(
-                            update={"source_steps": ("new_source",)}
+                            update={"sources": ("new_source",)}
                         )
                     }
                 )
@@ -615,7 +609,7 @@ class TestMatchboxCollectionsBackend:
             with pytest.raises(MatchboxStepUpdateError, match="parents"):
                 self.backend.update_step(
                     step=rewired_step,
-                    path=linker_testkit.step_path,
+                    path=linker_testkit.path,
                 )
 
             # We cannot change model results fingerprint
@@ -625,7 +619,7 @@ class TestMatchboxCollectionsBackend:
                 )
                 self.backend.update_step(
                     step=corrupt_step,
-                    path=linker_testkit.step_path,
+                    path=linker_testkit.path,
                 )
 
     def test_insert_model_rejects_model_parent(self) -> None:
@@ -663,7 +657,7 @@ class TestMatchboxCollectionsBackend:
             ):
                 self.backend.create_step(
                     step=invalid_step,
-                    path=invalid_model.step_path,
+                    path=invalid_model.path,
                 )
 
     def test_insert_resolver_rejects_non_model_input(self) -> None:
@@ -701,15 +695,15 @@ class TestMatchboxCollectionsBackend:
             naive_crn_testkit = dag_testkit.models.get("naive_test_crn")
             naive_crn_resolver_path = dag_testkit.resolvers[
                 f"resolver_{naive_crn_testkit.name}"
-            ].resolver.step_path
+            ].resolver.path
 
             # Query returns the same results as the testkit, showing
             # that processing was performed accurately.
             # (that we can query from it implies the step was correctly
             # marked as complete)
             res = self.backend.query(
-                source=crn_testkit.step_path,
-                resolves_from=naive_crn_resolver_path,
+                source=crn_testkit.path,
+                resolver=naive_crn_resolver_path,
             )
             res_clusters = query_to_cluster_entities(
                 data=res,
@@ -724,7 +718,7 @@ class TestMatchboxCollectionsBackend:
             assert identical, report
 
             # Retrieve
-            pre_results = self.backend.get_model_data(path=naive_crn_testkit.step_path)
+            pre_results = self.backend.get_model_data(path=naive_crn_testkit.path)
 
             assert isinstance(pre_results, pa.Table)
             assert len(pre_results) > 0
@@ -736,12 +730,12 @@ class TestMatchboxCollectionsBackend:
             # Cannot set new results
             with pytest.raises(MatchboxStepExistingData):
                 self.backend.insert_model_data(
-                    path=naive_crn_testkit.step_path,
+                    path=naive_crn_testkit.path,
                     results=naive_crn_testkit.scores.to_arrow(),
                 )
 
             # Retrieve again
-            post_results = self.backend.get_model_data(path=naive_crn_testkit.step_path)
+            post_results = self.backend.get_model_data(path=naive_crn_testkit.path)
 
             # Check difference
             assert pre_results == post_results
@@ -753,13 +747,13 @@ class TestMatchboxCollectionsBackend:
             score_crn_testkit = dag_testkit.models.get("scored_test_crn")
             score_crn_resolver_path = dag_testkit.resolvers[
                 f"resolver_{score_crn_testkit.name}"
-            ].resolver.step_path
+            ].resolver.path
 
             # Query returns the same results as the testkit, showing
             # that processing was performed accurately
             res = self.backend.query(
-                source=crn_testkit.step_path,
-                resolves_from=score_crn_resolver_path,
+                source=crn_testkit.path,
+                resolver=score_crn_resolver_path,
             )
             res_clusters = query_to_cluster_entities(
                 data=res,
@@ -773,7 +767,7 @@ class TestMatchboxCollectionsBackend:
             assert identical, report
 
             # Retrieve
-            pre_results = self.backend.get_model_data(path=score_crn_testkit.step_path)
+            pre_results = self.backend.get_model_data(path=score_crn_testkit.path)
 
             assert isinstance(pre_results, pa.Table)
             assert len(pre_results) > 0
@@ -787,7 +781,7 @@ class TestMatchboxCollectionsBackend:
         with self.scenario(self.backend, "index") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
             linked = dag_testkit.source_to_linked["crn"]
-            source_query = self.backend.query(source=crn_testkit.step_path)
+            source_query = self.backend.query(source=crn_testkit.path)
             model_testkit = query_to_model_factory(
                 left_query=Query(crn_testkit.source, dag=dag_testkit.dag),
                 left_data=source_query,
@@ -802,11 +796,11 @@ class TestMatchboxCollectionsBackend:
             model_testkit.model.results = model_testkit.model.results.head(0)
 
             self.backend.create_step(
-                model_testkit.model.to_dto(), path=model_testkit.step_path
+                model_testkit.model.to_dto(), path=model_testkit.path
             )
 
             self.backend.insert_model_data(
-                path=model_testkit.model.step_path,
+                path=model_testkit.model.path,
                 results=model_testkit.model.results.to_arrow(),
             )
 
@@ -822,18 +816,18 @@ class TestMatchboxCollectionsBackend:
             )
             self.backend.create_step(
                 step=resolver_testkit.resolver.to_dto(),
-                path=resolver_testkit.resolver.step_path,
+                path=resolver_testkit.resolver.path,
             )
             self.backend.insert_resolver_data(
-                path=resolver_testkit.resolver.step_path,
+                path=resolver_testkit.resolver.path,
                 data=resolver_testkit.resolver.results.to_arrow(),
             )
 
             # Querying from deduper with no results is the same as querying from source
             # (That we can query also implies that step marked as complete)
             dedupe_query = self.backend.query(
-                source=crn_testkit.step_path,
-                resolves_from=resolver_testkit.resolver.step_path,
+                source=crn_testkit.path,
+                resolver=resolver_testkit.resolver.path,
             )
 
             source_entities = query_to_cluster_entities(
@@ -855,10 +849,10 @@ class TestMatchboxCollectionsBackend:
         with self.scenario(self.backend, "convergent_partial") as dag_testkit:
             for model_testkit in dag_testkit.models.values():
                 self.backend.create_step(
-                    path=model_testkit.step_path,
+                    path=model_testkit.path,
                     step=model_testkit.fake_run().model.to_dto(),
                 )
                 self.backend.insert_model_data(
-                    path=model_testkit.step_path,
+                    path=model_testkit.path,
                     results=model_testkit.scores.to_arrow(),
                 )

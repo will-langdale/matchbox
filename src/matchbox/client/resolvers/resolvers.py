@@ -152,7 +152,7 @@ class Resolver(StepABC):
         return upstream
 
     @property
-    def step_path(self) -> ResolverStepPath:
+    def path(self) -> ResolverStepPath:
         """Return resolver step path."""
         return ResolverStepPath(
             collection=self.dag.name,

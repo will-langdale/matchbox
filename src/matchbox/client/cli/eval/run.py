@@ -108,7 +108,7 @@ def evaluate(
                 f"'{node.name}' is a {node.__class__.__name__}."
             )
 
-        resolver = node.step_path
+        resolver = node.path
 
     try:
         # Create app with loaded DAG (not warehouse string)

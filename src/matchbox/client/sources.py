@@ -343,7 +343,7 @@ class Source(StepABC):
         return self._local_data
 
     @property
-    def step_path(self) -> SourceStepPath:
+    def path(self) -> SourceStepPath:
         """Return the source step path."""
         return SourceStepPath(
             collection=self.dag.name,

@@ -39,7 +39,7 @@ class TestMatchboxEvaluationBackend:
             crn_testkit = dag_testkit.sources.get("crn")
             naive_crn_resolver_path = dag_testkit.resolvers[
                 "resolver_naive_test_crn"
-            ].resolver.step_path
+            ].resolver.path
 
             # To begin with, no judgements to retrieve
             judgements, expansion = self.backend.get_judgements()
@@ -48,12 +48,12 @@ class TestMatchboxEvaluationBackend:
             # Do some queries to find real source cluster IDs
             deduped_query = pl.from_arrow(
                 self.backend.query(
-                    source=crn_testkit.step_path,
-                    resolves_from=naive_crn_resolver_path,
+                    source=crn_testkit.path,
+                    resolver=naive_crn_resolver_path,
                 )
             )
             unique_ids = deduped_query["id"].unique()
-            all_leaves = pl.from_arrow(self.backend.query(source=crn_testkit.step_path))
+            all_leaves = pl.from_arrow(self.backend.query(source=crn_testkit.path))
 
             def get_leaf_ids(cluster_id: int) -> list[int]:
                 return (
@@ -200,14 +200,14 @@ class TestMatchboxEvaluationBackend:
             source_testkit = dag_testkit.sources.get("foo_a")
             model_resolver_path = dag_testkit.resolvers[
                 "resolver_naive_test_foo_a"
-            ].resolver.step_path
+            ].resolver.path
 
             bob: User = self.backend.login(User(user_name="bob")).user
 
             # Source clusters should not be returned
             # So if we sample from a source step, we get nothing
             samples_source = self.backend.sample_for_eval(
-                n=10, path=source_testkit.step_path, user_name=bob.user_name
+                n=10, path=source_testkit.path, user_name=bob.user_name
             )
             assert len(samples_source) == 0
 
@@ -215,12 +215,12 @@ class TestMatchboxEvaluationBackend:
             # Query backend to form expectations
             resolver_clusters = pl.from_arrow(
                 self.backend.query(
-                    source=source_testkit.step_path,
-                    resolves_from=model_resolver_path,
+                    source=source_testkit.path,
+                    resolver=model_resolver_path,
                 )
             )
             source_clusters = pl.from_arrow(
-                self.backend.query(source=source_testkit.step_path)
+                self.backend.query(source=source_testkit.path)
             )
             # We can request more than available
             assert len(resolver_clusters["id"].unique()) < 99

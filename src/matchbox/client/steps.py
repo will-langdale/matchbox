@@ -95,7 +95,7 @@ class StepABC(ABC):
 
     @property
     @abstractmethod
-    def step_path(self) -> StepPath:
+    def path(self) -> StepPath:
         """The step path used to identify this step on the server."""
         ...
 
@@ -160,13 +160,13 @@ class StepABC(ABC):
     def delete(self, certain: bool = False) -> bool:
         """Delete this step and its associated data from the backend."""
         return _handler.delete_step(
-            path=self.step_path,
+            path=self.path,
             certain=certain,
         ).success
 
     def download(self) -> pl.DataFrame:
         """Fetch remote data for this step and store it locally."""
-        table = _handler.get_data(path=self.step_path)
+        table = _handler.get_data(path=self.path)
         check_schema_subset(expected=self._local_data_schema, actual=table.schema)
         self._local_data = pl.from_arrow(table)
         return self._local_data
@@ -182,7 +182,7 @@ class StepABC(ABC):
         step = self.to_dto()
 
         try:
-            existing_step = _handler.get_step(path=self.step_path)
+            existing_step = _handler.get_step(path=self.path)
             logger.info("Found existing step", prefix=log_prefix)
         except MatchboxStepNotFoundError:
             existing_step = None
@@ -194,18 +194,18 @@ class StepABC(ABC):
                 logger.info("Updating existing step", prefix=log_prefix)
                 _handler.update_step(
                     step=step,
-                    path=self.step_path,
+                    path=self.path,
                 )
             else:
                 logger.info(
                     "Update not possible. Deleting existing step",
                     prefix=log_prefix,
                 )
-                _handler.delete_step(path=self.step_path, certain=True)
+                _handler.delete_step(path=self.path, certain=True)
                 existing_step = None
 
         if not existing_step:
             logger.info("Creating new step", prefix=log_prefix)
-            _handler.create_step(step=step, path=self.step_path)
+            _handler.create_step(step=step, path=self.path)
             logger.info("Setting data for new step", prefix=log_prefix)
-            _handler.set_data(path=self.step_path, data=self._local_data)
+            _handler.set_data(path=self.path, data=self._local_data)

@@ -127,9 +127,9 @@ class SourceTestkit(BaseModel):
         return self.source.name
 
     @property
-    def step_path(self) -> SourceStepPath:
+    def path(self) -> SourceStepPath:
         """Returns the source step path."""
-        return self.source.step_path
+        return self.source.path
 
     @property
     def source_config(self) -> SourceConfig:

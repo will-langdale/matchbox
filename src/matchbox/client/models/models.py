@@ -199,7 +199,7 @@ class Model(StepABC):
         )
 
     @property
-    def step_path(self) -> ModelStepPath:
+    def path(self) -> ModelStepPath:
         """Return the model step path."""
         return ModelStepPath(
             collection=self.dag.name,

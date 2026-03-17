@@ -150,7 +150,7 @@ def query(
     )
     res = backend.query(
         source=SourceStepPath(collection=collection, run=run_id, name=source),
-        resolves_from=resolves_from,
+        resolver=resolves_from,
         return_leaf_id=return_leaf_id,
         limit=limit,
     )
@@ -184,7 +184,7 @@ def match(
             SourceStepPath(collection=collection, run=run_id, name=target)
             for target in targets
         ],
-        resolves_from=ResolverStepPath(
+        resolver=ResolverStepPath(
             collection=collection,
             run=run_id,
             name=resolver,

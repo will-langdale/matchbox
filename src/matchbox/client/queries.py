@@ -78,7 +78,7 @@ class Query:
     def config(self) -> QueryConfig:
         """The query configuration for the current DAG."""
         return QueryConfig(
-            source_steps=tuple(source.name for source in self.sources),
+            sources=tuple(source.name for source in self.sources),
             resolver=self.resolver.name if self.resolver else None,
             combine_type=self.combine_type,
             cleaning=self.cleaning,
@@ -98,7 +98,7 @@ class Query:
             A reconstructed Query instance.
         """
         # Get sources from DAG
-        sources = [dag.get_source(step) for step in config.source_steps]
+        sources = [dag.get_source(step) for step in config.sources]
 
         # Get resolver if specified
         resolver = dag.get_resolver(config.resolver) if config.resolver else None
@@ -157,8 +157,8 @@ class Query:
             writer = None
             for source in self.sources:
                 res = _handler.query(
-                    source=source.step_path,
-                    resolver=self.resolver.step_path if self.resolver else None,
+                    source=source.path,
+                    resolver=self.resolver.path if self.resolver else None,
                     return_leaf_id=cache_leaf_ids,
                 )
 

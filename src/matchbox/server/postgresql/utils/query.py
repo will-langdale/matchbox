@@ -222,7 +222,7 @@ def resolver_membership_subquery(
 
 def query(
     source: SourceStepPath,
-    resolves_from: ResolverStepPath | None = None,
+    resolver: ResolverStepPath | None = None,
     return_leaf_id: bool = False,
     limit: int | None = None,
 ) -> pa.Table:
@@ -236,10 +236,10 @@ def query(
 
         # Use the provided point-of-truth resolver, or fall back to the source step
         # for a simple self-contained query.
-        if resolves_from is None:
+        if resolver is None:
             truth_step = source_step
         else:
-            truth_step = require_complete_resolver(session, resolves_from)
+            truth_step = require_complete_resolver(session, resolver)
 
         if truth_step.upload_stage != UploadStage.COMPLETE:
             raise MatchboxStepNotQueriable
@@ -282,7 +282,7 @@ def match(
     key: str,
     source: SourceStepPath,
     targets: list[SourceStepPath],
-    resolves_from: ResolverStepPath,
+    resolver: ResolverStepPath,
 ) -> list[Match]:
     """Match a source key against targets under a resolver point-of-truth."""
     with MBDB.get_session() as session:
@@ -290,7 +290,7 @@ def match(
             path=source,
             session=session,
         ).source_config
-        resolver_step = require_complete_resolver(session, resolves_from)
+        resolver_step = require_complete_resolver(session, resolver)
 
         # Resolve source configs for all targets to enable ID lookup and result assembly
         target_configs: list[SourceConfigs] = [

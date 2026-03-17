@@ -352,7 +352,7 @@ class MatchboxDBAdapter(ABC):
     def query(
         self,
         source: SourceStepPath,
-        resolves_from: ResolverStepPath | None = None,
+        resolver: ResolverStepPath | None = None,
         return_leaf_id: bool = False,
         limit: int | None = None,
     ) -> Table:
@@ -360,7 +360,7 @@ class MatchboxDBAdapter(ABC):
 
         Args:
             source: The step path identifying the source to query.
-            resolves_from (optional): The resolver path to use for filtering results.
+            resolver (optional): The resolver path to use for filtering results.
                 If not specified, the source step is used for the queried source.
             return_leaf_id (optional): whether to return cluster ID of leaves
             limit (optional): the number to use in a limit clause. Useful for testing
@@ -376,7 +376,7 @@ class MatchboxDBAdapter(ABC):
         key: str,
         source: SourceStepPath,
         targets: list[SourceStepPath],
-        resolves_from: ResolverStepPath,
+        resolver: ResolverStepPath,
     ) -> list[Match]:
         """Match an ID in a source step and return the keys in the targets.
 
@@ -384,7 +384,7 @@ class MatchboxDBAdapter(ABC):
             key: The key to match from the source.
             source: The path of the source step.
             targets: The paths of the target source steps.
-            resolves_from: The resolver path to use for matching.
+            resolver: The resolver path to use for matching.
         """
         ...
 

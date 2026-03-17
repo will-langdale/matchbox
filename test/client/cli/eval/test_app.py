@@ -159,7 +159,7 @@ class TestScenarioIntegration:
             mega_resolver = loaded_dag.get_resolver(mega_resolver_name)
 
             app = EntityResolutionApp(
-                resolver=mega_resolver.step_path,
+                resolver=mega_resolver.path,
                 num_samples=3,
                 dag=loaded_dag,
                 scroll_debounce_delay=None,
@@ -301,7 +301,7 @@ class TestScenarioIntegration:
             dedupe_resolver = loaded_dag.get_resolver(dedupe_resolver_name)
 
             app = EntityResolutionApp(
-                resolver=dedupe_resolver.step_path,
+                resolver=dedupe_resolver.path,
                 num_samples=3,
                 dag=loaded_dag,
             )

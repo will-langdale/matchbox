@@ -562,9 +562,9 @@ class ModelTestkit(BaseModel):
         return self.model.name
 
     @property
-    def step_path(self) -> ModelStepPath:
+    def path(self) -> ModelStepPath:
         """Returns the model step path."""
-        return self.model.step_path
+        return self.model.path
 
     @property
     def data(self) -> pa.Table:

@@ -80,8 +80,8 @@ def scenario_setup(scenario_name: str) -> Generator[dict[str, object], None, Non
 
             # Yield CLI parameters instead of app instance
             yield {
-                "collection": step.step_path.collection,
-                "resolver": step.step_path.name,
+                "collection": step.path.collection,
+                "resolver": step.path.name,
                 "pending": True,
                 "warehouse": str(warehouse_engine.url),
             }

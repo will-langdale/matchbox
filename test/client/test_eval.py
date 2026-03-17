@@ -234,7 +234,7 @@ def test_get_samples_remote(
     # All three sources (foo, bar, baz) are in loaded_dag with the warehouse location
     samples_all = get_samples(
         n=10,
-        resolver=dag.default_resolver.step_path.name,
+        resolver=dag.default_resolver.path.name,
         dag=loaded_dag,
     )
 
@@ -263,7 +263,7 @@ def test_get_samples_remote(
 
     samples = get_samples(
         n=10,
-        resolver=dag.default_resolver.step_path.name,
+        resolver=dag.default_resolver.path.name,
         dag=loaded_dag,
     )
 
@@ -313,7 +313,7 @@ def test_get_samples_remote(
 
     no_samples = get_samples(
         n=10,
-        resolver=dag.default_resolver.step_path.name,
+        resolver=dag.default_resolver.path.name,
         dag=loaded_dag,
     )
     assert no_samples == {}
@@ -331,7 +331,7 @@ def test_get_samples_remote(
     with pytest.raises(MatchboxSourceTableError, match="Could not query source"):
         get_samples(
             n=10,
-            resolver=dag.default_resolver.step_path.name,
+            resolver=dag.default_resolver.path.name,
             dag=bad_dag,
         )
 

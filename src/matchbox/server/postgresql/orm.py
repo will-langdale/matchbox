@@ -1236,7 +1236,7 @@ class ModelEdges(CountMixin, MBDB.MatchboxBase):
 
 
 class ResolverClusters(CountMixin, MBDB.MatchboxBase):
-    """Association table linking steps to cluster IDs."""
+    """Association table linking resolver steps to cluster IDs."""
 
     __tablename__ = "resolver_clusters"
 

@@ -586,8 +586,8 @@ def test_dag_draw_status(sqla_sqlite_warehouse: Engine, mode: str) -> None:
 # Lookups
 
 
-def test_resolve(matchbox_api: MockRouter) -> None:
-    """Resolved data can be generated from DAG."""
+def test_get_matches(matchbox_api: MockRouter) -> None:
+    """Match lookup can be generated from DAG."""
     # Make dummy data
     foo = source_factory(name="foo", location_name="sqlite")
     bar = source_factory(name="bar", location_name="postgres")
@@ -784,14 +784,14 @@ def test_resolve(matchbox_api: MockRouter) -> None:
 
     # No sources are found
     with pytest.raises(MatchboxStepNotFoundError):
-        dag.get_matches(node=foo_bar_baz.name, source_filter=["nonexistent"])
+        dag.get_matches(resolver=foo_bar_baz.name, source_filter=["nonexistent"])
 
     with pytest.raises(MatchboxStepNotFoundError):
-        dag.get_matches(node=foo_bar_baz.name, location_names=["nonexistent"])
+        dag.get_matches(resolver=foo_bar_baz.name, location_names=["nonexistent"])
 
     # With URI filter
     uri_filter_resolved = dag.get_matches(
-        node=foo_bar_baz.name, location_names=["sqlite"]
+        resolver=foo_bar_baz.name, location_names=["sqlite"]
     )
 
     assert len(uri_filter_resolved.sources) == 1
@@ -799,19 +799,19 @@ def test_resolve(matchbox_api: MockRouter) -> None:
 
     # With source filter
     source_filter_resolved = dag.get_matches(
-        node=foo_bar_baz.name, source_filter=["foo"]
+        resolver=foo_bar_baz.name, source_filter=["foo"]
     )
 
     assert len(source_filter_resolved.sources) == 1
     assert source_filter_resolved.sources[0].name == "foo"
 
     # Select intermediate resolver
-    intermediate_res = dag.get_matches(node=foo_bar_resolver.name)
+    intermediate_res = dag.get_matches(resolver=foo_bar_resolver.name)
     assert len(intermediate_res.sources) == 2
     assert set([s.name for s in intermediate_res.sources]) == {foo.name, bar.name}
 
     # With no filter
-    full_resolved = dag.get_matches(node=foo_bar_baz.name)
+    full_resolved = dag.get_matches(resolver=foo_bar_baz.name)
     assert len(full_resolved.sources) == 3
     assert len(full_resolved.query_results) == 3
     source_names = [
@@ -828,7 +828,7 @@ def test_resolve(matchbox_api: MockRouter) -> None:
     assert_frame_equal(full_resolved.query_results[baz_index], pl.from_arrow(baz_data))
 
     # Retrieve from reconstituted DAG
-    loaded_res = DAG("companies").load_default().get_matches(node=foo_bar_baz.name)
+    loaded_res = DAG("companies").load_default().get_matches(resolver=foo_bar_baz.name)
     assert len(loaded_res.sources) == 3
     assert len(loaded_res.query_results) == 3
     source_names = [
@@ -1086,7 +1086,7 @@ def test_from_dto() -> None:
 
     # Test 2: Resolver added before its model dependencies raises
     t2_dag = TestkitDAG().dag
-    with pytest.raises(RuntimeError, match="must reference an available model"):
+    with pytest.raises(ValueError, match="not found in DAG"):
         t2_dag.add_step(
             name=resolver_testkit.name,
             step=resolver_testkit.resolver.to_dto(),
@@ -1526,7 +1526,15 @@ def test_dag_set_default_ok(
     # Create test data
     dag = TestkitDAG().dag
 
-    dag.source(**source_factory().into_dag())
+    crn = dag.source(**source_factory().into_dag())
+    dd = crn.query().deduper(
+        name="dd", model_class=NaiveDeduper, model_settings={"unique_fields": []}
+    )
+    dd.resolver(
+        name="r",
+        resolver_class=Components,
+        resolver_settings={"thresholds": {dd.name: 0}},
+    )
 
     # Mock set mutable
     api_mutable = matchbox_api.patch(
@@ -1567,7 +1575,15 @@ def test_dag_set_default_ok(
 def test_dag_set_default_not_connected() -> None:
     """Set default raises error when DAG is not connected to server."""
     dag = DAG(name="test_collection")
-    dag.source(**source_factory().into_dag())
+    crn = dag.source(**source_factory().into_dag())
+    dd = crn.query().deduper(
+        name="dd", model_class=NaiveDeduper, model_settings={"unique_fields": []}
+    )
+    dd.resolver(
+        name="r",
+        resolver_class=Components,
+        resolver_settings={"thresholds": {dd.name: 0}},
+    )
 
     with pytest.raises(RuntimeError, match="has not been connected"):
         dag.set_default()
@@ -1580,8 +1596,17 @@ def test_dag_set_default_unreachable_nodes(sqla_sqlite_warehouse: Engine) -> Non
     foo_tkit = source_factory(name="foo", engine=sqla_sqlite_warehouse)
     bar_tkit = source_factory(name="bar", engine=sqla_sqlite_warehouse)
 
-    dag.source(**foo_tkit.into_dag())
-    dag.source(**bar_tkit.into_dag())
+    foo = dag.source(**foo_tkit.into_dag())
+    _ = dag.source(**bar_tkit.into_dag())
+
+    dd = foo.query().deduper(
+        name="dd", model_class=NaiveDeduper, model_settings={"unique_fields": []}
+    )
+    dd.resolver(
+        name="r",
+        resolver_class=Components,
+        resolver_settings={"thresholds": {dd.name: 0}},
+    )
 
     with pytest.raises(ValueError, match="unreachable"):
         dag.set_default()

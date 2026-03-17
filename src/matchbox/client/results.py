@@ -29,8 +29,7 @@ def normalise_model_scores(scores: pl.DataFrame) -> pl.DataFrame:
     if scores.height == 0:
         scores = pl.DataFrame(schema=pl.Schema(SCHEMA_MODEL_EDGES))
 
-    score_type = scores["score"].dtype
-    if not score_type.is_numeric():
+    if not scores["score"].dtype.is_numeric():
         raise ValueError(
             "Score column must contain numeric values in the range [0.0, 1.0]."
         )

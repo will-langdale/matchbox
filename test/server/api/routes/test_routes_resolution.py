@@ -162,8 +162,8 @@ def test_complete_upload_process(
 
     # Create test data
     testkit = model_factory(model_type="linker").fake_run()
-    collection = testkit.step_path.collection
-    run = testkit.step_path.run
+    collection = testkit.path.collection
+    run = testkit.path.run
 
     # Mock insertion of data
     mock_backend.insert_model_data = Mock(return_value=None)

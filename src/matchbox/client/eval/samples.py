@@ -150,9 +150,9 @@ def _get_samples_from_server(
     dag: DAG, n: int, resolver: ResolverStepName | None = None
 ) -> pl.DataFrame:
     if resolver:
-        resolver_path: ResolverStepPath = dag.get_resolver(resolver).step_path
+        resolver_path: ResolverStepPath = dag.get_resolver(resolver).path
     else:
-        resolver_path = dag.default_resolver.step_path
+        resolver_path = dag.default_resolver.path
     return pl.from_arrow(_handler.sample_for_eval(n=n, resolver=resolver_path))
 
 

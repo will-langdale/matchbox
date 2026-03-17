@@ -244,16 +244,17 @@ class DAG:
         """Return the default resolver for this DAG."""
         steps = self.final_steps
 
-        if len(steps) == 0:
+        if not steps:
             raise ValueError("No final step found, DAG might contain cycles")
-        if len(steps) > 1:
-            raise ValueError("Default resolver is ambiguous because final_steps > 1")
 
-        step = steps[0]
-        if not isinstance(step, Resolver):
+        resolvers: list[Resolver] = [s for s in steps if isinstance(s, Resolver)]
+
+        if not resolvers:
             raise ValueError("The only final step is not a resolver")
+        if len(resolvers) > 1:
+            raise ValueError("Default resolver is ambiguous.")
 
-        return step
+        return resolvers[0]
 
     def source(self, *args: Any, **kwargs: Any) -> Source:
         """Create Source and add it to the DAG."""
@@ -281,7 +282,7 @@ class DAG:
         name: StepName,
         step: Step,
     ) -> None:
-        """Convert a Step DTO from the server to a DAG node and add it to the DAG."""
+        """Add a step to the DAG."""
         if step.step_type == StepType.SOURCE:
             self.source(
                 location=Location.from_config(step.config.location_config),
@@ -305,20 +306,10 @@ class DAG:
                 else None,
             )
         elif step.step_type == StepType.RESOLVER:
-            inputs: list[Model] = []
-            for input_name in step.config.inputs:
-                node = self.nodes.get(input_name)
-                if not isinstance(node, Model):
-                    raise RuntimeError(
-                        "Resolver input "
-                        f"'{input_name}' must reference an available model"
-                    )
-                inputs.append(node)
-
             self.resolver(
                 name=ResolverStepName(name),
                 description=step.description,
-                inputs=inputs,
+                inputs=(self.get_model(i) for i in step.config.inputs),
                 resolver_class=step.config.resolver_class,
                 resolver_settings=json.loads(step.config.resolver_settings),
             )
@@ -694,15 +685,17 @@ class DAG:
 
         Makes it immutable, then moves the default pointer to it.
         """
-        run_id = self.run
+        # Trigger error if there isn't a single root
+        _ = self.default_resolver
 
+        # Trigger error if some sources aren't connected
         if len(self.final_steps) != 1:
             raise ValueError(
                 "Found unreachable steps: all steps must be reachable from a "
-                "single final step before setting the default run."
+                "single final resolver before setting the default run."
             )
 
-        _handler.set_run_mutable(collection=self.name, run_id=run_id, mutable=False)
+        _handler.set_run_mutable(collection=self.name, run_id=self.run, mutable=False)
         _handler.set_run_default(collection=self.name, run_id=self.run, default=True)
 
     def lookup_key(
@@ -740,7 +733,7 @@ class DAG:
             ],
             source=StepPath(name=from_source, collection=self.name, run=self.run),
             key=key,
-            resolver=self.default_resolver.step_path,
+            resolver=self.default_resolver.path,
         )
 
         to_sources_results = {m.target.name: list(m.target_id) for m in matches}
@@ -751,19 +744,19 @@ class DAG:
     @profile_time(kwarg="node")
     def get_matches(
         self,
-        node: ResolverStepName | None = None,
-        source_filter: list[str] | None = None,
+        resolver: ResolverStepName | None = None,
+        source_filter: list[SourceStepName] | None = None,
         location_names: list[str] | None = None,
     ) -> ResolverMatches:
         """Return ResolverMatches, optionally filtering.
 
         Args:
-            node: Name of resolver to query within DAG.
+            resolver: Name of resolver to query within DAG.
                 If not provided, will look for an apex.
             source_filter: An optional list of source step names to filter by.
             location_names: An optional list of location names to filter by.
         """
-        resolver = self.nodes[node] if node else self.default_resolver
+        resolver = self.get_resolver(resolver) if resolver else self.default_resolver
         if not isinstance(resolver, Resolver):
             raise ValueError("get_matches can only query from resolver nodes")
 
@@ -795,8 +788,8 @@ class DAG:
             query_results.append(
                 pl.from_arrow(
                     _handler.query(
-                        source=available_sources[source_name].step_path,
-                        resolver=resolver.step_path,
+                        source=available_sources[source_name].path,
+                        resolver=resolver.path,
                         return_leaf_id=True,
                     )
                 )
