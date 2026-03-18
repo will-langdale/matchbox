@@ -45,9 +45,9 @@ from matchbox.server.postgresql.orm import (
 )
 from matchbox.server.postgresql.utils.db import compile_sql, grant_permission
 from matchbox.server.postgresql.utils.insert import (
+    insert_clusters,
     insert_hashes,
     insert_model_edges,
-    insert_resolver_steps,
 )
 from matchbox.server.postgresql.utils.query import (
     require_complete_resolver,
@@ -379,7 +379,7 @@ class MatchboxPostgresCollectionsMixin:
 
     def insert_resolver_data(self, path: ResolverStepPath, data: Table) -> None:  # noqa: D102
         self._check_writeable(path)
-        insert_resolver_steps(
+        insert_clusters(
             path=path,
             cluster_assignments=data,
             batch_size=self.settings.batch_size,

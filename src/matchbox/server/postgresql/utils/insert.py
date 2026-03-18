@@ -309,7 +309,7 @@ def _compute_resolver_hashes(
     )
 
 
-def insert_resolver_steps(
+def insert_clusters(
     path: ResolverStepPath,
     cluster_assignments: pa.Table,
     batch_size: int,

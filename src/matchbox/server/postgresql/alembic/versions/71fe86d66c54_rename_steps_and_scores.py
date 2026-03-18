@@ -20,40 +20,24 @@ depends_on: str | Sequence[str] | None = None
 SCHEMA = "mb"
 
 
-def _quote(identifier: str) -> str:
-    """Quote a PostgreSQL identifier."""
-    escaped = identifier.replace('"', '""')
-    return f'"{escaped}"'
-
-
 def _rename_constraint(table_name: str, old_name: str, new_name: str) -> None:
     """Rename a table constraint."""
     op.execute(
         sa.text(
-            f"ALTER TABLE {_quote(SCHEMA)}.{_quote(table_name)} "
-            f"RENAME CONSTRAINT {_quote(old_name)} TO {_quote(new_name)}"
+            f"ALTER TABLE {SCHEMA}.{table_name} "
+            f"RENAME CONSTRAINT {old_name} TO {new_name}"
         )
     )
 
 
 def _rename_index(old_name: str, new_name: str) -> None:
     """Rename an index in the Matchbox schema."""
-    op.execute(
-        sa.text(
-            f"ALTER INDEX {_quote(SCHEMA)}.{_quote(old_name)} "
-            f"RENAME TO {_quote(new_name)}"
-        )
-    )
+    op.execute(sa.text(f"ALTER INDEX {SCHEMA}.{old_name} RENAME TO {new_name}"))
 
 
 def _rename_sequence(old_name: str, new_name: str) -> None:
     """Rename a sequence in the Matchbox schema."""
-    op.execute(
-        sa.text(
-            f"ALTER SEQUENCE {_quote(SCHEMA)}.{_quote(old_name)} "
-            f"RENAME TO {_quote(new_name)}"
-        )
-    )
+    op.execute(sa.text(f"ALTER SEQUENCE {SCHEMA}.{old_name} RENAME TO {new_name}"))
 
 
 def upgrade() -> None:

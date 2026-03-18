@@ -560,7 +560,7 @@ def create_link_scenario(
     )
     dag_testkit.add_resolver(crn_cdms_resolver_testkit)
 
-    # Create final join using crn_cdms_resolver as point of truth
+    # Create final join resolving via crn_cdms_resolver
     crn_cdms_data_crn_only = backend.query(
         source=dag_testkit.sources["crn"].path,
         resolver=crn_cdms_resolver_testkit.resolver.path,

@@ -26,7 +26,7 @@ class TestMatchboxQueryBackend:
         self.scenario = partial(setup_scenario, warehouse=sqla_sqlite_warehouse)
 
     def test_query_only_source(self) -> None:
-        """Test querying data from a link point of truth."""
+        """Test querying data from a single source and no resolver."""
         with self.scenario(self.backend, "index") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
 
@@ -56,7 +56,7 @@ class TestMatchboxQueryBackend:
             assert df_crn_full.schema.equals(SCHEMA_QUERY_WITH_LEAVES)
 
     def test_query_with_dedupe_resolver(self) -> None:
-        """Test querying data from a deduplication resolver point of truth."""
+        """Test querying data from a single source and a resolver."""
         with self.scenario(self.backend, "dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
             dedupe_resolver_path = dag_testkit.resolvers[
@@ -79,7 +79,7 @@ class TestMatchboxQueryBackend:
             )
 
     def test_query_with_link_resolver(self) -> None:
-        """Test querying data from a link resolver point of truth."""
+        """Test querying data from several sources and a shared resolver."""
         with self.scenario(self.backend, "link") as dag_testkit:
             linker_name = "deterministic_naive_test_crn_naive_test_dh"
             crn_testkit = dag_testkit.sources.get("crn")

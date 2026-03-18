@@ -195,7 +195,7 @@ class TestMatchboxEvaluationBackend:
             )
 
         # Convergent scenario allows testing we don't accidentally return metadata
-        # for sources that aren't relevant for a point of truth
+        # for sources that aren't relevant for a resolver
         with self.scenario(self.backend, "convergent") as dag_testkit:
             source_testkit = dag_testkit.sources.get("foo_a")
             model_resolver_path = dag_testkit.resolvers[

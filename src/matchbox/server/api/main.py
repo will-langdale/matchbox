@@ -143,14 +143,13 @@ def query(
     limit: int | None = None,
 ) -> ParquetResponse:
     """Query Matchbox for matches based on a source step name."""
-    resolves_from = (
-        ResolverStepPath(collection=collection, run=run_id, name=resolver)
-        if resolver
-        else None
-    )
     res = backend.query(
         source=SourceStepPath(collection=collection, run=run_id, name=source),
-        resolver=resolves_from,
+        resolver=(
+            ResolverStepPath(collection=collection, run=run_id, name=resolver)
+            if resolver
+            else None
+        ),
         return_leaf_id=return_leaf_id,
         limit=limit,
     )

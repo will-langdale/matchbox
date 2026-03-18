@@ -234,18 +234,18 @@ def query(
         )
         source_config: SourceConfigs = source_step.source_config
 
-        # Use the provided point-of-truth resolver, or fall back to the source step
-        # for a simple self-contained query.
+        # Use the provided resolver to resolve the multi-source query from, or fall
+        # back to  the source step for a simple single-source query
         if resolver is None:
-            truth_step = source_step
+            step = source_step
         else:
-            truth_step = require_complete_resolver(session, resolver)
+            step = require_complete_resolver(session, resolver)
 
-        if truth_step.upload_stage != UploadStage.COMPLETE:
+        if step.upload_stage != UploadStage.COMPLETE:
             raise MatchboxStepNotQueriable
 
         query_stmt = _build_unified_query(
-            step=truth_step,
+            step=step,
             sources=[source_config],
             level="key",
             include_source_config_id=False,
@@ -284,7 +284,7 @@ def match(
     targets: list[SourceStepPath],
     resolver: ResolverStepPath,
 ) -> list[Match]:
-    """Match a source key against targets under a resolver point-of-truth."""
+    """Match a source key against targets via a resolver."""
     with MBDB.get_session() as session:
         source_config: SourceConfigs = Steps.from_path(
             path=source,
@@ -302,7 +302,7 @@ def match(
             *(tc.source_config_id for tc in target_configs),
         ]
 
-        # Resolve which cluster this key belongs to under the point-of-truth
+        # Resolve which cluster this key belongs to according to the resolver
         target_cluster_cte = _build_target_cluster_cte(
             key=key,
             source_config_id=source_config.source_config_id,

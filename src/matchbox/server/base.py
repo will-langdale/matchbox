@@ -356,7 +356,7 @@ class MatchboxDBAdapter(ABC):
         return_leaf_id: bool = False,
         limit: int | None = None,
     ) -> Table:
-        """Queries the database from an optional point of truth.
+        """Queries the database from an optional resolution.
 
         Args:
             source: The step path identifying the source to query.

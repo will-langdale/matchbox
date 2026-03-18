@@ -115,7 +115,7 @@ class DAG:
         # that `self.graph` is not altered. It does not guarantee that the new node
         # works well with the rest of the DAG, which must be verified by the user.
         # For example, you could remove source fields that are needed downstream, or
-        # you could query sources that are not available to a point of truth.
+        # you could query sources that are not available to a resolver.
         # These issues are not checked when adding a node for the first time either.
         if step.name in self.nodes:
             if step.config.parents != self.nodes[step.name].config.parents:
