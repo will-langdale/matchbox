@@ -7,7 +7,7 @@ from sqlalchemy import Engine
 
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
-from matchbox.client.resolvers import Components, ComponentsSettings
+from matchbox.client.resolvers import Components
 from matchbox.common.exceptions import MatchboxStepTypeError
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.resolvers import resolver_factory
@@ -31,11 +31,7 @@ def test_model_resolver_single_input_creation(
         model_settings={"unique_fields": []},
     )
 
-    resolver = model.resolver(
-        name="resolver",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {model.name: 0.0}},
-    )
+    resolver = model.resolver(name="resolver", resolver_class=Components)
 
     assert dag.get_resolver(resolver.name) == resolver
     assert resolver.inputs == (model,)
@@ -73,12 +69,7 @@ def test_model_resolver_multiple_inputs_creation(
     )
 
     resolver = linker.resolver(
-        source_dedupe,
-        name="root_resolver",
-        resolver_class=Components,
-        resolver_settings=ComponentsSettings(
-            thresholds={linker.name: 0.0, source_dedupe.name: 0.0}
-        ),
+        source_dedupe, name="root_resolver", resolver_class=Components
     )
 
     assert resolver.inputs == (linker, source_dedupe)
@@ -102,21 +93,10 @@ def test_model_resolver_rejects_resolver_input(
         model_class=NaiveDeduper,
         model_settings={"unique_fields": []},
     )
-    first_resolver = dedupe.resolver(
-        name="resolver_1",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {dedupe.name: 0.0}},
-    )
+    first_resolver = dedupe.resolver(name="resolver_1", resolver_class=Components)
 
     with pytest.raises(MatchboxStepTypeError, match="Expected one of: model"):
-        dedupe.resolver(
-            first_resolver,
-            name="resolver_2",
-            resolver_class=Components,
-            resolver_settings={
-                "thresholds": {first_resolver.name: 0.0, dedupe.name: 0.0}
-            },
-        )
+        dedupe.resolver(first_resolver, name="resolver_2", resolver_class=Components)
 
 
 def test_resolver_run_requires_materialised_inputs(
@@ -135,11 +115,7 @@ def test_resolver_run_requires_materialised_inputs(
         model_class=NaiveDeduper,
         model_settings={"unique_fields": []},
     )
-    resolver = model.resolver(
-        name="resolver",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {model.name: 0.0}},
-    )
+    resolver = model.resolver(name="resolver", resolver_class=Components)
 
     with pytest.raises(ValueError, match="has no local results"):
         resolver.run()
