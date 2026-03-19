@@ -57,15 +57,21 @@ def test_dag_list(matchbox_api: MockRouter) -> None:
 
 @patch.object(Source, "run")
 @patch.object(Model, "run")
+@patch.object(Resolver, "run")
 @patch.object(Source, "sync")
 @patch.object(Model, "sync")
+@patch.object(Resolver, "sync")
 @patch.object(Source, "clear_data")
 @patch.object(Model, "clear_data")
+@patch.object(Resolver, "clear_data")
 def test_dag_run_and_sync(
+    resolver_clear_mock: Mock,
     model_clear_mock: Mock,
     source_clear_mock: Mock,
+    resolver_sync_mock: Mock,
     model_sync_mock: Mock,
     source_sync_mock: Mock,
+    resolver_run_mock: Mock,
     model_run_mock: Mock,
     source_run_mock: Mock,
     sqla_sqlite_warehouse: Engine,
@@ -114,6 +120,16 @@ def test_dag_run_and_sync(
         model_settings={"comparisons": "l.field=r.field"},
     )
 
+    root = foo_bar.resolver(
+        d_foo,
+        foo_baz,
+        name="root",
+        resolver_class=Components,
+        resolver_settings={
+            "thresholds": {d_foo.name: 0, foo_bar.name: 0, foo_baz.name: 0}
+        },
+    )
+
     assert set(dag.nodes.keys()) == {
         foo.name,
         bar.name,
@@ -121,6 +137,7 @@ def test_dag_run_and_sync(
         d_foo.name,
         foo_bar.name,
         foo_baz.name,
+        root.name,
     }
 
     # Run DAG
@@ -130,13 +147,17 @@ def test_dag_run_and_sync(
     assert source_sync_mock.call_count == 3
     assert model_run_mock.call_count == 3
     assert model_sync_mock.call_count == 3
+    assert resolver_run_mock.call_count == 1
+    assert resolver_sync_mock.call_count == 1
     source_clear_mock.assert_not_called()
     model_clear_mock.assert_not_called()
+    resolver_clear_mock.assert_not_called()
 
     # Running DAG destroys intermediate results
     dag.run_and_sync(low_memory=True)
     assert source_clear_mock.call_count == 3
     assert model_clear_mock.call_count == 3
+    assert resolver_clear_mock.call_count == 1
 
 
 @patch.object(Source, "sync")
@@ -238,6 +259,20 @@ def test_dags_missing_dependency(sqla_sqlite_warehouse: Engine) -> None:
     assert not len(dag.nodes)
     assert not len(dag.graph)
 
+    d_foo = model_factory(name="d_foo", dag=dag).model
+
+    with pytest.raises(ValueError, match="not added to DAG"):
+        dag.resolver(
+            inputs=[d_foo],
+            name="r_foo",
+            resolver_class=Components,
+            resolver_settings={"thresholds": {"d_foo": 0.0}},
+        )
+
+    # Failure leads to no dags being added
+    assert not len(dag.nodes)
+    assert not len(dag.graph)
+
 
 def test_mixing_dags_fails(sqla_sqlite_warehouse: Engine) -> None:
     """Cannot reference a different DAG when adding a step."""
@@ -321,18 +356,50 @@ def test_dag_name_clash(sqla_sqlite_warehouse: Engine) -> None:
             model_settings={"comparisons": "l.field=r.field"},
         )
 
+    # Create a valid resolver, then verify clashes
+    root = linker.resolver(
+        d_foo,
+        name="root",
+        resolver_class=Components,
+        resolver_settings={"thresholds": {linker.name: 0, d_foo.name: 0}},
+    )
+
+    # Cannot overwrite resolver with source
+    updated_root_args = foo_tkit.into_dag()
+    updated_root_args["name"] = "root"
+    with pytest.raises(ValueError, match="Cannot re-assign"):
+        dag.source(**updated_root_args)
+
+    # Cannot overwrite resolver with model
+    with pytest.raises(ValueError, match="Cannot re-assign"):
+        foo.query().deduper(
+            name="root",
+            model_class=NaiveDeduper,
+            model_settings={"unique_fields": []},
+        )
+
+    # Cannot change inputs of resolver
+    with pytest.raises(ValueError, match="Cannot re-assign"):
+        linker.resolver(
+            name="root",
+            resolver_class=Components,
+            resolver_settings={"thresholds": {linker.name: 0}},
+        )
+
     # After failed attempts, DAG is as we expect
     assert dag.get_source(foo.name) == foo
     assert dag.get_source(bar.name) == bar
     assert dag.get_source(baz.name) == baz
     assert dag.get_model(d_foo.name) == d_foo
     assert dag.get_model(linker.name) == linker
+    assert dag.get_resolver(root.name) == root
 
     assert dag.graph[foo.name] == []
     assert dag.graph[bar.name] == []
     assert dag.graph[baz.name] == []
     assert dag.graph[d_foo.name] == [foo.name]
     assert dag.graph[linker.name] == [foo.name, bar.name]
+    assert set(dag.graph[root.name]) == {linker.name, d_foo.name}
 
 
 def test_dag_default_resolvers(sqla_sqlite_warehouse: Engine) -> None:
@@ -489,6 +556,11 @@ def test_dag_draw_list(sqla_sqlite_warehouse: Engine) -> None:
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.field=r.field"},
     )
+    root = foo_bar.resolver(
+        name="root",
+        resolver_class=Components,
+        resolver_settings={"thresholds": {foo_bar.name: 0}},
+    )
 
     list_str = dag.draw(mode="list")
     lines = list_str.strip().split("\n")
@@ -499,21 +571,23 @@ def test_dag_draw_list(sqla_sqlite_warehouse: Engine) -> None:
     assert "Run" in head_lines[1]
 
     # All nodes present
-    for node in [foo.name, bar.name, foo_bar.name]:
+    for node in [foo.name, bar.name, foo_bar.name, root.name]:
         assert any(node in line for line in list_lines)
 
     # Step numbers prefix each line
     for i, line in enumerate(list_lines, start=1):
         assert line.startswith(f"{i}.")
 
-    # Sources appear before linker
+    # Sources appear before linker, linker before resolver
     foo_bar_idx = next(
         i for i, line in enumerate(list_lines) if line.endswith(foo_bar.name)
     )
     foo_idx = next(i for i, line in enumerate(list_lines) if line.endswith(foo.name))
     bar_idx = next(i for i, line in enumerate(list_lines) if line.endswith(bar.name))
+    root_idx = next(i for i, line in enumerate(list_lines) if line.endswith(root.name))
     assert foo_bar_idx > foo_idx
     assert foo_bar_idx > bar_idx
+    assert root_idx > foo_bar_idx
 
     # No tree formatting characters in content lines
     assert not any(char in line for line in list_lines for char in ["└──", "├──", "│"])
@@ -548,6 +622,12 @@ def test_dag_draw_status(sqla_sqlite_warehouse: Engine, mode: str) -> None:
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.field=r.field"},
     )
+    root = foo_bar.resolver(
+        d_foo,
+        name="root",
+        resolver_class=Components,
+        resolver_settings={"thresholds": {d_foo.name: 0, foo_bar.name: 0}},
+    )
 
     draw_str = dag.draw(
         mode=mode,
@@ -555,6 +635,7 @@ def test_dag_draw_status(sqla_sqlite_warehouse: Engine, mode: str) -> None:
             foo_bar.name: DAGNodeExecutionStatus.DOING,
             d_foo.name: DAGNodeExecutionStatus.DONE,
             foo.name: DAGNodeExecutionStatus.SKIPPED,
+            root.name: DAGNodeExecutionStatus.DONE,
         },
     )
     content_lines = draw_str.strip().split("\n")[3:]
@@ -570,6 +651,7 @@ def test_dag_draw_status(sqla_sqlite_warehouse: Engine, mode: str) -> None:
     assert "🔄⚙️" in draw_str
     assert "⏸️📄" in draw_str
     assert "⏭️📄" in draw_str
+    assert "✅💎" in draw_str
 
     # Correct indicator per node
     for line in content_lines:
@@ -581,6 +663,8 @@ def test_dag_draw_status(sqla_sqlite_warehouse: Engine, mode: str) -> None:
             assert "⏭️" in line
         elif bar.name in line:
             assert "⏸️" in line
+        elif root.name in line:
+            assert "✅" in line
 
 
 # Lookups
