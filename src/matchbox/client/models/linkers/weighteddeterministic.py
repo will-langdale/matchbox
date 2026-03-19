@@ -60,7 +60,7 @@ class WeightedDeterministicSettings(LinkerSettings):
     )
     threshold: float = Field(
         description="""
-            The probability above which matches will be kept. 
+            The score above which matches will be kept. 
             
             Inclusive, so a value of 1 will keep only exact matches across all 
             comparisons.
@@ -100,7 +100,7 @@ class WeightedDeterministicLinker(Linker):
                     select distinct on (list_sort([raw.left_id, raw.right_id]))
                         raw.left_id,
                         raw.right_id,
-                        1.0 * {weighted_comparison.weight} as probability
+                        1.0 * {weighted_comparison.weight} as score
                     from (
                         select
                             l.{self.settings.left_id} as left_id,
@@ -121,14 +121,14 @@ class WeightedDeterministicLinker(Linker):
             select
                 matches.left_id,
                 matches.right_id,
-                sum(matches.probability) / {total_weight} as probability
+                sum(matches.score) / {total_weight} as score
             from
                 ({match_subquery}) matches
             group by
                 matches.left_id,
                 matches.right_id
             having
-                sum(matches.probability) / 
+                sum(matches.score) / 
                     {total_weight} >= {self.settings.threshold};
         """
 
@@ -139,7 +139,7 @@ class WeightedDeterministicLinker(Linker):
                 [
                     pl.col("left_id").cast(self._id_dtype_l),
                     pl.col("right_id").cast(self._id_dtype_r),
-                    pl.col("probability").cast(pl.Float32),
+                    pl.col("score").cast(pl.Float32),
                 ]
             )
         )

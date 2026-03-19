@@ -6,11 +6,11 @@ import pytest
 from matchbox.client.queries import Query
 from matchbox.common.arrow import SCHEMA_MODEL_EDGES
 from matchbox.common.dtos import (
-    ModelResolutionName,
-    ResolutionName,
+    ModelStepName,
+    StepName,
 )
 from matchbox.common.factories.models import (
-    generate_dummy_probabilities,
+    generate_dummy_scores,
     model_factory,
     query_to_model_factory,
 )
@@ -69,9 +69,9 @@ def test_model_type_creation(
     assert (model.right_query is not None) == should_have_right
     assert (model.right_clusters is not None) == should_have_right
 
-    # Verify probabilities were generated
-    assert len(model.probabilities) > 0
-    assert model.probabilities.schema == pl.Schema(SCHEMA_MODEL_EDGES)
+    # Verify scores were generated
+    assert len(model.scores) > 0
+    assert model.scores.schema == pl.Schema(SCHEMA_MODEL_EDGES)
 
     # Verify derived model data exists and includes ids
     query_data = model.data
@@ -87,12 +87,12 @@ def test_model_type_creation(
             "Left and right IDs should be disjoint in linker"
         )
 
-        prob_left_ids = set(model.probabilities["left_id"].to_list())
-        prob_right_ids = set(model.probabilities["right_id"].to_list())
-        assert prob_left_ids <= left_ids, (
+        score_left_ids = set(model.scores["left_id"].to_list())
+        score_right_ids = set(model.scores["right_id"].to_list())
+        assert score_left_ids <= left_ids, (
             "Probability left IDs should be subset of left IDs"
         )
-        assert prob_right_ids <= right_ids, (
+        assert score_right_ids <= right_ids, (
             "Probability right IDs should be subset of right IDs"
         )
 
@@ -121,20 +121,20 @@ def test_model_type_creation(
     ],
 )
 def test_model_pipeline_with_dummy_methodology(
-    left_testkit: ResolutionName,
-    right_testkit: ResolutionName | None,
+    left_testkit: StepName,
+    right_testkit: StepName | None,
     model_type: Literal["deduper", "linker"],
 ) -> None:
     """Tests the factories validate "real" methodologies in various pipeline positions.
 
-    Here we show that with just a single output of a probabilities table, the factory
+    Here we show that with just a single output of a scores table, the factory
     and testkit system lets you evaluate the methodology of a deduper or linker.
 
     This test demonstrates that:
     1. We can set up pipelines in various configurations that work perfectly
         with model_factory
     2. When we swap in a simulated "real" methodology (using
-        generate_dummy_probabilities), the diff can detect the errors appropriately
+        generate_dummy_scores), the diff can detect the errors appropriately
     3. This validation works across different pipeline positions and configurations
     """
     linked = linked_sources_factory()
@@ -170,7 +170,7 @@ def test_model_pipeline_with_dummy_methodology(
 
     # Verify perfect model works
     identical, _ = linked.diff_model_edges(
-        probabilities=perfect_model.probabilities,
+        scores=perfect_model.scores,
         left_clusters=left_clusters,
         right_clusters=right_clusters,
         sources=sources,
@@ -179,17 +179,17 @@ def test_model_pipeline_with_dummy_methodology(
     assert identical, "Perfect model_factory setup should match"
 
     # Test with imperfect methodology
-    random_probabilities = generate_dummy_probabilities(
+    random_scores = generate_dummy_scores(
         left_values=tuple(c.id for c in model_entities[0]),
         right_values=tuple(c.id for c in model_entities[1])
         if model_entities[1] is not None
         else None,
-        prob_range=(0.0, 1.0),
+        score_range=(0.0, 1.0),
         num_components=len(all_true_sources) - 1,  # Intentionally wrong
     )
 
     identical, report = linked.diff_model_edges(
-        probabilities=random_probabilities,
+        scores=random_scores,
         left_clusters=left_clusters,
         right_clusters=right_clusters,
         sources=sources,
@@ -198,7 +198,7 @@ def test_model_pipeline_with_dummy_methodology(
 
     # Verify the imperfect methodology was detected
     assert not identical
-    # Random process: can't guarantee particular problems, but can guarantee
+    # Random process: can't guarantee particular issues, but can guarantee
     # that some will be present
     assert report["wrong"] > 0 or report["subset"] > 0 or report["superset"] > 0
 
@@ -207,22 +207,22 @@ def test_model_pipeline_with_dummy_methodology(
     ("kwargs", "expected_error", "expected_message"),
     [
         pytest.param(
-            {"model_type": "deduper", "prob_range": (0.9, 0.8)},
+            {"model_type": "deduper", "score_range": (0.9, 0.8)},
             ValueError,
-            "Probabilities must be increasing values between 0 and 1",
-            id="invalid_prob_range_decreasing",
+            "Scores must be increasing values between 0 and 1",
+            id="invalid_score_range_decreasing",
         ),
         pytest.param(
-            {"model_type": "deduper", "prob_range": (-0.1, 0.8)},
+            {"model_type": "deduper", "score_range": (-0.1, 0.8)},
             ValueError,
-            "Probabilities must be increasing values between 0 and 1",
-            id="invalid_prob_range_negative",
+            "Scores must be increasing values between 0 and 1",
+            id="invalid_score_range_negative",
         ),
         pytest.param(
-            {"model_type": "deduper", "prob_range": (0.8, 1.1)},
+            {"model_type": "deduper", "score_range": (0.8, 1.1)},
             ValueError,
-            "Probabilities must be increasing values between 0 and 1",
-            id="invalid_prob_range_too_high",
+            "Scores must be increasing values between 0 and 1",
+            id="invalid_score_range_too_high",
         ),
         pytest.param(
             {"left_testkit": source_factory(), "true_entities": None},
@@ -246,7 +246,7 @@ def test_model_factory_validation(
         "description",
         "model_type",
         "n_true_entities",
-        "prob_range",
+        "score_range",
         "seed",
         "expected_checks",
     ),
@@ -262,8 +262,8 @@ def test_model_factory_validation(
                 "type": "deduper",
                 "entity_count": 5,
                 "has_right": False,
-                "prob_min": 0.8,
-                "prob_max": 0.9,
+                "score_min": 0.8,
+                "score_max": 0.9,
             },
             id="basic_deduper",
         ),
@@ -278,8 +278,8 @@ def test_model_factory_validation(
                 "type": "linker",
                 "entity_count": 10,
                 "has_right": True,
-                "prob_min": 0.7,
-                "prob_max": 0.8,
+                "score_min": 0.7,
+                "score_max": 0.8,
             },
             id="basic_linker",
         ),
@@ -294,14 +294,14 @@ def test_model_factory_validation(
                 "type": "deduper",
                 "entity_count": 100,
                 "has_right": False,
-                "prob_min": 0.9,
-                "prob_max": 1.0,
+                "score_min": 0.9,
+                "score_max": 1.0,
             },
             id="large_deduper",
         ),
         pytest.param(
             "strict_linker",
-            "Linker with high probability threshold",
+            "Linker with high score threshold",
             "linker",
             20,
             (0.95, 1.0),
@@ -310,19 +310,19 @@ def test_model_factory_validation(
                 "type": "linker",
                 "entity_count": 20,
                 "has_right": True,
-                "prob_min": 0.95,
-                "prob_max": 1.0,
+                "score_min": 0.95,
+                "score_max": 1.0,
             },
             id="strict_linker",
         ),
     ],
 )
 def test_model_factory_basic_creation(
-    name: ModelResolutionName,
+    name: ModelStepName,
     description: str,
     model_type: str,
     n_true_entities: int,
-    prob_range: tuple[float, float],
+    score_range: tuple[float, float],
     seed: int,
     expected_checks: dict,
 ) -> None:
@@ -332,7 +332,7 @@ def test_model_factory_basic_creation(
         description=description,
         model_type=model_type,
         n_true_entities=n_true_entities,
-        prob_range=prob_range,
+        score_range=score_range,
         seed=seed,
     )
 
@@ -347,9 +347,9 @@ def test_model_factory_basic_creation(
     assert len(model.entities) == expected_checks["entity_count"]
 
     # Probability checks
-    probs = model.probabilities["probability"].to_numpy()
-    assert all(p >= expected_checks["prob_min"] for p in probs)
-    assert all(p <= expected_checks["prob_max"] for p in probs)
+    score_values = model.scores["score"].to_numpy()
+    assert all(p >= expected_checks["score_min"] for p in score_values)
+    assert all(p <= expected_checks["score_max"] for p in score_values)
 
 
 @pytest.mark.parametrize(
@@ -360,13 +360,13 @@ def test_model_factory_basic_creation(
                 "left_name": "crn",
                 "right_name": None,
                 "true_entities_slice": slice(None),  # All entities
-                "prob_range": (0.8, 0.9),
+                "score_range": (0.8, 0.9),
             },
             {
                 "type": "deduper",
                 "has_right": False,
-                "prob_min": 0.8,
-                "prob_max": 0.9,
+                "score_min": 0.8,
+                "score_max": 0.9,
             },
             id="deduper_full_entities",
         ),
@@ -375,13 +375,13 @@ def test_model_factory_basic_creation(
                 "left_name": "crn",
                 "right_name": "cdms",
                 "true_entities_slice": slice(None),
-                "prob_range": (0.8, 0.9),
+                "score_range": (0.8, 0.9),
             },
             {
                 "type": "linker",
                 "has_right": True,
-                "prob_min": 0.8,
-                "prob_max": 0.9,
+                "score_min": 0.8,
+                "score_max": 0.9,
             },
             id="linker_full_entities",
         ),
@@ -390,13 +390,13 @@ def test_model_factory_basic_creation(
                 "left_name": "crn",
                 "right_name": None,
                 "true_entities_slice": slice(0, 1),  # Just first entity
-                "prob_range": (0.9, 1.0),
+                "score_range": (0.9, 1.0),
             },
             {
                 "type": "deduper",
                 "has_right": False,
-                "prob_min": 0.9,
-                "prob_max": 1.0,
+                "score_min": 0.9,
+                "score_max": 1.0,
             },
             id="deduper_partial_entities",
         ),
@@ -405,13 +405,13 @@ def test_model_factory_basic_creation(
                 "left_name": "crn",
                 "right_name": "cdms",
                 "true_entities_slice": slice(0, 2),  # First two entities
-                "prob_range": (0.7, 0.8),
+                "score_range": (0.7, 0.8),
             },
             {
                 "type": "linker",
                 "has_right": True,
-                "prob_min": 0.7,
-                "prob_max": 0.8,
+                "score_min": 0.7,
+                "score_max": 0.8,
             },
             id="linker_partial_entities",
         ),
@@ -436,7 +436,7 @@ def test_model_factory_with_sources(source_config: dict, expected_checks: dict) 
         left_testkit=left_testkit,
         right_testkit=right_testkit,
         true_entities=all_true_sources[source_config["true_entities_slice"]],
-        prob_range=source_config["prob_range"],
+        score_range=source_config["score_range"],
     )
 
     # Basic type checks
@@ -444,10 +444,10 @@ def test_model_factory_with_sources(source_config: dict, expected_checks: dict) 
     assert (model.right_query is not None) == expected_checks["has_right"]
     assert (model.right_clusters is not None) == expected_checks["has_right"]
 
-    # Verify probabilities
-    probs = model.probabilities["probability"].to_numpy()
-    assert all(p >= expected_checks["prob_min"] for p in probs)
-    assert all(p <= expected_checks["prob_max"] for p in probs)
+    # Verify scores
+    score_values = model.scores["score"].to_numpy()
+    assert all(p >= expected_checks["score_min"] for p in score_values)
+    assert all(p <= expected_checks["score_max"] for p in score_values)
 
     # Verify source keys are preserved
     input_keys = sum(
@@ -479,14 +479,14 @@ def test_model_factory_seed_behavior(
         assert dummy1.left_data.equals(dummy2.left_data)
         assert set(dummy1.left_clusters) == set(dummy2.left_clusters)
         assert set(dummy1.entities) == set(dummy2.entities)
-        assert dummy1.probabilities.equals(dummy2.probabilities)
+        assert dummy1.scores.equals(dummy2.scores)
     else:
         assert dummy1.model.name != dummy2.model.name
         assert dummy1.model.description != dummy2.model.description
         assert not dummy1.left_data.equals(dummy2.left_data)
         assert set(dummy1.left_clusters) != set(dummy2.left_clusters)
         assert set(dummy1.entities) != set(dummy2.entities)
-        assert not dummy1.probabilities.equals(dummy2.probabilities)
+        assert not dummy1.scores.equals(dummy2.scores)
 
 
 def test_query_to_model_factory_validation() -> None:
@@ -500,14 +500,14 @@ def test_query_to_model_factory_validation() -> None:
     left_data = left_testkit.data
     left_keys = {"crn": "key"}
 
-    # Test invalid probability range
-    with pytest.raises(ValueError, match="Probabilities must be increasing values"):
+    # Test invalid score range
+    with pytest.raises(ValueError, match="Scores must be increasing values"):
         query_to_model_factory(
             left_query=Query(left_testkit.source, dag=linked.dag),
             left_data=left_data,
             left_keys=left_keys,
             true_entities=true_entities,
-            prob_range=(0.9, 0.8),
+            score_range=(0.9, 0.8),
         )
 
     # Test inconsistent right-side arguments
@@ -527,26 +527,26 @@ def test_query_to_model_factory_validation() -> None:
         pytest.param(
             {
                 "right_args": False,
-                "prob_range": (0.8, 0.9),
+                "score_range": (0.8, 0.9),
             },
             {
                 "type": "deduper",
                 "has_right": False,
-                "prob_min": 0.8,
-                "prob_max": 0.9,
+                "score_min": 0.8,
+                "score_max": 0.9,
             },
             id="deduper_configuration",
         ),
         pytest.param(
             {
                 "right_args": True,
-                "prob_range": (0.7, 0.95),
+                "score_range": (0.7, 0.95),
             },
             {
                 "type": "linker",
                 "has_right": True,
-                "prob_min": 0.7,
-                "prob_max": 0.95,
+                "score_min": 0.7,
+                "score_max": 0.95,
             },
             id="linker_configuration",
         ),
@@ -586,7 +586,7 @@ def test_query_to_model_factory_creation(
         right_query=right_query,
         right_data=right_data,
         right_keys=right_keys,
-        prob_range=test_config["prob_range"],
+        score_range=test_config["score_range"],
         seed=42,
     )
 
@@ -595,12 +595,12 @@ def test_query_to_model_factory_creation(
     assert (model.right_query is not None) == expected_checks["has_right"]
     assert (model.right_clusters is not None) == expected_checks["has_right"]
 
-    # Verify probabilities
-    assert model.probabilities.schema == pl.Schema(SCHEMA_MODEL_EDGES)
-    if len(model.probabilities) > 0:
-        probs = model.probabilities["probability"].to_numpy()
-        assert all(p >= expected_checks["prob_min"] for p in probs)
-        assert all(p <= expected_checks["prob_max"] for p in probs)
+    # Verify scores
+    assert model.scores.schema == pl.Schema(SCHEMA_MODEL_EDGES)
+    if len(model.scores) > 0:
+        score_values = model.scores["score"].to_numpy()
+        assert all(p >= expected_checks["score_min"] for p in score_values)
+        assert all(p <= expected_checks["score_max"] for p in score_values)
 
 
 @pytest.mark.parametrize(
@@ -643,12 +643,12 @@ def test_query_to_model_factory_seed_behavior(
     if should_be_equal:
         assert model1.model.name == model2.model.name
         assert model1.model.description == model2.model.description
-        assert model1.probabilities.equals(model2.probabilities)
+        assert model1.scores.equals(model2.scores)
     else:
         assert model1.model.name != model2.model.name
         assert model1.model.description != model2.model.description
-        if len(model1.probabilities) > 0 and len(model2.probabilities) > 0:
-            assert not model1.probabilities.equals(model2.probabilities)
+        if len(model1.scores) > 0 and len(model2.scores) > 0:
+            assert not model1.scores.equals(model2.scores)
 
 
 def test_query_to_model_factory_compare_with_model_factory() -> None:
@@ -685,8 +685,8 @@ def test_query_to_model_factory_compare_with_model_factory() -> None:
 
     # Verify that both models produce equivalent results
     # Names and descriptions will differ because they're randomly generated,
-    # but probabilities should match with the same seed
-    assert standard_model.probabilities.equals(query_model.probabilities)
+    # but scores should match with the same seed
+    assert standard_model.scores.equals(query_model.scores)
 
     # Compare entities
     assert set(standard_model.entities) == set(query_model.entities)

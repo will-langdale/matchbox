@@ -11,18 +11,18 @@ from matchbox.client.models.models import Model
 from matchbox.client.queries import Query
 from matchbox.client.resolvers.base import ResolverMethod, ResolverSettings
 from matchbox.client.resolvers.components import Components
-from matchbox.client.steps import Step, post_run
+from matchbox.client.steps import StepABC, post_run
 from matchbox.common.arrow import SCHEMA_CLUSTERS, check_schema_subset
 from matchbox.common.dtos import (
-    Resolution,
-    ResolutionName,
-    ResolutionType,
     ResolverConfig,
-    ResolverResolutionName,
-    ResolverResolutionPath,
-    SourceResolutionName,
+    ResolverStepName,
+    ResolverStepPath,
+    SourceStepName,
+    Step,
+    StepName,
+    StepType,
 )
-from matchbox.common.exceptions import MatchboxResolutionTypeError
+from matchbox.common.exceptions import MatchboxStepTypeError
 from matchbox.common.hash import hash_clusters
 from matchbox.common.logging import logger, profile_time
 
@@ -47,7 +47,7 @@ def add_resolver_class(resolver_class: type[ResolverMethod]) -> None:
 add_resolver_class(Components)
 
 
-class Resolver(Step):
+class Resolver(StepABC):
     """Client-side node that computes clusters from model and resolver inputs."""
 
     _local_data_schema: ClassVar[pa.Schema] = SCHEMA_CLUSTERS
@@ -55,24 +55,22 @@ class Resolver(Step):
     def __init__(
         self,
         dag: DAG,
-        name: ResolverResolutionName,
+        name: ResolverStepName,
         inputs: Iterable[Model],
         resolver_class: type[ResolverMethod] | str,
         resolver_settings: ResolverSettings | dict[str, Any],
         description: str | None = None,
     ) -> None:
         """Create a resolver node that computes clusters from its inputs."""
-        super().__init__(
-            dag=dag, name=ResolverResolutionName(name), description=description
-        )
+        super().__init__(dag=dag, name=ResolverStepName(name), description=description)
 
         deduped_inputs: list[Model] = []
         seen_names: set[str] = set()
         for node in inputs:
             if not isinstance(node, Model):
-                raise MatchboxResolutionTypeError(
-                    resolution_name=getattr(node, "name", node),
-                    expected_resolution_types=[ResolutionType.MODEL],
+                raise MatchboxStepTypeError(
+                    step_name=getattr(node, "name", node),
+                    expected_step_types=[StepType.MODEL],
                 )
             if node.name in seen_names:
                 continue
@@ -146,17 +144,17 @@ class Resolver(Step):
         )
 
     @property
-    def sources(self) -> set[SourceResolutionName]:
+    def sources(self) -> set[SourceStepName]:
         """Set of source names upstream of this node."""
-        upstream: set[SourceResolutionName] = set()
+        upstream: set[SourceStepName] = set()
         for node in self.inputs:
             upstream.update(node.sources)
         return upstream
 
     @property
-    def resolution_path(self) -> ResolverResolutionPath:
-        """Return resolver path."""
-        return ResolverResolutionPath(
+    def path(self) -> ResolverStepPath:
+        """Return resolver step path."""
+        return ResolverStepPath(
             collection=self.dag.name,
             run=self.dag.run,
             name=self.name,
@@ -164,7 +162,7 @@ class Resolver(Step):
 
     @profile_time(attr="name")
     def compute_clusters(
-        self, model_edges: Mapping[ResolutionName, pl.DataFrame]
+        self, model_edges: Mapping[StepName, pl.DataFrame]
     ) -> pl.DataFrame:
         """Delegate cluster computation to the configured resolver instance."""
         return self.resolver_instance.compute_clusters(model_edges=model_edges)
@@ -172,7 +170,7 @@ class Resolver(Step):
     @profile_time(attr="name")
     def run(self) -> pl.DataFrame:
         """Run the resolver and materialise cluster assignments."""
-        model_edges: dict[ResolutionName, pl.DataFrame] = {}
+        model_edges: dict[StepName, pl.DataFrame] = {}
 
         for node in self.inputs:
             if node.results is None:
@@ -194,34 +192,34 @@ class Resolver(Step):
         return hash_clusters(self._local_data.to_arrow())
 
     @post_run
-    def to_resolution(self) -> Resolution:
-        """Convert to Resolution for API calls."""
-        return Resolution(
+    def to_dto(self) -> Step:
+        """Convert to Step DTO for API calls."""
+        return Step(
             description=self.description,
-            resolution_type=ResolutionType.RESOLVER,
+            step_type=StepType.RESOLVER,
             config=self.config,
             fingerprint=self._fingerprint(),
         )
 
     @classmethod
-    def from_resolution(
+    def from_dto(
         cls,
-        resolution: Resolution,
-        resolution_name: str,
+        step: Step,
+        step_name: str,
         dag: DAG,
         **kwargs: Any,
     ) -> "Resolver":
-        """Reconstruct from Resolution."""
-        if resolution.resolution_type != ResolutionType.RESOLVER:
-            raise ValueError("Resolution must be of type 'resolver'")
+        """Reconstruct from Step DTO."""
+        if step.step_type != StepType.RESOLVER:
+            raise ValueError("Step must be of type 'resolver'")
 
         return cls(
             dag=dag,
-            name=ResolverResolutionName(resolution_name),
-            description=resolution.description,
-            inputs=[dag.nodes[name] for name in resolution.config.inputs],
-            resolver_class=resolution.config.resolver_class,
-            resolver_settings=json.loads(resolution.config.resolver_settings),
+            name=ResolverStepName(step_name),
+            description=step.description,
+            inputs=[dag.nodes[name] for name in step.config.inputs],
+            resolver_class=step.config.resolver_class,
+            resolver_settings=json.loads(step.config.resolver_settings),
         )
 
     def query(self, *sources: Source, **kwargs: Any) -> Query:

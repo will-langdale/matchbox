@@ -14,22 +14,22 @@ from matchbox.common.arrow import (
     JudgementsZipFilenames,
     check_schema_subset,
 )
-from matchbox.common.dtos import ResolverResolutionPath
+from matchbox.common.dtos import ResolverStepPath
 from matchbox.common.eval import Judgement
 from matchbox.common.logging import logger
 
 
 @http_retry
-def sample_for_eval(n: int, resolution: ResolverResolutionPath) -> Table:
+def sample_for_eval(n: int, resolver: ResolverStepPath) -> Table:
     """Sample resolver clusters for evaluation."""
     res = CLIENT.get(
         "/eval/samples",
         params=url_params(
             {
                 "n": n,
-                "collection": resolution.collection,
-                "run_id": resolution.run,
-                "resolution": resolution.name,
+                "collection": resolver.collection,
+                "run_id": resolver.run,
+                "resolver": resolver.name,
             }
         ),
     )

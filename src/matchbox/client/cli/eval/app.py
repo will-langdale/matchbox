@@ -18,7 +18,7 @@ from matchbox.client.cli.eval.widgets.styling import get_group_style
 from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
 from matchbox.client.dags import DAG
 from matchbox.client.eval import EvaluationItem, create_judgement, get_samples
-from matchbox.common.dtos import ResolverResolutionPath
+from matchbox.common.dtos import ResolverStepPath
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ class EntityResolutionApp(App):
     current_assignments: reactive[dict[int, str]] = reactive({}, init=False)
 
     sample_limit: int
-    resolution: ResolverResolutionPath
+    resolver: ResolverStepPath
     dag: DAG
     session_tag: str | None
     sample_file: str | None
@@ -117,7 +117,7 @@ class EntityResolutionApp(App):
     def __init__(
         self,
         num_samples: int = 5,
-        resolution: ResolverResolutionPath | None = None,
+        resolver: ResolverStepPath | None = None,
         dag: DAG | None = None,
         session_tag: str | None = None,
         sample_file: str | None = None,
@@ -127,22 +127,22 @@ class EntityResolutionApp(App):
         """Initialise the entity resolution app.
 
         Args:
-            resolution: The model resolution to evaluate
+            resolver: The resolver step to evaluate
             num_samples: Number of clusters to sample for evaluation
             dag: Pre-loaded DAG with warehouse location attached
             session_tag: String to use for tagging judgements
             sample_file: Path to pre-compiled sample file.
-                If set, ignores resolutions.
+                If set, ignores resolver.
             show_help: Whether to show help on start
             scroll_debounce_delay: Delay before updating column headers after scroll.
                 Set to None to disable debouncing (useful for tests).
         """
         super().__init__()
 
-        if not (resolution or sample_file):
-            raise ValueError("Either a resolution or a sample file must be set")
+        if not (resolver or sample_file):
+            raise ValueError("Either a resolver or a sample file must be set")
 
-        self.resolution = resolution
+        self.resolver = resolver
         self.sample_limit = num_samples
         self.dag = dag
         self.session_tag = session_tag
@@ -175,7 +175,7 @@ class EntityResolutionApp(App):
         """Initialise the application."""
         if self.dag is None:
             raise RuntimeError(
-                "DAG not loaded. EntityResolutionApp requires a pre-loaded DAG."
+                "DAG not loaded. EntityMatchingApp requires a pre-loaded DAG."
             )
 
         await self.load_samples()
@@ -276,7 +276,7 @@ class EntityResolutionApp(App):
     async def _handle_no_samples(self) -> None:
         """Handle empty queue state."""
         self._update_status("◯ No data", "yellow")
-        logger.warning(f"No samples available for resolution '{self.resolution}'.")
+        logger.warning(f"No samples available for resolver '{self.resolver}'.")
         await self.action_show_no_samples()
 
     def _update_status(
@@ -321,7 +321,7 @@ class EntityResolutionApp(App):
         try:
             new_samples_dict = get_samples(
                 n=needed,
-                resolution=self.resolution.name if self.resolution else None,
+                resolver=self.resolver.name if self.resolver else None,
                 dag=self.dag,
                 sample_file=self.sample_file,
             )

@@ -15,42 +15,39 @@ else:
     DAG = Any
 
 
-def normalise_model_probabilities(probabilities: pl.DataFrame) -> pl.DataFrame:
-    """Validate and normalise model output probabilities."""
-    if not isinstance(probabilities, pl.DataFrame):
-        raise ValueError(f"Expected a polars DataFrame, got {type(probabilities)}.")
+def normalise_model_scores(scores: pl.DataFrame) -> pl.DataFrame:
+    """Validate and normalise model output scores."""
+    if not isinstance(scores, pl.DataFrame):
+        raise ValueError(f"Expected a polars DataFrame, got {type(scores)}.")
 
     expected_fields = set(SCHEMA_MODEL_EDGES.names)
-    if set(probabilities.columns) != expected_fields:
+    if set(scores.columns) != expected_fields:
         raise ValueError(
-            f"Expected {expected_fields}.\nFound {set(probabilities.column_names)}."
+            f"Expected {expected_fields}.\nFound {set(scores.column_names)}."
         )
 
-    if probabilities.height == 0:
-        probabilities = pl.DataFrame(schema=pl.Schema(SCHEMA_MODEL_EDGES))
+    if scores.height == 0:
+        scores = pl.DataFrame(schema=pl.Schema(SCHEMA_MODEL_EDGES))
 
-    probability_type = probabilities["probability"].dtype
-    if not probability_type.is_numeric():
+    if not scores["score"].dtype.is_numeric():
         raise ValueError(
-            "Probability column must contain numeric values in the range [0.0, 1.0]."
+            "Score column must contain numeric values in the range [0.0, 1.0]."
         )
 
-    normalised_probabilities = probabilities.with_columns(
-        pl.col("probability").cast(pl.Float32)
+    normalised_scores = scores.with_columns(pl.col("score").cast(pl.Float32))
+    invalid_scores = normalised_scores.filter(
+        pl.col("score").is_null()
+        | pl.col("score").is_nan()
+        | (pl.col("score") < 0.0)
+        | (pl.col("score") > 1.0)
     )
-    invalid_probabilities = normalised_probabilities.filter(
-        pl.col("probability").is_null()
-        | pl.col("probability").is_nan()
-        | (pl.col("probability") < 0.0)
-        | (pl.col("probability") > 1.0)
-    )
-    if invalid_probabilities.height:
-        min_prob = normalised_probabilities["probability"].min()
-        max_prob = normalised_probabilities["probability"].max()
-        raise ValueError(f"Probability range misconfigured: [{min_prob}, {max_prob}]")
+    if invalid_scores.height:
+        min_score = normalised_scores["score"].min()
+        max_score = normalised_scores["score"].max()
+        raise ValueError(f"Score range misconfigured: [{min_score}, {max_score}]")
 
-    unique_probabilities = (
-        normalised_probabilities.with_columns(
+    unique_scores = (
+        normalised_scores.with_columns(
             pl.concat_list(
                 [pl.col("left_id").cast(pl.Utf8), pl.col("right_id").cast(pl.Utf8)]
             )
@@ -58,19 +55,19 @@ def normalise_model_probabilities(probabilities: pl.DataFrame) -> pl.DataFrame:
             .list.join("_")
             .alias("sorted_ids")
         )
-        .sort("probability", descending=True)  # sort so largest probability comes first
+        .sort("score", descending=True)  # sort so largest score comes first
         .unique(
             subset=["sorted_ids"], keep="first"
         )  # keep first occurrence after sorting
     ).drop("sorted_ids")
-    if len(probabilities) != len(unique_probabilities):
-        logger.warning("Duplicate pairs! Keeping only pairs with highest probability.")
+    if len(scores) != len(unique_scores):
+        logger.warning("Duplicate pairs! Keeping only pairs with highest score.")
 
-    return unique_probabilities.cast(pl.Schema(SCHEMA_MODEL_EDGES))
+    return unique_scores.cast(pl.Schema(SCHEMA_MODEL_EDGES))
 
 
-class ResolvedMatches:
-    """Matches according to resolution."""
+class ResolverMatches:
+    """Matches according to a resolver."""
 
     def __init__(
         self, sources: list[Source], query_results: list[pl.DataFrame]
@@ -92,12 +89,12 @@ class ResolvedMatches:
 
     @classmethod
     def from_dump(cls, cluster_key_map: pl.DataFrame, dag: DAG) -> Self:
-        """Initialise ResolvedMatches from concatenated dataframe representation."""
+        """Initialise ResolverMatches from concatenated dataframe representation."""
         partitioned = cluster_key_map.partition_by("source")
         sources = [dag.get_source(p["source"][0]) for p in partitioned]
         query_results = [p.drop("source") for p in partitioned]
 
-        return ResolvedMatches(sources=sources, query_results=query_results)
+        return ResolverMatches(sources=sources, query_results=query_results)
 
     def as_lookup(self) -> pl.DataFrame:
         """Return lookup across matchbox ID and source keys."""
@@ -237,4 +234,4 @@ class ResolvedMatches:
             )
             new_query_results.append(source_query_results)
 
-        return ResolvedMatches(sources=self.sources, query_results=new_query_results)
+        return ResolverMatches(sources=self.sources, query_results=new_query_results)

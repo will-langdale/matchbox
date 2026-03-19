@@ -20,8 +20,8 @@ from matchbox.common.arrow import (
     SCHEMA_MODEL_EDGES,
 )
 from matchbox.common.dtos import (
-    ResolutionPath,
-    ResolutionType,
+    StepPath,
+    StepType,
 )
 from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.logging import configure_celery_logging, log_mem_usage, logger
@@ -200,14 +200,14 @@ def process_upload(
     backend: MatchboxDBAdapter,
     tracker: UploadTracker,
     s3_client: S3Client,
-    resolution_path: ResolutionPath,
+    step_path: StepPath,
     upload_id: str,
     bucket: str,
     filename: str,
 ) -> None:
     """Generic task to process uploaded file, usable by FastAPI BackgroundTasks."""
     try:
-        resolution = backend.get_resolution(path=resolution_path)
+        step = backend.get_step(path=step_path)
 
         batches = [
             batch
@@ -216,32 +216,32 @@ def process_upload(
             )
         ]
 
-        # If successful, either backend method marks resolution as complete
-        if resolution.resolution_type == ResolutionType.SOURCE:
+        # If successful, the backend marks the uploaded step as complete.
+        if step.step_type == StepType.SOURCE:
             backend.insert_source_data(
-                path=resolution_path,
+                path=step_path,
                 data_hashes=pa.Table.from_batches(batches, schema=SCHEMA_INDEX),
             )
-        elif resolution.resolution_type == ResolutionType.MODEL:
+        elif step.step_type == StepType.MODEL:
             backend.insert_model_data(
-                path=resolution_path,
+                path=step_path,
                 results=pa.Table.from_batches(batches, schema=SCHEMA_MODEL_EDGES),
             )
-        elif resolution.resolution_type == ResolutionType.RESOLVER:
+        elif step.step_type == StepType.RESOLVER:
             backend.insert_resolver_data(
-                path=resolution_path,
+                path=step_path,
                 data=pa.Table.from_batches(batches, schema=SCHEMA_CLUSTERS),
             )
         else:
-            raise RuntimeError("Unsupported resolution type.")
+            raise RuntimeError("Unsupported step type.")
 
     except Exception as e:
         # After failure, signal to clients they can try again
-        backend.unlock_resolution_data(path=resolution_path)
+        backend.unlock_step_data(path=step_path)
 
         error_context = {
             "upload_id": upload_id,
-            "resolution_path": str(resolution_path),
+            "step_path": str(step_path),
             "bucket": bucket,
             "key": filename,
         }
@@ -266,11 +266,11 @@ def process_upload(
 
 @celery.task(ignore_result=True, bind=True, max_retries=3)
 def process_upload_celery(
-    self: Task, resolution_path_json: str, upload_id: str, bucket: str, filename: str
+    self: Task, step_path_json: str, upload_id: str, bucket: str, filename: str
 ) -> None:
     """Celery task to process uploaded file, with only serialisable arguments."""
     initialise_celery_worker()
-    resolution_path = ResolutionPath.model_validate_json(resolution_path_json)
+    step_path = StepPath.model_validate_json(step_path_json)
 
     # If using Postgres, we must reset the global database connections
     # to avoid using inherited C-pointers from the parent process (ADBC).
@@ -279,9 +279,7 @@ def process_upload_celery(
 
         MBDB._disconnect_adbc()
 
-    celery_logger.info(
-        "Uploading data for resolution %s, ID %s", str(resolution_path), upload_id
-    )
+    celery_logger.info("Uploading data for step %s, ID %s", str(step_path), upload_id)
     log_mem_usage()
 
     upload_function = partial(
@@ -293,19 +291,17 @@ def process_upload_celery(
 
     try:
         upload_function(
-            resolution_path=resolution_path,
+            step_path=step_path,
             upload_id=upload_id,
             bucket=bucket,
             filename=filename,
         )
-        celery_logger.info(
-            "Upload complete for %s, ID %s", str(resolution_path), upload_id
-        )
+        celery_logger.info("Upload complete for %s, ID %s", str(step_path), upload_id)
 
     except Exception as exc:  # noqa: BLE001
         celery_logger.error(
-            "Upload failed for resolution %s, ID %s. Retrying...",
-            str(resolution_path),
+            "Upload failed for step %s, ID %s. Retrying...",
+            str(step_path),
             upload_id,
         )
         try:

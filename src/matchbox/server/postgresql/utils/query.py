@@ -12,43 +12,43 @@ from sqlalchemy.sql.selectable import CTE, Select, Subquery
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import (
     Match,
-    ResolutionType,
-    ResolverResolutionPath,
-    SourceResolutionPath,
+    ResolverStepPath,
+    SourceStepPath,
+    StepType,
     UploadStage,
 )
 from matchbox.common.exceptions import (
-    MatchboxResolutionNotQueriable,
-    MatchboxResolutionTypeError,
+    MatchboxStepNotQueriable,
+    MatchboxStepTypeError,
 )
 from matchbox.common.logging import logger
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
     ClusterSourceKey,
     Contains,
-    ResolutionClusters,
-    Resolutions,
+    ResolverClusters,
     SourceConfigs,
+    Steps,
 )
 from matchbox.server.postgresql.utils.db import compile_sql
 
 
 def _build_unified_query(
-    resolution: Resolutions,
+    step: Steps,
     sources: list[SourceConfigs] | None = None,
     level: Literal["leaf", "key"] = "leaf",
     include_source_config_id: bool = False,
 ) -> Select:
     """Build a query that projects records to root IDs through the hierarchy."""
-    lineage = resolution.get_lineage(sources=sources, queryable_only=True)
+    lineage = step.get_lineage(sources=sources, queryable_only=True)
 
-    # Separate lineage entries into resolver resolutions and source config IDs.
+    # Separate lineage entries into resolver steps and source config IDs.
     # Entries without a source_config_id are resolver nodes, the rest are sources
     resolver_ids: list[int] = []
     source_config_ids: list[int] = []
-    for resolution_id, source_config_id in lineage:
+    for step_id, source_config_id in lineage:
         if source_config_id is None:
-            resolver_ids.append(resolution_id)
+            resolver_ids.append(step_id)
         else:
             source_config_ids.append(source_config_id)
 
@@ -58,7 +58,7 @@ def _build_unified_query(
 
     for resolver_id in resolver_ids:
         # For each resolver, build a subquery that maps leaf cluster IDs to their
-        # root cluster IDs at that resolution level via the Contains table
+        # root cluster IDs at that step level via the Contains table.
         assignments: Subquery = (
             select(
                 Contains.leaf.label("leaf_id"),
@@ -66,10 +66,10 @@ def _build_unified_query(
             )
             .select_from(Contains)
             .join(
-                ResolutionClusters,
+                ResolverClusters,
                 and_(
-                    ResolutionClusters.cluster_id == Contains.root,
-                    ResolutionClusters.resolution_id == resolver_id,
+                    ResolverClusters.cluster_id == Contains.root,
+                    ResolverClusters.step_id == resolver_id,
                 ),
             )
             .subquery(f"resolver_assignments_{resolver_id}")
@@ -120,13 +120,13 @@ def _build_unified_query(
 def _build_target_cluster_cte(
     key: str,
     source_config_id: int,
-    resolution: Resolutions,
+    step: Steps,
 ) -> CTE:
     """Build the target cluster CTE for a source key."""
     # Reuse the unified query at key level, filtered to this source config,
     # so we get the resolved root cluster for the given key
     source_projection = _build_unified_query(
-        resolution=resolution,
+        step=step,
         level="key",
         include_source_config_id=True,
     ).subquery("source_projection")
@@ -148,14 +148,14 @@ def _build_target_cluster_cte(
 
 def _build_matching_leaves_cte(
     source_and_target_ids: list[int],
-    resolution: Resolutions,
+    step: Steps,
     target_cluster_cte: CTE,
 ) -> CTE:
     """Build the matching keys CTE for a resolved cluster."""
     # Project all source + target keys through the hierarchy, then filter to those
     # whose resolved root matches the target cluster
     full_projection = _build_unified_query(
-        resolution=resolution,
+        step=step,
         level="key",
         include_source_config_id=True,
     ).subquery("full_projection")
@@ -179,41 +179,41 @@ def _build_matching_leaves_cte(
 
 def require_complete_resolver(
     session: Session,
-    path: ResolverResolutionPath,
-) -> Resolutions:
+    path: ResolverStepPath,
+) -> Steps:
     """Resolve and validate a resolver path for query-time operations."""
-    resolver_resolution = Resolutions.from_path(path=path, session=session)
-    if resolver_resolution.type != ResolutionType.RESOLVER:
-        raise MatchboxResolutionTypeError(
-            resolution_name=str(path),
-            resolution_type=resolver_resolution.type,
-            expected_resolution_types=[ResolutionType.RESOLVER],
+    resolver_step = Steps.from_path(path=path, session=session)
+    if resolver_step.type != StepType.RESOLVER:
+        raise MatchboxStepTypeError(
+            step_name=str(path),
+            step_type=resolver_step.type,
+            expected_step_types=[StepType.RESOLVER],
         )
-    if resolver_resolution.upload_stage != UploadStage.COMPLETE:
-        raise MatchboxResolutionNotQueriable
-    return resolver_resolution
+    if resolver_step.upload_stage != UploadStage.COMPLETE:
+        raise MatchboxStepNotQueriable
+    return resolver_step
 
 
 def resolver_membership_subquery(
-    resolution_id: int,
+    step_id: int,
     alias: str = "resolver_membership",
 ) -> Subquery:
     """Build root_id/leaf_id membership rows for a resolver."""
     # First branch: root clusters count as their own leaf (self-membership)
     roots_query = select(
-        ResolutionClusters.cluster_id.label("root_id"),
-        ResolutionClusters.cluster_id.label("leaf_id"),
-    ).where(ResolutionClusters.resolution_id == resolution_id)
+        ResolverClusters.cluster_id.label("root_id"),
+        ResolverClusters.cluster_id.label("leaf_id"),
+    ).where(ResolverClusters.step_id == step_id)
 
     # Second branch: all clusters contained within a root via the Contains table
     leaves_query = (
         select(
-            ResolutionClusters.cluster_id.label("root_id"),
+            ResolverClusters.cluster_id.label("root_id"),
             Contains.leaf.label("leaf_id"),
         )
-        .select_from(ResolutionClusters)
-        .join(Contains, Contains.root == ResolutionClusters.cluster_id)
-        .where(ResolutionClusters.resolution_id == resolution_id)
+        .select_from(ResolverClusters)
+        .join(Contains, Contains.root == ResolverClusters.cluster_id)
+        .where(ResolverClusters.step_id == step_id)
     )
 
     # UNION deduplicates in case a root cluster also appears as a leaf
@@ -221,31 +221,31 @@ def resolver_membership_subquery(
 
 
 def query(
-    source: SourceResolutionPath,
-    point_of_truth: ResolverResolutionPath | None = None,
+    source: SourceStepPath,
+    resolver: ResolverStepPath | None = None,
     return_leaf_id: bool = False,
     limit: int | None = None,
 ) -> pa.Table:
     """Query Matchbox to retrieve linked data for a source."""
     with MBDB.get_session() as session:
-        source_resolution: Resolutions = Resolutions.from_path(
+        source_step: Steps = Steps.from_path(
             path=source,
             session=session,
         )
-        source_config: SourceConfigs = source_resolution.source_config
+        source_config: SourceConfigs = source_step.source_config
 
-        # Use the provided point-of-truth resolver, or fall back to the source's
-        # own resolution for a simple self-contained query
-        if point_of_truth is None:
-            truth_resolution = source_resolution
+        # Use the provided resolver to resolve the multi-source query from, or fall
+        # back to  the source step for a simple single-source query
+        if resolver is None:
+            step = source_step
         else:
-            truth_resolution = require_complete_resolver(session, point_of_truth)
+            step = require_complete_resolver(session, resolver)
 
-        if truth_resolution.upload_stage != UploadStage.COMPLETE:
-            raise MatchboxResolutionNotQueriable
+        if step.upload_stage != UploadStage.COMPLETE:
+            raise MatchboxStepNotQueriable
 
         query_stmt = _build_unified_query(
-            resolution=truth_resolution,
+            step=step,
             sources=[source_config],
             level="key",
             include_source_config_id=False,
@@ -280,21 +280,21 @@ def query(
 
 def match(
     key: str,
-    source: SourceResolutionPath,
-    targets: list[SourceResolutionPath],
-    point_of_truth: ResolverResolutionPath,
+    source: SourceStepPath,
+    targets: list[SourceStepPath],
+    resolver: ResolverStepPath,
 ) -> list[Match]:
-    """Match a source key against targets under a resolver point-of-truth."""
+    """Match a source key against targets via a resolver."""
     with MBDB.get_session() as session:
-        source_config: SourceConfigs = Resolutions.from_path(
+        source_config: SourceConfigs = Steps.from_path(
             path=source,
             session=session,
         ).source_config
-        resolver_resolution = require_complete_resolver(session, point_of_truth)
+        resolver_step = require_complete_resolver(session, resolver)
 
         # Resolve source configs for all targets to enable ID lookup and result assembly
         target_configs: list[SourceConfigs] = [
-            Resolutions.from_path(path=target, session=session).source_config
+            Steps.from_path(path=target, session=session).source_config
             for target in targets
         ]
         source_and_target_ids: list[int] = [
@@ -302,16 +302,16 @@ def match(
             *(tc.source_config_id for tc in target_configs),
         ]
 
-        # Resolve which cluster this key belongs to under the point-of-truth
+        # Resolve which cluster this key belongs to according to the resolver
         target_cluster_cte = _build_target_cluster_cte(
             key=key,
             source_config_id=source_config.source_config_id,
-            resolution=resolver_resolution,
+            step=resolver_step,
         )
 
         matching_leaves_cte = _build_matching_leaves_cte(
             source_and_target_ids=source_and_target_ids,
-            resolution=resolver_resolution,
+            step=resolver_step,
             target_cluster_cte=target_cluster_cte,
         )
 

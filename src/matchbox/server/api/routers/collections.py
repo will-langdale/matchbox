@@ -1,4 +1,4 @@
-"""Collection and resolution API routes for the Matchbox server."""
+"""Collection and step API routes for the Matchbox server."""
 
 import uuid
 from typing import Annotated
@@ -27,22 +27,22 @@ from matchbox.common.dtos import (
     CRUDOperation,
     ErrorResponse,
     GroupName,
-    ModelResolutionPath,
+    ModelStepPath,
     PermissionGrant,
     PermissionType,
-    Resolution,
-    ResolutionName,
-    ResolutionPath,
-    ResolutionType,
-    ResolverResolutionPath,
+    ResolverStepPath,
     ResourceOperationStatus,
     Run,
     RunID,
+    Step,
+    StepName,
+    StepPath,
+    StepType,
     UploadInfo,
 )
 from matchbox.common.exceptions import (
-    MatchboxResolutionTypeError,
     MatchboxServerFileError,
+    MatchboxStepTypeError,
 )
 from matchbox.server.api.dependencies import (
     BackendDependency,
@@ -86,14 +86,14 @@ def list_collections(backend: BackendDependency) -> list[CollectionName]:
     summary="Get collection details",
     description=(
         "Retrieve details for a specific collection, including all its versions "
-        "and resolutions."
+        "and steps."
     ),
 )
 def get_collection(
     backend: BackendDependency,
     collection: CollectionName,
 ) -> Collection:
-    """Get collection details with all versions and resolutions."""
+    """Get collection details with all versions and steps."""
     return backend.get_collection(name=collection)
 
 
@@ -327,7 +327,7 @@ def set_run_default(
     },
     dependencies=[Depends(RequireCollectionWrite)],
     summary="Delete a run",
-    description="Delete a run and all its resolutions. Requires confirmation.",
+    description="Delete a run and all its steps. Requires confirmation.",
 )
 def delete_run(
     backend: BackendDependency,
@@ -342,11 +342,11 @@ def delete_run(
     )
 
 
-# Resolution management
+# Step management
 
 
 @router.post(
-    "/{collection}/runs/{run_id}/resolutions/{resolution_name}",
+    "/{collection}/runs/{run_id}/steps/{step_name}",
     responses={
         401: {"model": ErrorResponse},
         403: {"model": ErrorResponse},
@@ -355,56 +355,54 @@ def delete_run(
     },
     dependencies=[Depends(RequireCollectionWrite)],
     status_code=status.HTTP_201_CREATED,
-    summary="Create a resolution",
-    description="Create a new resolution (model or source) in the specified run.",
+    summary="Create a step",
+    description="Create a new step in the specified run.",
 )
-def create_resolution(
+def create_step(
     backend: BackendDependency,
     collection: CollectionName,
     run_id: RunID,
-    resolution_name: ResolutionName,
-    resolution: Resolution,
+    step_name: StepName,
+    step: Step,
 ) -> ResourceOperationStatus:
-    """Create a resolution (model or source)."""
-    resolution_path = ResolutionPath(
-        name=resolution_name, collection=collection, run=run_id
-    )
-    backend.create_resolution(
-        resolution=resolution,
-        path=resolution_path,
+    """Create a step."""
+    step_path = StepPath(name=step_name, collection=collection, run=run_id)
+    backend.create_step(
+        step=step,
+        path=step_path,
     )
     return ResourceOperationStatus(
         success=True,
-        target=f"Resolution {resolution_path}",
+        target=f"Step {step_path}",
         operation=CRUDOperation.CREATE,
     )
 
 
 @router.get(
-    "/{collection}/runs/{run_id}/resolutions/{resolution}",
+    "/{collection}/runs/{run_id}/steps/{step_name}",
     responses={
         401: {"model": ErrorResponse},
         403: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
     },
     dependencies=[Depends(RequireCollectionRead)],
-    summary="Get a resolution",
-    description="Retrieve a specific resolution (model or source) from the backend.",
+    summary="Get a step",
+    description="Retrieve a specific step from the backend.",
 )
-def get_resolution(
+def get_step(
     backend: BackendDependency,
     collection: CollectionName,
     run_id: RunID,
-    resolution: ResolutionName,
-) -> Resolution:
-    """Get a resolution (model or source) from the backend."""
-    return backend.get_resolution(
-        path=ResolutionPath(collection=collection, run=run_id, name=resolution)
+    step_name: StepName,
+) -> Step:
+    """Get a step from the backend."""
+    return backend.get_step(
+        path=StepPath(collection=collection, run=run_id, name=step_name)
     )
 
 
 @router.put(
-    "/{collection}/runs/{run_id}/resolutions/{resolution_name}",
+    "/{collection}/runs/{run_id}/steps/{step_name}",
     responses={
         401: {"model": ErrorResponse},
         403: {"model": ErrorResponse},
@@ -412,33 +410,31 @@ def get_resolution(
     },
     dependencies=[Depends(RequireCollectionWrite)],
     status_code=status.HTTP_200_OK,
-    summary="Update a resolution",
-    description="Update an existing resolution (model or source) in the specified run.",
+    summary="Update a step",
+    description="Update an existing step in the specified run.",
 )
-def update_resolution(
+def update_step(
     backend: BackendDependency,
     collection: CollectionName,
     run_id: RunID,
-    resolution_name: ResolutionName,
-    resolution: Resolution,
+    step_name: StepName,
+    step: Step,
 ) -> ResourceOperationStatus:
-    """Update an existing resolution (model or source)."""
-    resolution_path = ResolutionPath(
-        name=resolution_name, collection=collection, run=run_id
-    )
-    backend.update_resolution(
-        resolution=resolution,
-        path=resolution_path,
+    """Update an existing step."""
+    step_path = StepPath(name=step_name, collection=collection, run=run_id)
+    backend.update_step(
+        step=step,
+        path=step_path,
     )
     return ResourceOperationStatus(
         success=True,
-        target=f"Resolution {resolution_path}",
+        target=f"Step {step_path}",
         operation=CRUDOperation.UPDATE,
     )
 
 
 @router.delete(
-    "/{collection}/runs/{run_id}/resolutions/{resolution}",
+    "/{collection}/runs/{run_id}/steps/{step_name}",
     responses={
         401: {"model": ErrorResponse},
         403: {"model": ErrorResponse},
@@ -446,30 +442,28 @@ def update_resolution(
         409: {"model": ErrorResponse},
     },
     dependencies=[Depends(RequireCollectionWrite)],
-    summary="Delete a resolution",
-    description="Delete a resolution from the backend. Requires confirmation.",
+    summary="Delete a step",
+    description="Delete a step from the backend. Requires confirmation.",
 )
-def delete_resolution(
+def delete_step(
     backend: BackendDependency,
     collection: CollectionName,
     run_id: RunID,
-    resolution: ResolutionName,
-    certain: Annotated[
-        bool, Query(description="Confirm deletion of the resolution")
-    ] = False,
+    step_name: StepName,
+    certain: Annotated[bool, Query(description="Confirm deletion of the step")] = False,
 ) -> ResourceOperationStatus:
-    """Delete a resolution from the backend."""
-    resolution_path = ResolutionPath(collection=collection, run=run_id, name=resolution)
-    backend.delete_resolution(path=resolution_path, certain=certain)
+    """Delete a step from the backend."""
+    step_path = StepPath(collection=collection, run=run_id, name=step_name)
+    backend.delete_step(path=step_path, certain=certain)
     return ResourceOperationStatus(
         success=True,
-        target=f"Resolution {resolution_path}",
+        target=f"Step {step_path}",
         operation=CRUDOperation.DELETE,
     )
 
 
 @router.post(
-    "/{collection}/runs/{run_id}/resolutions/{resolution_name}/data",
+    "/{collection}/runs/{run_id}/steps/{step_name}/data",
     responses={
         400: {"model": ErrorResponse},
         401: {"model": ErrorResponse},
@@ -479,7 +473,7 @@ def delete_resolution(
     },
     dependencies=[Depends(RequireCollectionWrite)],
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Set resolution data",
+    summary="Set step data",
     description="Create an upload task for any step data.",
 )
 def set_data(
@@ -489,16 +483,14 @@ def set_data(
     background_tasks: BackgroundTasks,
     collection: CollectionName,
     run_id: RunID,
-    resolution_name: ResolutionName,
+    step_name: StepName,
     file: UploadFile,
 ) -> ResourceOperationStatus:
     """Create an upload task for any step data."""
-    resolution_path = ResolutionPath(
-        collection=collection, run=run_id, name=resolution_name
-    )
+    step_path = StepPath(collection=collection, run=run_id, name=step_name)
 
     # Check if data is locked, lock it if not (raises MatchboxLockError -> 423)
-    backend.lock_resolution_data(path=resolution_path)
+    backend.lock_step_data(path=step_path)
 
     # Try-except to ensure we release the lock
     try:
@@ -517,8 +509,8 @@ def set_data(
                 message=f"Invalid Parquet file: {str(e)}"
             ) from e
 
-        # Get resolution
-        resolution = backend.get_resolution(path=resolution_path)
+        # Get step
+        step = backend.get_step(path=step_path)
 
         # Generate unique upload id
         upload_id = str(uuid.uuid4())
@@ -528,14 +520,14 @@ def set_data(
         bucket = backend.settings.datastore.cache_bucket_name
         key = f"{upload_id}.parquet"
 
-        if resolution.resolution_type == ResolutionType.SOURCE:
+        if step.step_type == StepType.SOURCE:
             expected_schema = SCHEMA_INDEX
-        elif resolution.resolution_type == ResolutionType.MODEL:
+        elif step.step_type == StepType.MODEL:
             expected_schema = SCHEMA_MODEL_EDGES
-        elif resolution.resolution_type == ResolutionType.RESOLVER:
+        elif step.step_type == StepType.RESOLVER:
             expected_schema = SCHEMA_CLUSTERS
         else:
-            raise RuntimeError("Unsupported resolution type.")
+            raise RuntimeError("Unsupported step type.")
 
         table = pq.read_table(file.file)
         if not table.schema.equals(expected_schema):
@@ -556,14 +548,14 @@ def set_data(
                     backend=backend,
                     tracker=upload_tracker,
                     s3_client=client,
-                    resolution_path=resolution_path,
+                    step_path=step_path,
                     upload_id=upload_id,
                     bucket=bucket,
                     filename=key,
                 )
             case "celery":
                 process_upload_celery.delay(
-                    resolution_path_json=resolution_path.model_dump_json(),
+                    step_path_json=step_path.model_dump_json(),
                     upload_id=upload_id,
                     bucket=bucket,
                     filename=key,
@@ -573,17 +565,17 @@ def set_data(
 
         return ResourceOperationStatus(
             success=True,
-            target=f"Resolution data {resolution_path}",
+            target=f"Step data {step_path}",
             operation=CRUDOperation.CREATE,
             details=upload_id,
         )
     except:
-        backend.unlock_resolution_data(path=resolution_path)
+        backend.unlock_step_data(path=step_path)
         raise
 
 
 @router.get(
-    "/{collection}/runs/{run_id}/resolutions/{resolution}/data/status",
+    "/{collection}/runs/{run_id}/steps/{step_name}/data/status",
     responses={
         401: {"model": ErrorResponse},
         403: {"model": ErrorResponse},
@@ -597,7 +589,7 @@ def get_upload_status(
     upload_tracker: UploadTrackerDependency,
     collection: CollectionName,
     run_id: RunID,
-    resolution: ResolutionName,
+    step_name: StepName,
     upload_id: Annotated[str | None, Query()] = None,
 ) -> UploadInfo:
     """Get the status of an upload process.
@@ -608,15 +600,15 @@ def get_upload_status(
     if upload_id:
         error = upload_tracker.get(upload_id=upload_id)
 
-    resolution_stage = backend.get_resolution_stage(
-        path=ResolutionPath(collection=collection, run=run_id, name=resolution)
+    step_stage = backend.get_step_stage(
+        path=StepPath(collection=collection, run=run_id, name=step_name)
     )
 
-    return UploadInfo(stage=resolution_stage, error=error)
+    return UploadInfo(stage=step_stage, error=error)
 
 
 @router.get(
-    "/{collection}/runs/{run_id}/resolutions/{resolution}/data",
+    "/{collection}/runs/{run_id}/steps/{step_name}/data",
     responses={
         401: {"model": ErrorResponse},
         403: {"model": ErrorResponse},
@@ -624,41 +616,39 @@ def get_upload_status(
         422: {"model": ErrorResponse},
     },
     dependencies=[Depends(RequireCollectionRead)],
-    summary="Get resolution data",
-    description="Download data for a resolution as a parquet file.",
+    summary="Get step data",
+    description="Download data for a step as a parquet file.",
 )
 def get_data(
     backend: BackendDependency,
     collection: CollectionName,
     run_id: RunID,
-    resolution: ResolutionName,
+    step_name: StepName,
 ) -> ParquetResponse:
-    """Download data for a resolution as a parquet file."""
-    resolution_path = ResolutionPath(collection=collection, run=run_id, name=resolution)
-    resolution_dto = backend.get_resolution(path=resolution_path)
-    if resolution_dto.resolution_type == ResolutionType.MODEL:
+    """Download data for a step as a parquet file."""
+    step_path = StepPath(collection=collection, run=run_id, name=step_name)
+    step_dto = backend.get_step(path=step_path)
+    if step_dto.step_type == StepType.MODEL:
         res = backend.get_model_data(
-            path=ModelResolutionPath(
+            path=ModelStepPath(
                 collection=collection,
                 run=run_id,
-                name=resolution,
+                name=step_name,
             )
         )
-    elif resolution_dto.resolution_type == ResolutionType.RESOLVER:
+    elif step_dto.step_type == StepType.RESOLVER:
         res = backend.get_resolver_data(
-            path=ResolverResolutionPath(
+            path=ResolverStepPath(
                 collection=collection,
                 run=run_id,
-                name=resolution,
+                name=step_name,
             )
         )
     else:
-        raise MatchboxResolutionTypeError(
-            resolution_name=ResolutionPath(
-                collection=collection, run=run_id, name=resolution
-            ),
-            resolution_type=resolution_dto.resolution_type,
-            expected_resolution_types=[ResolutionType.MODEL, ResolutionType.RESOLVER],
+        raise MatchboxStepTypeError(
+            step_name=StepPath(collection=collection, run=run_id, name=step_name),
+            step_type=step_dto.step_type,
+            expected_step_types=[StepType.MODEL, StepType.RESOLVER],
         )
 
     buffer = table_to_buffer(res)

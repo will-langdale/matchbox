@@ -17,8 +17,8 @@ from matchbox.common.dtos import (
     ErrorResponse,
     ModelConfig,
     ModelType,
-    Resolution,
     ResourceOperationStatus,
+    Step,
     UploadInfo,
     UploadStage,
 )
@@ -100,36 +100,36 @@ def test_model_sync(matchbox_api: MockRouter) -> None:
     testkit = model_factory(model_type="linker")
 
     # Mock the routes:
-    # Resolution doesn't yet exist
+    # Step doesn't yet exist
     matchbox_api.get(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/steps/{testkit.model.name}"
     ).mock(
         return_value=Response(
             404,
             json=ErrorResponse(
-                exception_type="MatchboxResolutionNotFoundError",
+                exception_type="MatchboxStepNotFoundError",
                 message="Model not found",
             ).model_dump(),
         )
     )
 
-    # Resolution can be inserted
+    # Step can be inserted
     insert_config_route = matchbox_api.post(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/steps/{testkit.model.name}"
     ).mock(
         return_value=Response(
             201,
             content=ResourceOperationStatus(
                 success=True,
-                target=f"Resolution {testkit.model.name}",
+                target=f"Step {testkit.model.name}",
                 operation=CRUDOperation.CREATE,
             ).model_dump_json(),
         )
     )
 
-    # Resolution data can be inserted
+    # Step data can be inserted
     insert_results_route = matchbox_api.post(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}/data"
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/steps/{testkit.model.name}/data"
     ).mock(
         return_value=Response(
             202,
@@ -139,29 +139,29 @@ def test_model_sync(matchbox_api: MockRouter) -> None:
         )
     )
 
-    # Later, resolution can be updated
+    # Later, step can be updated
     update_route = matchbox_api.put(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/steps/{testkit.model.name}"
     ).mock(
         return_value=Response(
             200,
             content=ResourceOperationStatus(
                 success=True,
-                target=f"Resolution {testkit.model.name}",
+                target=f"Step {testkit.model.name}",
                 operation=CRUDOperation.UPDATE,
             ).model_dump_json(),
         )
     )
 
-    # Later, resolution can be deleted and recreated
+    # Later, step can be deleted and recreated
     delete_route = matchbox_api.delete(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/steps/{testkit.model.name}"
     ).mock(
         return_value=Response(
             200,
             content=ResourceOperationStatus(
                 success=True,
-                target=f"Resolution {testkit.model.name}",
+                target=f"Step {testkit.model.name}",
                 operation=CRUDOperation.DELETE,
             ).model_dump_json(),
         )
@@ -177,20 +177,20 @@ def test_model_sync(matchbox_api: MockRouter) -> None:
     testkit.fake_run()
     # If stage is not PROCESSING, job will fail
     matchbox_api.get(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}/data/status"
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/steps/{testkit.model.name}/data/status"
     ).mock(
         return_value=Response(
             200, json=UploadInfo(stage=UploadStage.READY).model_dump()
         )
     )
-    with pytest.raises(MatchboxServerFileError, match="problem"):
+    with pytest.raises(MatchboxServerFileError, match="issue"):
         testkit.model.sync()
 
     # -- FIRST TIME INSERTION --
 
-    # Before upload, resolution is ready for data, after it is complete
+    # Before upload, step is ready for data, after it is complete
     matchbox_api.get(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}/data/status"
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/steps/{testkit.model.name}/data/status"
     ).mock(
         return_value=Response(
             200, json=UploadInfo(stage=UploadStage.COMPLETE).model_dump()
@@ -203,12 +203,12 @@ def test_model_sync(matchbox_api: MockRouter) -> None:
     assert insert_config_route.called
     assert not update_route.called
     assert not delete_route.called
-    # Resolution metadata was correct
-    resolution_call = Resolution.model_validate_json(
+    # Step metadata was correct
+    step_call = Step.model_validate_json(
         insert_config_route.calls.last.request.content.decode("utf-8")
     )
-    assert resolution_call == testkit.model.to_resolution()
-    # Resolution data was correct
+    assert step_call == testkit.model.to_dto()
+    # Step data was correct
     assert (
         b"Content-Disposition: form-data;"
         in insert_results_route.calls.last.request.content
@@ -218,14 +218,14 @@ def test_model_sync(matchbox_api: MockRouter) -> None:
     # -- SOFT UPDATE --
 
     insert_results_route.reset()
-    # Mock endpoint now returns existing resolution
+    # Mock endpoint now returns existing step
     matchbox_api.get(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
-    ).mock(return_value=Response(200, json=testkit.model.to_resolution().model_dump()))
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/steps/{testkit.model.name}"
+    ).mock(return_value=Response(200, json=testkit.model.to_dto().model_dump()))
 
     # Mock endpoint now declares data is present already
     matchbox_api.get(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}/data/status"
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/steps/{testkit.model.name}/data/status"
     ).mock(
         return_value=Response(
             200, json=UploadInfo(stage=UploadStage.COMPLETE).model_dump()
@@ -233,7 +233,7 @@ def test_model_sync(matchbox_api: MockRouter) -> None:
     )
 
     testkit.model.sync()
-    # Resolution was compatible: ensure it was updated, not deleted
+    # Step was compatible: ensure it was updated, not deleted
     assert update_route.called
     assert not delete_route.called
     # The data did not need to be updated
@@ -242,18 +242,18 @@ def test_model_sync(matchbox_api: MockRouter) -> None:
     # -- HARD UPDATE --
 
     insert_results_route.reset()
-    # Mock endpoint now returns existing resolution
+    # Mock endpoint now returns existing step
     matchbox_api.get(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
-    ).mock(return_value=Response(200, json=testkit.model.to_resolution().model_dump()))
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/steps/{testkit.model.name}"
+    ).mock(return_value=Response(200, json=testkit.model.to_dto().model_dump()))
 
     # Changing local model results requires deletion and re-insertion
     assert testkit.model.results is not None
     testkit.model.results = testkit.model.results.slice(1, 3)
 
-    # Resolution data is first ready to upload, and then uploaded
+    # Step data is first ready to upload, and then uploaded
     matchbox_api.get(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}/data/status"
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/steps/{testkit.model.name}/data/status"
     ).mock(
         return_value=Response(
             200, json=UploadInfo(stage=UploadStage.COMPLETE).model_dump()
@@ -265,21 +265,21 @@ def test_model_sync(matchbox_api: MockRouter) -> None:
     assert insert_results_route.called
 
 
-def test_delete_resolution(matchbox_api: MockRouter) -> None:
-    """Test successfully deleting a resolution."""
+def test_delete_step(matchbox_api: MockRouter) -> None:
+    """Test successfully deleting a step."""
     # Create test model using factory
     testkit = model_factory()
 
     # Mock the DELETE endpoint with success response
     route = matchbox_api.delete(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}",
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/steps/{testkit.model.name}",
         params={"certain": True},
     ).mock(
         return_value=Response(
             200,
             json=ResourceOperationStatus(
                 success=True,
-                target=f"Resolution {testkit.model.name}",
+                target=f"Step {testkit.model.name}",
                 operation=CRUDOperation.DELETE,
             ).model_dump(),
         )
@@ -294,14 +294,14 @@ def test_delete_resolution(matchbox_api: MockRouter) -> None:
     assert route.calls.last.request.url.params["certain"] == "true"
 
 
-def test_delete_resolution_needs_confirmation(matchbox_api: MockRouter) -> None:
-    """Test attempting to delete a resolution without confirmation returns 409."""
+def test_delete_step_needs_confirmation(matchbox_api: MockRouter) -> None:
+    """Test attempting to delete a step without confirmation returns 409."""
     # Create test model using factory
     testkit = model_factory()
 
     # Mock the DELETE endpoint with 409 confirmation required response
     route = matchbox_api.delete(
-        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/resolutions/{testkit.model.name}"
+        f"/collections/{testkit.model.dag.name}/runs/{testkit.model.dag.run}/steps/{testkit.model.name}"
     ).mock(
         return_value=Response(
             409,

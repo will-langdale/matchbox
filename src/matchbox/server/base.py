@@ -29,15 +29,15 @@ from matchbox.common.dtos import (
     GroupName,
     LoginResponse,
     Match,
-    ModelResolutionPath,
+    ModelStepPath,
     PermissionGrant,
     PermissionType,
-    Resolution,
-    ResolutionPath,
-    ResolverResolutionPath,
+    ResolverStepPath,
     Run,
     RunID,
-    SourceResolutionPath,
+    SourceStepPath,
+    Step,
+    StepPath,
     UploadStage,
     User,
 )
@@ -343,7 +343,7 @@ class MatchboxDBAdapter(ABC):
     creates: Countable
     merges: Countable
     proposes: Countable
-    source_resolutions: Countable
+    source_steps: Countable
     users: Countable
 
     # Retrieval
@@ -351,17 +351,17 @@ class MatchboxDBAdapter(ABC):
     @abstractmethod
     def query(
         self,
-        source: SourceResolutionPath,
-        point_of_truth: ResolverResolutionPath | None = None,
+        source: SourceStepPath,
+        resolver: ResolverStepPath | None = None,
         return_leaf_id: bool = False,
         limit: int | None = None,
     ) -> Table:
-        """Queries the database from an optional point of truth.
+        """Queries the database from an optional resolution.
 
         Args:
-            source: the resolution pathidentifying the source to query
-            point_of_truth (optional): the resolution path to use for filtering results
-                If not specified, will use the source resolution for the queried source
+            source: The step path identifying the source to query.
+            resolver (optional): The resolver path to use for filtering results.
+                If not specified, the source step is used for the queried source.
             return_leaf_id (optional): whether to return cluster ID of leaves
             limit (optional): the number to use in a limit clause. Useful for testing
 
@@ -374,17 +374,17 @@ class MatchboxDBAdapter(ABC):
     def match(
         self,
         key: str,
-        source: SourceResolutionPath,
-        targets: list[SourceResolutionPath],
-        point_of_truth: ResolverResolutionPath,
+        source: SourceStepPath,
+        targets: list[SourceStepPath],
+        resolver: ResolverStepPath,
     ) -> list[Match]:
-        """Matches an ID in a source resolution and returns the keys in the targets.
+        """Match an ID in a source step and return the keys in the targets.
 
         Args:
             key: The key to match from the source.
-            source: The path of the source resolution.
-            targets: The paths of the target source resolutions.
-            point_of_truth: The path of the resolution to use for matching.
+            source: The path of the source step.
+            targets: The paths of the target source steps.
+            resolver: The resolver path to use for matching.
         """
         ...
 
@@ -401,7 +401,7 @@ class MatchboxDBAdapter(ABC):
             permissions: A list of permissions to grant
 
         Returns:
-            A Collection object containing its metadata, versions, and resolutions.
+            A Collection object containing its metadata, versions, and steps.
         """
 
     @abstractmethod
@@ -412,7 +412,7 @@ class MatchboxDBAdapter(ABC):
             name: The name of the collection to get.
 
         Returns:
-            A Collection object containing its metadata, versions, and resolutions.
+            A Collection object containing its metadata, versions, and steps.
         """
         ...
 
@@ -445,7 +445,7 @@ class MatchboxDBAdapter(ABC):
             collection: The name of the collection to create the run in.
 
         Returns:
-            A Run object containing its metadata and resolutions.
+            A Run object containing its metadata and steps.
         """
         ...
 
@@ -483,14 +483,14 @@ class MatchboxDBAdapter(ABC):
 
     @abstractmethod
     def get_run(self, collection: CollectionName, run_id: RunID) -> Run:
-        """Get run metadata and resolutions.
+        """Get run metadata and steps.
 
         Args:
             collection: The name of the collection containing the run.
             run_id: The ID of the run to get.
 
         Returns:
-            A Run object containing its metadata and resolutions.
+            A Run object containing its metadata and steps.
         """
         ...
 
@@ -498,7 +498,7 @@ class MatchboxDBAdapter(ABC):
     def delete_run(
         self, collection: CollectionName, run_id: RunID, certain: bool
     ) -> None:
-        """Delete a run and all its resolutions.
+        """Delete a run and all its steps.
 
         Args:
             collection: The name of the collection containing the run.
@@ -507,123 +507,121 @@ class MatchboxDBAdapter(ABC):
         """
         ...
 
-    # Resolution management
+    # Step management
 
     @abstractmethod
-    def create_resolution(self, resolution: Resolution, path: ResolutionPath) -> None:
-        """Writes a resolution to Matchbox.
+    def create_step(self, step: Step, path: StepPath) -> None:
+        """Write a step to Matchbox.
 
         Args:
-            resolution: Resolution object with a source or model config
-            path: The resolution path for the source
+            step: Step object with a source, model, or resolver config
+            path: The step path
         """
         ...
 
     @abstractmethod
-    def get_resolution(self, path: ResolutionPath) -> Resolution:
-        """Get a resolution from its path.
+    def get_step(self, path: StepPath) -> Step:
+        """Get a step from its path.
 
         Args:
-            path: The resolution path for the source
+            path: The step path
 
         Returns:
-            A Resolution object
+            A Step object.
         """
         ...
 
     @abstractmethod
-    def update_resolution(self, resolution: Resolution, path: ResolutionPath) -> None:
-        """Updates resolution metadata.
+    def update_step(self, step: Step, path: StepPath) -> None:
+        """Update step metadata.
 
-        It cannot be used to update a resolution's fingerprint.
+        It cannot be used to update a step's fingerprint.
 
         Args:
-            resolution: Resolution object with a source or model config
-            path: The resolution path for the source
+            step: Step object with a source, model, or resolver config
+            path: The step path
         """
         ...
 
     @abstractmethod
-    def delete_resolution(self, path: ResolutionPath, certain: bool) -> None:
-        """Delete a resolution from the database.
+    def delete_step(self, path: StepPath, certain: bool) -> None:
+        """Delete a step from the database.
 
         Args:
-            path: The path of the resolution to delete.
-            certain: Whether to delete the model without confirmation.
+            path: The path of the step to delete.
+            certain: Whether to delete without confirmation.
         """
         ...
 
     # Data insertion
 
     @abstractmethod
-    def lock_resolution_data(self, path: ResolutionPath) -> None:
-        """Change resolution upload stage to PROCESSING.
+    def lock_step_data(self, path: StepPath) -> None:
+        """Change step upload stage to PROCESSING.
 
         This will lock uploading data.
 
         Args:
-            path: The path of the resolution to target.
+            path: The path of the step to target.
         """
         ...
 
     @abstractmethod
-    def unlock_resolution_data(self, path: ResolutionPath, complete: bool) -> None:
-        """Change resolution upload stage to READY.
+    def unlock_step_data(self, path: StepPath, complete: bool) -> None:
+        """Change step upload stage to READY.
 
         This will unlock uploading data.
 
         Args:
-            path: The path of the resolution to target.
-            complete: Whether to label the resolution stage as COMPLETE.
+            path: The path of the step to target.
+            complete: Whether to label the step stage as COMPLETE.
         """
         ...
 
     @abstractmethod
-    def get_resolution_stage(self, path: ResolutionPath) -> UploadStage:
-        """Retrieves upload stage of resolution data.
+    def get_step_stage(self, path: StepPath) -> UploadStage:
+        """Retrieve upload stage of step data.
 
         Args:
-            path: The path of the resolution to target.
+            path: The path of the step to target.
         """
         ...
 
     @abstractmethod
-    def insert_source_data(
-        self, path: SourceResolutionPath, data_hashes: Table
-    ) -> None:
-        """Inserts hash data for a source resolution.
+    def insert_source_data(self, path: SourceStepPath, data_hashes: Table) -> None:
+        """Insert hash data for a source step.
 
         Only possible if data fingerprint matches fingerprint declared when the
-        resolution was created. Data can only be set once on a resolution.
+        step was created. Data can only be set once on a step.
 
         Args:
-            path: The path of the source resolution to index.
+            path: The path of the source step to index.
             data_hashes: The Arrow table with the hash of each data row
         """
         ...
 
     @abstractmethod
-    def insert_model_data(self, path: ModelResolutionPath, results: Table) -> None:
-        """Inserts results data for a model resolution.
+    def insert_model_data(self, path: ModelStepPath, results: Table) -> None:
+        """Insert results data for a model step.
 
         Only possible if data fingerprint matches fingerprint declared when the
-        resolution was created. Data can only be set once on a resolution.
+        step was created. Data can only be set once on a step.
         """
         ...
 
     @abstractmethod
-    def insert_resolver_data(self, path: ResolverResolutionPath, data: Table) -> None:
-        """Insert resolver cluster assignments for a resolver resolution."""
+    def insert_resolver_data(self, path: ResolverStepPath, data: Table) -> None:
+        """Insert resolver cluster assignments for a resolver step."""
         ...
 
     @abstractmethod
-    def get_model_data(self, path: ModelResolutionPath) -> Table:
-        """Get the results for a model resolution."""
+    def get_model_data(self, path: ModelStepPath) -> Table:
+        """Get the results for a model step."""
         ...
 
     @abstractmethod
-    def get_resolver_data(self, path: ResolverResolutionPath) -> Table:
-        """Get cluster assignments for a resolver resolution."""
+    def get_resolver_data(self, path: ResolverStepPath) -> Table:
+        """Get cluster assignments for a resolver step."""
         ...
 
     # Data management
@@ -865,14 +863,12 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def sample_for_eval(
-        self, n: int, path: ResolverResolutionPath, user_name: str
-    ) -> Table:
+    def sample_for_eval(self, n: int, path: ResolverStepPath, user_name: str) -> Table:
         """Sample a cluster to validate.
 
         Args:
             n: Number of clusters to sample
-            path: Path of resolution from which to sample
+            path: Path of resolver step from which to sample
             user_name: Name of user requesting the sample
 
         Returns:

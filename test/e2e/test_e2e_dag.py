@@ -15,7 +15,7 @@ from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.client.resolvers import Components, ComponentsSettings
 from matchbox.client.sources import Source, SourceField
 from matchbox.common.datatypes import DataTypes
-from matchbox.common.exceptions import MatchboxResolutionNotFoundError
+from matchbox.common.exceptions import MatchboxStepNotFoundError
 from matchbox.common.factories.sources import (
     FeatureConfig,
     SourceTestkitParameters,
@@ -350,5 +350,5 @@ class TestE2EPipelineBuilder:
         # Possible to overwrite one node on server
         source_a.sync()
         # This will cause downstream queries to fail
-        with pytest.raises(MatchboxResolutionNotFoundError):
+        with pytest.raises(MatchboxStepNotFoundError):
             pending_dag.get_resolver("resolver_final").query(source_a).data()

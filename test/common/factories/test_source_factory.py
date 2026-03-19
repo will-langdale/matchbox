@@ -163,7 +163,7 @@ def test_source_factory_mock_properties(sqlite_in_memory_warehouse: Engine) -> N
         assert index_field.name == feature.name
         assert index_field.type == feature.datatype
 
-    # Check default resolution name and default key field
+    # Check default step name and default key field
     assert source_testkit.source.name == name
     assert source_config.key_field.name == "key"
 

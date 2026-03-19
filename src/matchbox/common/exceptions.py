@@ -11,16 +11,16 @@ if TYPE_CHECKING:
         BackendResourceType,
         CollectionName,
         PermissionType,
-        ResolutionName,
-        ResolutionType,
         RunID,
+        StepName,
+        StepType,
     )
 else:
     BackendResourceType = Any
     CollectionName = Any
     PermissionType = Any
-    ResolutionName = Any
-    ResolutionType = Any
+    StepName = Any
+    StepType = Any
     RunID = Any
 
 
@@ -190,14 +190,14 @@ class MatchboxSourceTableError(MatchboxException):
 
 
 class MatchboxServerFileError(MatchboxHttpException):
-    """There was a problem with file upload."""
+    """There was an issue with file upload."""
 
     http_status = 400
 
     def __init__(self, message: str | None = None) -> None:
         """Initialise the exception."""
         if message is None:
-            message = "There was a problem with file upload."
+            message = "There was an issue with file upload."
 
         super().__init__(message)
 
@@ -283,19 +283,19 @@ class MatchboxUserNotFoundError(MatchboxHttpException):
         return None
 
 
-class MatchboxResolutionNotFoundError(MatchboxHttpException):
-    """Resolution not found."""
+class MatchboxStepNotFoundError(MatchboxHttpException):
+    """Step not found."""
 
     http_status = 404
 
     def __init__(
-        self, message: str | None = None, name: ResolutionName | None = None
+        self, message: str | None = None, name: StepName | None = None
     ) -> None:
         """Initialise the exception."""
         if message is None:
-            message = "Resolution not found."
+            message = "Step not found."
             if name is not None:
-                message = f"Resolution {name} not found."
+                message = f"Step {name} not found."
 
         super().__init__(message)
         self.name = name
@@ -414,10 +414,10 @@ class MatchboxDeletionNotConfirmed(MatchboxHttpException):
         if children is not None:
             children_names = ", ".join(str(child) for child in children)
             message = (
-                f"This operation will delete the resolutions {children_names}, "
-                "as well as all probabilities they have created. \n\n"
+                f"This operation will delete the steps {children_names}, "
+                "as well as all scores they have created. \n\n"
                 "It won't delete validation associated with these "
-                "probabilities. \n\n"
+                "scores. \n\n"
                 "If you're sure you want to continue, rerun with certain=True. "
             )
 
@@ -431,76 +431,74 @@ class MatchboxDeletionNotConfirmed(MatchboxHttpException):
         return None
 
 
-class MatchboxResolutionAlreadyExists(MatchboxHttpException):
-    """Resolution already exists."""
+class MatchboxStepAlreadyExists(MatchboxHttpException):
+    """Step already exists."""
 
     http_status = 409
 
 
-class MatchboxResolutionUpdateError(MatchboxHttpException):
-    """Resolution metadata cannot be updated."""
+class MatchboxStepUpdateError(MatchboxHttpException):
+    """Step metadata cannot be updated."""
 
     http_status = 422
 
 
-class MatchboxResolutionInvalidData(MatchboxHttpException):
-    """Resolution data does not match fingerprint."""
+class MatchboxStepInvalidData(MatchboxHttpException):
+    """Step data does not match fingerprint."""
 
     http_status = 422
 
 
-class MatchboxResolutionExistingData(MatchboxHttpException):
-    """Data was already set on resolution."""
+class MatchboxStepExistingData(MatchboxHttpException):
+    """Data was already set on step."""
 
     http_status = 409
 
 
-class MatchboxResolutionNotQueriable(MatchboxHttpException):
-    """The resolution is not ready to be queried."""
+class MatchboxStepNotQueriable(MatchboxHttpException):
+    """The step is not ready to be queried."""
 
     http_status = 422
 
 
-class MatchboxResolutionTypeError(MatchboxHttpException):
-    """An invalid operation was attempted using this type of resolution."""
+class MatchboxStepTypeError(MatchboxHttpException):
+    """An invalid operation was attempted using this type of step."""
 
     http_status = 422
 
     def __init__(
         self,
         message: str | None = None,
-        resolution_name: ResolutionName | None = None,
-        resolution_type: ResolutionType | None = None,
-        expected_resolution_types: list[ResolutionType] | None = None,
+        step_name: StepName | None = None,
+        step_type: StepType | None = None,
+        expected_step_types: list[StepType] | None = None,
     ) -> None:
         """Initialise the exception."""
         if message is None:
-            message = (
-                "An invalid operation was attempted using this type of resolution."
-            )
-            if resolution_name is not None and resolution_type is not None:
+            message = "An invalid operation was attempted using this type of step."
+            if step_name is not None and step_type is not None:
                 message = (
-                    f"Resolution '{resolution_name}' is of type {resolution_type}, "
+                    f"Step '{step_name}' is of type {step_type}, "
                     "which does not support this operation."
                 )
-            if expected_resolution_types is not None:
-                expected = ", ".join(expected_resolution_types)
+            if expected_step_types is not None:
+                expected = ", ".join(expected_step_types)
                 message += f" Expected one of: {expected}."
 
         super().__init__(message)
-        self.resolution_name = resolution_name
-        self.resolution_type = resolution_type
-        self.expected_resolution_types = expected_resolution_types
+        self.step_name = step_name
+        self.step_type = step_type
+        self.expected_step_types = expected_step_types
 
     def to_details(self) -> dict[str, Any] | None:
         """Return attributes if set."""
         details: dict[str, Any] = {}
-        if self.resolution_name is not None:
-            details["resolution_name"] = self.resolution_name
-        if self.resolution_type is not None:
-            details["resolution_type"] = self.resolution_type
-        if self.expected_resolution_types is not None:
-            details["expected_resolution_types"] = list(self.expected_resolution_types)
+        if self.step_name is not None:
+            details["step_name"] = self.step_name
+        if self.step_type is not None:
+            details["step_type"] = self.step_type
+        if self.expected_step_types is not None:
+            details["expected_step_types"] = list(self.expected_step_types)
         return details if details else None
 
 

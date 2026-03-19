@@ -259,56 +259,56 @@ class TestNormalisation:
                 {
                     "left_id": [1, 2, 3],
                     "right_id": [4, 5, 6],
-                    "probability": [0.8, 0.9, 0.7],
+                    "score": [0.8, 0.9, 0.7],
                 }
             ),
             "ids_swapped": pa.Table.from_pydict(
                 {
                     "left_id": [4, 5, 6],
                     "right_id": [1, 2, 3],
-                    "probability": [0.8, 0.9, 0.7],
+                    "score": [0.8, 0.9, 0.7],
                 }
             ),
             "data_changed": pa.Table.from_pydict(
                 {
                     "left_id": [1, 2, 3],
                     "right_id": [4, 5, 6],
-                    "probability": [0.8, 0.9, 0.8],  # Changed last probability
+                    "score": [0.8, 0.9, 0.8],  # Changed last score
                 }
             ),
             "rows_reordered": pa.Table.from_pydict(
                 {
                     "left_id": [2, 1, 3],
                     "right_id": [5, 4, 6],
-                    "probability": [0.9, 0.8, 0.7],
+                    "score": [0.9, 0.8, 0.7],
                 }
             ),
             "with_nulls_a": pa.Table.from_pydict(
                 {
                     "left_id": [1, None, 3],
                     "right_id": [None, 5, 6],
-                    "probability": [0.8, 0.9, 0.7],
+                    "score": [0.8, 0.9, 0.7],
                 }
             ),
             "with_nulls_b": pa.Table.from_pydict(
                 {
                     "left_id": [None, 5, 6],
                     "right_id": [1, None, 3],
-                    "probability": [0.8, 0.9, 0.7],
+                    "score": [0.8, 0.9, 0.7],
                 }
             ),
             "with_duplicates": pa.Table.from_pydict(
                 {
                     "left_id": [1, 1, 2],
                     "right_id": [1, 2, 1],
-                    "probability": [0.8, 0.9, 0.7],
+                    "score": [0.8, 0.9, 0.7],
                 }
             ),
             "empty": pa.Table.from_pydict(
                 {
                     "left_id": [],
                     "right_id": [],
-                    "probability": [],
+                    "score": [],
                 }
             ),
         }

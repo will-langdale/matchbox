@@ -10,13 +10,13 @@ from matchbox.common.arrow import SCHEMA_QUERY
 from matchbox.common.dtos import (
     Match,
     OKMessage,
-    SourceResolutionPath,
+    SourceStepPath,
 )
 from matchbox.common.exceptions import (
     MatchboxCollectionNotFoundError,
     MatchboxDeletionNotConfirmed,
-    MatchboxResolutionNotFoundError,
     MatchboxRunNotFoundError,
+    MatchboxStepNotFoundError,
     MatchboxUnhandledServerResponse,
 )
 
@@ -98,7 +98,7 @@ def test_query_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
     assert response.status_code == 404
     assert response.json()["exception_type"] == "MatchboxRunNotFoundError"
 
-    mock_backend.query = Mock(side_effect=MatchboxResolutionNotFoundError())
+    mock_backend.query = Mock(side_effect=MatchboxStepNotFoundError())
 
     response = test_client.get(
         "/query",
@@ -111,7 +111,7 @@ def test_query_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
     )
 
     assert response.status_code == 404
-    assert response.json()["exception_type"] == "MatchboxResolutionNotFoundError"
+    assert response.json()["exception_type"] == "MatchboxStepNotFoundError"
 
 
 def test_match(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
@@ -119,13 +119,9 @@ def test_match(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
     mock_matches = [
         Match(
             cluster=1,
-            source=SourceResolutionPath(
-                collection="test_collection", name="foo", run=1
-            ),
+            source=SourceStepPath(collection="test_collection", name="foo", run=1),
             source_id={"1"},
-            target=SourceResolutionPath(
-                collection="test_collection", name="bar", run=1
-            ),
+            target=SourceStepPath(collection="test_collection", name="bar", run=1),
             target_id={"a"},
         )
     ]
@@ -139,7 +135,7 @@ def test_match(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
             "targets": "foo",
             "source": "bar",
             "key": 1,
-            "resolution": "res",
+            "resolver": "res",
         },
     )
 
@@ -161,7 +157,7 @@ def test_match_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
             "targets": ["foo"],
             "source": "bar",
             "key": 1,
-            "resolution": "res",
+            "resolver": "res",
         },
     )
 
@@ -178,14 +174,14 @@ def test_match_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
             "targets": ["foo"],
             "source": "bar",
             "key": 1,
-            "resolution": "res",
+            "resolver": "res",
         },
     )
 
     assert response.status_code == 404
     assert response.json()["exception_type"] == "MatchboxRunNotFoundError"
 
-    mock_backend.match = Mock(side_effect=MatchboxResolutionNotFoundError())
+    mock_backend.match = Mock(side_effect=MatchboxStepNotFoundError())
 
     response = test_client.get(
         "/match",
@@ -195,12 +191,12 @@ def test_match_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> None:
             "targets": ["foo"],
             "source": "bar",
             "key": 1,
-            "resolution": "res",
+            "resolver": "res",
         },
     )
 
     assert response.status_code == 404
-    assert response.json()["exception_type"] == "MatchboxResolutionNotFoundError"
+    assert response.json()["exception_type"] == "MatchboxStepNotFoundError"
 
 
 # Admin

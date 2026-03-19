@@ -180,7 +180,7 @@ def test_empty_dag_properties() -> None:
 
     # Final_step should raise on empty DAG
     with pytest.raises(ValueError):
-        _ = dag_testkit.dag.final_step
+        _ = dag_testkit.dag.default_resolver
 
 
 def test_diff_model_edges_and_diff_clusters_perfect_match() -> None:
@@ -212,7 +212,7 @@ def test_diff_model_edges_and_diff_clusters_perfect_match() -> None:
     )
 
     edges_identical, edges_report = linked.diff_model_edges(
-        probabilities=crn_cdms_model.probabilities,
+        scores=crn_cdms_model.scores,
         sources=["crn", "cdms"],
         left_clusters=tuple(crn_cdms_model.left_clusters.values()),
         right_clusters=tuple(crn_cdms_model.right_clusters.values()),

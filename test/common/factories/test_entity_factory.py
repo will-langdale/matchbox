@@ -5,7 +5,7 @@ import pytest
 from faker import Faker
 
 from matchbox.common.datatypes import DataTypes
-from matchbox.common.dtos import SourceResolutionName
+from matchbox.common.dtos import SourceStepName
 from matchbox.common.factories.entities import (
     ClusterEntity,
     EntityReference,
@@ -13,7 +13,7 @@ from matchbox.common.factories.entities import (
     SourceEntity,
     diff_entities,
     generate_entities,
-    probabilities_to_results_entities,
+    scores_to_results_entities,
 )
 
 
@@ -45,7 +45,7 @@ def make_cluster_entity(id: int, *args: Any) -> ClusterEntity:
 
 
 def make_source_entity(
-    source: SourceResolutionName, keys: list[str], base_val: str
+    source: SourceStepName, keys: list[str], base_val: str
 ) -> SourceEntity:
     """Helper to create a SourceEntity."""
     entity = SourceEntity(base_values={"name": base_val})
@@ -60,9 +60,7 @@ def make_source_entity(
         ("source2", frozenset({"A", "B"})),
     ),
 )
-def test_entity_reference_creation(
-    name: SourceResolutionName, keys: frozenset[str]
-) -> None:
+def test_entity_reference_creation(name: SourceStepName, keys: frozenset[str]) -> None:
     """Test basic EntityReference creation and access."""
     ref = EntityReference({name: keys})
     assert ref[name] == keys
@@ -151,7 +149,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
 
 @pytest.mark.parametrize(
     (
-        "probabilities",
+        "scores",
         "left_clusters",
         "right_clusters",
         "threshold",
@@ -163,7 +161,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 {
                     "left_id": [1, 2],
                     "right_id": [2, 3],
-                    "probability": [0.9, 0.85],
+                    "score": [0.9, 0.85],
                 }
             ),
             (
@@ -181,7 +179,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 {
                     "left_id": [1],
                     "right_id": [4],
-                    "probability": [0.95],
+                    "score": [0.95],
                 }
             ),
             (make_cluster_entity(1, "left", ["a1"]),),
@@ -195,7 +193,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 {
                     "left_id": [1, 2],
                     "right_id": [2, 3],
-                    "probability": [0.75, 0.7],
+                    "score": [0.75, 0.7],
                 }
             ),
             (
@@ -213,7 +211,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 {
                     "left_id": [],
                     "right_id": [],
-                    "probability": [],
+                    "score": [],
                 }
             ),
             (
@@ -222,21 +220,21 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
             ),
             None,
             0.8,
-            2,  # No merging with empty probabilities
-            id="empty_probabilities",
+            2,  # No merging with empty scores
+            id="empty_scores",
         ),
     ],
 )
-def test_probabilities_to_results_entities(
-    probabilities: pl.DataFrame,
+def test_scores_to_results_entities(
+    scores: pl.DataFrame,
     left_clusters: tuple[ClusterEntity, ...],
     right_clusters: tuple[ClusterEntity, ...] | None,
     threshold: float,
     expected_count: int,
 ) -> None:
-    """Test probabilities_to_results_entities with various scenarios."""
-    result = probabilities_to_results_entities(
-        probabilities=probabilities,
+    """Test scores_to_results_entities with various scenarios."""
+    result = scores_to_results_entities(
+        scores=scores,
         left_clusters=left_clusters,
         right_clusters=right_clusters,
         threshold=threshold,

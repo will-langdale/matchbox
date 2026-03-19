@@ -24,11 +24,11 @@ from matchbox.client.sources import Source
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_QUERY
 from matchbox.common.datatypes import DataTypes
 from matchbox.common.dtos import (
-    ModelResolutionName,
+    ModelStepName,
     SourceConfig,
     SourceField,
-    SourceResolutionName,
-    SourceResolutionPath,
+    SourceStepName,
+    SourceStepPath,
 )
 from matchbox.common.factories.entities import (
     ClusterEntity,
@@ -38,7 +38,7 @@ from matchbox.common.factories.entities import (
     SuffixRule,
     diff_entities,
     generate_entities,
-    probabilities_to_results_entities,
+    scores_to_results_entities,
 )
 from matchbox.common.hash import hash_values
 
@@ -127,9 +127,9 @@ class SourceTestkit(BaseModel):
         return self.source.name
 
     @property
-    def resolution_path(self) -> SourceResolutionPath:
-        """Returns the source resolution path."""
-        return self.source.resolution_path
+    def path(self) -> SourceStepPath:
+        """Returns the source step path."""
+        return self.source.path
 
     @property
     def source_config(self) -> SourceConfig:
@@ -182,7 +182,7 @@ class LinkedSourcesTestkit(BaseModel):
 
     dag: DAG
     true_entities: set[SourceEntity] = Field(default_factory=set)
-    sources: dict[SourceResolutionName, SourceTestkit]
+    sources: dict[SourceStepName, SourceTestkit]
 
     def find_entities(
         self,
@@ -216,7 +216,7 @@ class LinkedSourcesTestkit(BaseModel):
 
         return result
 
-    def true_entity_subset(self, *sources: SourceResolutionName) -> list[ClusterEntity]:
+    def true_entity_subset(self, *sources: SourceStepName) -> list[ClusterEntity]:
         """Return a subset of true entities that appear in the given sources."""
         cluster_entities = [
             entity.to_cluster_entity(*sources) for entity in self.true_entities
@@ -225,8 +225,8 @@ class LinkedSourcesTestkit(BaseModel):
 
     def diff_model_edges(
         self,
-        probabilities: pl.DataFrame,
-        sources: list[SourceResolutionName],
+        scores: pl.DataFrame,
+        sources: list[SourceStepName],
         left_clusters: tuple[ClusterEntity, ...],
         right_clusters: tuple[ClusterEntity, ...] | None = None,
         threshold: float = 0.0,
@@ -234,7 +234,7 @@ class LinkedSourcesTestkit(BaseModel):
         """Diff model edge outputs with the true SourceEntities.
 
         Args:
-            probabilities: Model edge table to diff
+            scores: Model edge table to diff
             sources: Subset of the LinkedSourcesTestkit.sources that represents
                 the true sources to compare against
             left_clusters: ClusterEntity objects from the object used as an input
@@ -252,8 +252,8 @@ class LinkedSourcesTestkit(BaseModel):
         """
         return diff_entities(
             expected=self.true_entity_subset(*sources),
-            actual=probabilities_to_results_entities(
-                probabilities=probabilities,
+            actual=scores_to_results_entities(
+                scores=scores,
                 left_clusters=left_clusters,
                 right_clusters=right_clusters,
                 threshold=threshold,
@@ -263,8 +263,8 @@ class LinkedSourcesTestkit(BaseModel):
     def diff_clusters(
         self,
         assignments: pl.DataFrame,
-        sources: list[SourceResolutionName],
-        input_clusters: Mapping[ModelResolutionName, tuple[ClusterEntity, ...]],
+        sources: list[SourceStepName],
+        input_clusters: Mapping[ModelStepName, tuple[ClusterEntity, ...]],
     ) -> tuple[bool, dict]:
         """Diff cluster assignments with the true SourceEntities.
 
@@ -531,7 +531,7 @@ def generate_source(
 @cache
 def source_factory(
     features: list[FeatureConfig] | list[dict] | None = None,
-    name: SourceResolutionName | None = None,
+    name: SourceStepName | None = None,
     location_name: str = "dbname",
     dag: DAG | None = None,
     engine: Engine | None = None,
@@ -549,7 +549,7 @@ def source_factory(
             the source data. If None, defaults to a set of common features.
         name: Name of the source. If None, a unique name is generated. This will be
             used as the name of the table in the RelationalDBLocation, but also in
-            the SourceResolutionName for the source.
+            the SourceStepName for the source.
         location_name: Name of the location for the source.
         dag: DAG containing the source.
         engine: SQLAlchemy engine to use for the source's RelationalDBLocation. If

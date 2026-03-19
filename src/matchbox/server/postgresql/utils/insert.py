@@ -15,14 +15,14 @@ from sqlalchemy.sql.expression import TableClause
 from sqlalchemy.sql.selectable import Subquery
 
 from matchbox.common.dtos import (
-    ModelResolutionPath,
-    ResolutionType,
-    ResolverResolutionPath,
-    SourceResolutionPath,
+    ModelStepPath,
+    ResolverStepPath,
+    SourceStepPath,
+    StepType,
 )
 from matchbox.common.exceptions import (
-    MatchboxResolutionExistingData,
-    MatchboxResolutionInvalidData,
+    MatchboxStepExistingData,
+    MatchboxStepInvalidData,
 )
 from matchbox.common.hash import hash_arrow_table, hash_clusters, hash_model_results
 from matchbox.common.logging import logger
@@ -33,27 +33,25 @@ from matchbox.server.postgresql.orm import (
     ClusterSourceKey,
     Contains,
     ModelEdges,
-    ResolutionClusters,
-    Resolutions,
+    ResolverClusters,
     SourceConfigs,
+    Steps,
 )
 from matchbox.server.postgresql.utils.db import ingest_to_temporary_table
 
 
-def insert_hashes(
-    path: SourceResolutionPath, data_hashes: pa.Table, batch_size: int
-) -> None:
+def insert_hashes(path: SourceStepPath, data_hashes: pa.Table, batch_size: int) -> None:
     """Indexes hash data for a source.
 
     Args:
-        path: The path of the source resolution
+        path: The path of the source step
         data_hashes: Arrow table containing hash data
         batch_size: Batch size for bulk operations
 
     Raises:
-        MatchboxResolutionNotFoundError: If the specified resolution doesn't exist.
-        MatchboxResolutionInvalidData: If data fingerprint conflicts with resolution.
-        MatchboxResolutionExistingData: If data was already inserted for resolution.
+        MatchboxStepNotFoundError: If the specified step doesn't exist.
+        MatchboxStepInvalidData: If data fingerprint conflicts with the step.
+        MatchboxStepExistingData: If data was already inserted for the step.
     """
     log_prefix = f"Index hashes {path}"
     if data_hashes.num_rows == 0:
@@ -63,14 +61,12 @@ def insert_hashes(
     fingerprint = hash_arrow_table(data_hashes)
 
     with MBDB.get_session() as session:
-        resolution = Resolutions.from_path(
-            path=path, res_type=ResolutionType.SOURCE, session=session
-        )
+        step = Steps.from_path(path=path, res_type=StepType.SOURCE, session=session)
         # Check if the content hash is the same
-        if resolution.fingerprint != fingerprint:
-            raise MatchboxResolutionInvalidData
+        if step.fingerprint != fingerprint:
+            raise MatchboxStepInvalidData
 
-        # Determine if the resolution already has any keys
+        # Determine if the step already has any keys.
         existing_keys = session.execute(
             select(func.count())
             .select_from(
@@ -80,13 +76,13 @@ def insert_hashes(
                     ClusterSourceKey.source_config_id == SourceConfigs.source_config_id,
                 )
             )
-            .where(SourceConfigs.resolution_id == resolution.resolution_id)
+            .where(SourceConfigs.step_id == step.step_id)
         ).scalar_one()
 
         if existing_keys > 0:
-            raise MatchboxResolutionExistingData
+            raise MatchboxStepExistingData
 
-        source_config_id = resolution.source_config.source_config_id
+        source_config_id = step.source_config.source_config_id
 
     with (
         ingest_to_temporary_table(
@@ -157,7 +153,7 @@ def insert_hashes(
 
 
 def insert_model_edges(
-    path: ModelResolutionPath,
+    path: ModelStepPath,
     results: pa.Table,
     batch_size: int,
 ) -> None:
@@ -167,22 +163,22 @@ def insert_model_edges(
         logger.info("Empty model edges given.", prefix=log_prefix)
         return
 
-    resolution = Resolutions.from_path(path=path, res_type=ResolutionType.MODEL)
+    step = Steps.from_path(path=path, res_type=StepType.MODEL)
 
     # Check if the content hash is the same
     fingerprint = hash_model_results(results)
-    if resolution.fingerprint != fingerprint:
-        raise MatchboxResolutionInvalidData
+    if step.fingerprint != fingerprint:
+        raise MatchboxStepInvalidData
 
     with MBDB.get_session() as session:
         existing_edges = session.execute(
             select(func.count())
             .select_from(ModelEdges)
-            .where(ModelEdges.resolution_id == resolution.resolution_id)
+            .where(ModelEdges.step_id == step.step_id)
         ).scalar_one()
 
         if existing_edges > 0:
-            raise MatchboxResolutionExistingData
+            raise MatchboxStepExistingData
 
     logger.info(
         f"Writing model edges with batch size {batch_size:,}", prefix=log_prefix
@@ -196,7 +192,7 @@ def insert_model_edges(
             column_types={
                 "left_id": BIGINT(),
                 "right_id": BIGINT(),
-                "probability": REAL(),
+                "score": REAL(),
             },
             data=results,
             max_chunksize=batch_size,
@@ -204,14 +200,14 @@ def insert_model_edges(
     ):
         try:
             edges_select = select(
-                literal(resolution.resolution_id, BIGINT).label("resolution_id"),
+                literal(step.step_id, BIGINT).label("step_id"),
                 incoming_edges.c.left_id,
                 incoming_edges.c.right_id,
-                incoming_edges.c.probability,
+                incoming_edges.c.score,
             )
             inserted = session.execute(
                 insert(ModelEdges).from_select(
-                    ["resolution_id", "left_id", "right_id", "probability"],
+                    ["step_id", "left_id", "right_id", "score"],
                     edges_select,
                 )
             )
@@ -313,8 +309,8 @@ def _compute_resolver_hashes(
     )
 
 
-def insert_resolver_clusters(
-    path: ResolverResolutionPath,
+def insert_clusters(
+    path: ResolverStepPath,
     cluster_assignments: pa.Table,
     batch_size: int,
 ) -> None:
@@ -329,18 +325,18 @@ def insert_resolver_clusters(
         cluster (Python round-trip via _compute_resolver_hashes)
     3. Insert everything: with both temp tables live in one session,
         materialise new Clusters rows, then insert Contains and
-        ResolutionClusters membership rows
+        ResolverClusters membership rows
 
     Args:
-        path: The resolver resolution path to upload cluster assignments for
+        path: The resolver step path to upload cluster assignments for
         cluster_assignments: Arrow table conforming to SCHEMA_CLUSTERS, having
             (parent_id, child_id) columns
         batch_size: Batch size for temporary table ingestion
 
     Raises:
-        MatchboxResolutionNotFoundError: If the resolution doesn't exist
-        MatchboxResolutionInvalidData: If the fingerprint doesn't match
-        MatchboxResolutionExistingData: If clusters already exist for this resolver
+        MatchboxStepNotFoundError: If the step doesn't exist
+        MatchboxStepInvalidData: If the fingerprint doesn't match
+        MatchboxStepExistingData: If clusters already exist for this resolver
     """
     log_prefix = f"Resolver {path.name}"
     fingerprint = hash_clusters(cluster_assignments)
@@ -349,26 +345,24 @@ def insert_resolver_clusters(
     # 1) Validate
 
     with MBDB.get_session() as session:
-        resolution = Resolutions.from_path(
-            path=path, res_type=ResolutionType.RESOLVER, session=session
-        )
+        step = Steps.from_path(path=path, res_type=StepType.RESOLVER, session=session)
 
-        if resolution.fingerprint != fingerprint:
-            raise MatchboxResolutionInvalidData
+        if step.fingerprint != fingerprint:
+            raise MatchboxStepInvalidData
 
         existing = session.execute(
             select(func.count())
-            .select_from(ResolutionClusters)
-            .where(ResolutionClusters.resolution_id == resolution.resolution_id)
+            .select_from(ResolverClusters)
+            .where(ResolverClusters.step_id == step.step_id)
         ).scalar_one()
 
         if existing > 0:
-            raise MatchboxResolutionExistingData
+            raise MatchboxStepExistingData
 
         if cluster_assignment_data.num_rows == 0:
             return
 
-        resolution_id = resolution.resolution_id
+        step_id = step.step_id
 
     # 2) Compute hashes
     #
@@ -463,21 +457,21 @@ def insert_resolver_clusters(
                     )
                 )
 
-                # ResolutionClusters
-                # Associate all proposed clusters with this resolver resolution
+                # ResolverClusters
+                # Associate all proposed clusters with this resolver step.
                 session.execute(
-                    insert(ResolutionClusters)
+                    insert(ResolverClusters)
                     .from_select(
-                        ["resolution_id", "cluster_id"],
+                        ["step_id", "cluster_id"],
                         select(
-                            literal(resolution_id, BIGINT).label("resolution_id"),
+                            literal(step_id, BIGINT).label("step_id"),
                             cluster_map.c.cluster_id,
                         ).distinct(),
                     )
                     .on_conflict_do_nothing(
                         index_elements=[
-                            ResolutionClusters.resolution_id,
-                            ResolutionClusters.cluster_id,
+                            ResolverClusters.step_id,
+                            ResolverClusters.cluster_id,
                         ]
                     )
                 )
@@ -492,5 +486,5 @@ def insert_resolver_clusters(
     MBDB.vacuum_analyze(
         Clusters.__table__.fullname,
         Contains.__table__.fullname,
-        ResolutionClusters.__table__.fullname,
+        ResolverClusters.__table__.fullname,
     )

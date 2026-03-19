@@ -197,7 +197,7 @@ def create_preindex_scenario(
     One admin user, alice.
 
     The warehouse contains three interlinked tables that cover common linkage
-    problem scenarios, but are not yet indexed.
+    realistic scenarios, but are not yet indexed.
     """
     # First create the admin scenario
     dag_testkit = create_admin_scenario(
@@ -248,7 +248,7 @@ def create_index_scenario(
     One admin user, alice.
 
     The warehouse contains three interlinked tables that cover common linkage
-    problem scenarios. They are indexed in the backend.
+    realistic scenarios. They are indexed in the backend.
     """
     # First create the preindex scenario
     dag_testkit = create_preindex_scenario(
@@ -257,12 +257,12 @@ def create_index_scenario(
 
     # Index sources in backend
     for source_testkit in dag_testkit.sources.values():
-        backend.create_resolution(
-            resolution=source_testkit.fake_run().source.to_resolution(),
-            path=source_testkit.resolution_path,
+        backend.create_step(
+            step=source_testkit.fake_run().source.to_dto(),
+            path=source_testkit.path,
         )
         backend.insert_source_data(
-            path=source_testkit.resolution_path,
+            path=source_testkit.path,
             data_hashes=source_testkit.data_hashes,
         )
 
@@ -282,7 +282,7 @@ def create_dedupe_scenario(
     One admin user, alice.
 
     The warehouse contains three interlinked tables that cover common linkage
-    problem scenarios. They are indexed and deduplicated in the backend.
+    realistic scenarios. They are indexed and deduplicated in the backend.
     """
     # First create the index scenario
     dag_testkit = create_index_scenario(
@@ -295,7 +295,7 @@ def create_dedupe_scenario(
     # Create and add deduplication models
     for testkit in dag_testkit.sources.values():
         # Query the raw data
-        source_data = backend.query(source=testkit.resolution_path)
+        source_data = backend.query(source=testkit.path)
 
         # Build model testkit using query data
         model_testkit = query_to_model_factory(
@@ -305,18 +305,18 @@ def create_dedupe_scenario(
             true_entities=tuple(linked.true_entities),
             name=f"naive_test_{testkit.name}",
             description=f"Deduplication of {testkit.name}",
-            prob_range=(1.0, 1.0),
+            score_range=(1.0, 1.0),
             seed=seed,
         )
 
         # Add model to backend and DAG
-        backend.create_resolution(
-            resolution=model_testkit.fake_run().model.to_resolution(),
-            path=model_testkit.resolution_path,
+        backend.create_step(
+            step=model_testkit.fake_run().model.to_dto(),
+            path=model_testkit.path,
         )
         backend.insert_model_data(
-            path=model_testkit.resolution_path,
-            results=model_testkit.probabilities.to_arrow(),
+            path=model_testkit.path,
+            results=model_testkit.scores.to_arrow(),
         )
         dag_testkit.add_model(model_testkit)
 
@@ -327,12 +327,12 @@ def create_dedupe_scenario(
             inputs=[model_testkit],
             true_entities=linked.true_entities,
         ).fake_run()
-        backend.create_resolution(
-            resolution=resolver_testkit.resolver.to_resolution(),
-            path=resolver_testkit.resolver.resolution_path,
+        backend.create_step(
+            step=resolver_testkit.resolver.to_dto(),
+            path=resolver_testkit.resolver.path,
         )
         backend.insert_resolver_data(
-            path=resolver_testkit.resolver.resolution_path,
+            path=resolver_testkit.resolver.path,
             data=resolver_testkit.resolver.results.to_arrow(),
         )
         dag_testkit.add_resolver(resolver_testkit)
@@ -340,21 +340,21 @@ def create_dedupe_scenario(
     return dag_testkit
 
 
-@register_scenario("probabilistic_dedupe")
-def create_probabilistic_dedupe_scenario(
+@register_scenario("scored_dedupe")
+def create_scored_dedupe_scenario(
     backend: MatchboxDBAdapter,
     warehouse_engine: Engine,
     n_entities: int = 10,
     seed: int = 42,
     **kwargs: Any,
 ) -> TestkitDAG:
-    """Create a probabilistic dedupe TestkitDAG scenario.
+    """Create a scored dedupe TestkitDAG scenario.
 
     One admin user, alice.
 
     The warehouse contains three interlinked tables that cover common linkage
-    problem scenarios. They are indexed and deduplicated in the backend using
-    probabilistic methodologies.
+    realistic scenarios. They are indexed and deduplicated in the backend using
+    scored methodologies.
     """
     # First create the index scenario
     dag_testkit = create_index_scenario(
@@ -367,7 +367,7 @@ def create_probabilistic_dedupe_scenario(
     # Create and add deduplication models
     for testkit in dag_testkit.sources.values():
         # Query the raw data
-        source_data = backend.query(source=testkit.resolution_path)
+        source_data = backend.query(source=testkit.path)
 
         # Build model testkit using query data
         model_testkit = query_to_model_factory(
@@ -375,20 +375,20 @@ def create_probabilistic_dedupe_scenario(
             left_data=source_data,
             left_keys={testkit.name: "key"},
             true_entities=tuple(linked.true_entities),
-            name=f"probabilistic_test_{testkit.name}",
-            description=f"Probabilistic deduplication of {testkit.name}",
-            prob_range=(0.5, 0.99),
+            name=f"scored_test_{testkit.name}",
+            description=f"Scored deduplication of {testkit.name}",
+            score_range=(0.5, 0.99),
             seed=seed,
         )
 
         # Add model to backend and DAG
-        backend.create_resolution(
-            resolution=model_testkit.fake_run().model.to_resolution(),
-            path=model_testkit.resolution_path,
+        backend.create_step(
+            step=model_testkit.fake_run().model.to_dto(),
+            path=model_testkit.path,
         )
         backend.insert_model_data(
-            path=model_testkit.resolution_path,
-            results=model_testkit.probabilities.to_arrow(),
+            path=model_testkit.path,
+            results=model_testkit.scores.to_arrow(),
         )
         dag_testkit.add_model(model_testkit)
 
@@ -400,12 +400,12 @@ def create_probabilistic_dedupe_scenario(
             true_entities=linked.true_entities,
             thresholds={model_testkit.name: 0.5},
         ).fake_run()
-        backend.create_resolution(
-            resolution=resolver_testkit.resolver.to_resolution(),
-            path=resolver_testkit.resolver.resolution_path,
+        backend.create_step(
+            step=resolver_testkit.resolver.to_dto(),
+            path=resolver_testkit.resolver.path,
         )
         backend.insert_resolver_data(
-            path=resolver_testkit.resolver.resolution_path,
+            path=resolver_testkit.resolver.path,
             data=resolver_testkit.resolver.results.to_arrow(),
         )
         dag_testkit.add_resolver(resolver_testkit)
@@ -426,7 +426,7 @@ def create_link_scenario(
     One admin user, alice.
 
     The warehouse contains three interlinked tables that cover common linkage
-    problem scenarios. They are indexed, deduplicated and linked in the backend.
+    realistic scenarios. They are indexed, deduplicated and linked in the backend.
     """
     # First create the dedupe scenario
     dag_testkit = create_dedupe_scenario(
@@ -444,18 +444,18 @@ def create_link_scenario(
     dh_resolver = dag_testkit.resolvers[f"resolver_{dh_model.name}"].resolver
     cdms_resolver = dag_testkit.resolvers[f"resolver_{cdms_model.name}"].resolver
 
-    # Query data for each resolution
+    # Query data for each step
     crn_data = backend.query(
-        source=dag_testkit.sources["crn"].resolution_path,
-        point_of_truth=crn_resolver.resolution_path,
+        source=dag_testkit.sources["crn"].path,
+        resolver=crn_resolver.path,
     )
     dh_data = backend.query(
-        source=dag_testkit.sources["dh"].resolution_path,
-        point_of_truth=dh_resolver.resolution_path,
+        source=dag_testkit.sources["dh"].path,
+        resolver=dh_resolver.path,
     )
     cdms_data = backend.query(
-        source=dag_testkit.sources["cdms"].resolution_path,
-        point_of_truth=cdms_resolver.resolution_path,
+        source=dag_testkit.sources["cdms"].path,
+        resolver=cdms_resolver.path,
     )
 
     # Create CRN-DH link
@@ -477,18 +477,18 @@ def create_link_scenario(
         true_entities=tuple(linked.true_entities),
         name="deterministic_naive_test_crn_naive_test_dh",
         description="Link between CRN and DH",
-        prob_range=(1.0, 1.0),
+        score_range=(1.0, 1.0),
         seed=seed,
     )
 
     # Add model to backend and DAG
-    backend.create_resolution(
-        resolution=crn_dh_model.fake_run().model.to_resolution(),
-        path=crn_dh_model.resolution_path,
+    backend.create_step(
+        step=crn_dh_model.fake_run().model.to_dto(),
+        path=crn_dh_model.path,
     )
     backend.insert_model_data(
-        path=crn_dh_model.resolution_path,
-        results=crn_dh_model.probabilities.to_arrow(),
+        path=crn_dh_model.path,
+        results=crn_dh_model.scores.to_arrow(),
     )
     dag_testkit.add_model(crn_dh_model)
 
@@ -499,12 +499,12 @@ def create_link_scenario(
         inputs=[crn_dh_model],
         true_entities=linked.true_entities,
     ).fake_run()
-    backend.create_resolution(
-        resolution=crn_dh_resolver_testkit.resolver.to_resolution(),
-        path=crn_dh_resolver_testkit.resolver.resolution_path,
+    backend.create_step(
+        step=crn_dh_resolver_testkit.resolver.to_dto(),
+        path=crn_dh_resolver_testkit.resolver.path,
     )
     backend.insert_resolver_data(
-        path=crn_dh_resolver_testkit.resolver.resolution_path,
+        path=crn_dh_resolver_testkit.resolver.path,
         data=crn_dh_resolver_testkit.resolver.results.to_arrow(),
     )
     dag_testkit.add_resolver(crn_dh_resolver_testkit)
@@ -526,19 +526,19 @@ def create_link_scenario(
         right_data=cdms_data,
         right_keys={"cdms": "key"},
         true_entities=tuple(linked.true_entities),
-        name="probabilistic_naive_test_crn_naive_test_cdms",
+        name="scored_naive_test_crn_naive_test_cdms",
         description="Link between CRN and CDMS",
         seed=seed,
     )
 
     # Add model to backend and DAG
-    backend.create_resolution(
-        path=crn_cdms_model.resolution_path,
-        resolution=crn_cdms_model.fake_run().model.to_resolution(),
+    backend.create_step(
+        path=crn_cdms_model.path,
+        step=crn_cdms_model.fake_run().model.to_dto(),
     )
     backend.insert_model_data(
-        path=crn_cdms_model.resolution_path,
-        results=crn_cdms_model.probabilities.to_arrow(),
+        path=crn_cdms_model.path,
+        results=crn_cdms_model.scores.to_arrow(),
     )
     dag_testkit.add_model(crn_cdms_model)
 
@@ -550,32 +550,32 @@ def create_link_scenario(
         true_entities=linked.true_entities,
         thresholds={crn_cdms_model.name: 0.75},
     ).fake_run()
-    backend.create_resolution(
-        resolution=crn_cdms_resolver_testkit.resolver.to_resolution(),
-        path=crn_cdms_resolver_testkit.resolver.resolution_path,
+    backend.create_step(
+        step=crn_cdms_resolver_testkit.resolver.to_dto(),
+        path=crn_cdms_resolver_testkit.resolver.path,
     )
     backend.insert_resolver_data(
-        path=crn_cdms_resolver_testkit.resolver.resolution_path,
+        path=crn_cdms_resolver_testkit.resolver.path,
         data=crn_cdms_resolver_testkit.resolver.results.to_arrow(),
     )
     dag_testkit.add_resolver(crn_cdms_resolver_testkit)
 
-    # Create final join using crn_cdms_resolver as point of truth
+    # Create final join resolving via crn_cdms_resolver
     crn_cdms_data_crn_only = backend.query(
-        source=dag_testkit.sources["crn"].resolution_path,
-        point_of_truth=crn_cdms_resolver_testkit.resolver.resolution_path,
+        source=dag_testkit.sources["crn"].path,
+        resolver=crn_cdms_resolver_testkit.resolver.path,
     ).rename_columns(["id", "keys_crn"])
     crn_cdms_data_cdms_only = backend.query(
-        source=dag_testkit.sources["cdms"].resolution_path,
-        point_of_truth=crn_cdms_resolver_testkit.resolver.resolution_path,
+        source=dag_testkit.sources["cdms"].path,
+        resolver=crn_cdms_resolver_testkit.resolver.path,
     ).rename_columns(["id", "keys_cdms"])
     crn_cdms_data = pa.concat_tables(
         [crn_cdms_data_crn_only, crn_cdms_data_cdms_only],
         promote_options="default",
     ).combine_chunks()
     dh_data_linked = backend.query(
-        source=dag_testkit.sources["dh"].resolution_path,
-        point_of_truth=dh_resolver.resolution_path,
+        source=dag_testkit.sources["dh"].path,
+        resolver=dh_resolver.path,
     )
 
     final_join_model = query_to_model_factory(
@@ -601,13 +601,13 @@ def create_link_scenario(
     )
 
     # Add model to backend and DAG
-    backend.create_resolution(
-        resolution=final_join_model.fake_run().model.to_resolution(),
-        path=final_join_model.resolution_path,
+    backend.create_step(
+        step=final_join_model.fake_run().model.to_dto(),
+        path=final_join_model.path,
     )
     backend.insert_model_data(
-        path=final_join_model.resolution_path,
-        results=final_join_model.probabilities.to_arrow(),
+        path=final_join_model.path,
+        results=final_join_model.scores.to_arrow(),
     )
     dag_testkit.add_model(final_join_model)
 
@@ -618,12 +618,12 @@ def create_link_scenario(
         inputs=[final_join_model],
         true_entities=linked.true_entities,
     ).fake_run()
-    backend.create_resolution(
-        resolution=final_join_resolver_testkit.resolver.to_resolution(),
-        path=final_join_resolver_testkit.resolver.resolution_path,
+    backend.create_step(
+        step=final_join_resolver_testkit.resolver.to_dto(),
+        path=final_join_resolver_testkit.resolver.path,
     )
     backend.insert_resolver_data(
-        path=final_join_resolver_testkit.resolver.resolution_path,
+        path=final_join_resolver_testkit.resolver.path,
         data=final_join_resolver_testkit.resolver.results.to_arrow(),
     )
     dag_testkit.add_resolver(final_join_resolver_testkit)
@@ -691,19 +691,19 @@ def create_alt_dedupe_scenario(
 
     # Index sources in backend
     for source_testkit in dag_testkit.sources.values():
-        backend.create_resolution(
-            resolution=source_testkit.fake_run().source.to_resolution(),
-            path=source_testkit.resolution_path,
+        backend.create_step(
+            step=source_testkit.fake_run().source.to_dto(),
+            path=source_testkit.path,
         )
         backend.insert_source_data(
-            path=source_testkit.resolution_path,
+            path=source_testkit.path,
             data_hashes=source_testkit.data_hashes,
         )
 
     # Create and add deduplication models
     for testkit in dag_testkit.sources.values():
         # Query the raw data
-        source_data = backend.query(source=testkit.resolution_path)
+        source_data = backend.query(source=testkit.path)
 
         # Build model testkits using query data
         model_testkit1 = query_to_model_factory(
@@ -713,7 +713,7 @@ def create_alt_dedupe_scenario(
             true_entities=tuple(linked.true_entities),
             name=f"dedupe_{testkit.name}",
             description=f"Deduplication of {testkit.name}",
-            prob_range=(0.5, 1.0),
+            score_range=(0.5, 1.0),
             seed=seed,
         )
         model_testkit2 = query_to_model_factory(
@@ -723,22 +723,20 @@ def create_alt_dedupe_scenario(
             true_entities=tuple(linked.true_entities),
             name=f"dedupe2_{testkit.name}",
             description=f"Deduplication of {testkit.name}",
-            prob_range=(0.5, 1.0),
+            score_range=(0.5, 1.0),
             seed=seed,
         )
 
-        assert len(model_testkit1.probabilities) > 0
-        assert_frame_equal(model_testkit1.probabilities, model_testkit2.probabilities)
+        assert len(model_testkit1.scores) > 0
+        assert_frame_equal(model_testkit1.scores, model_testkit2.scores)
 
         for model, threshold in ((model_testkit1, 0.5), (model_testkit2, 0.75)):
             # Add model to backend and DAG
-            backend.create_resolution(
-                path=model.resolution_path,
-                resolution=model.fake_run().model.to_resolution(),
+            backend.create_step(
+                path=model.path,
+                step=model.fake_run().model.to_dto(),
             )
-            backend.insert_model_data(
-                path=model.resolution_path, results=model.probabilities.to_arrow()
-            )
+            backend.insert_model_data(path=model.path, results=model.scores.to_arrow())
             dag_testkit.add_model(model)
 
             # Create and add resolver
@@ -749,12 +747,12 @@ def create_alt_dedupe_scenario(
                 true_entities=linked.true_entities,
                 thresholds={model.name: threshold},
             ).fake_run()
-            backend.create_resolution(
-                resolution=resolver_testkit.resolver.to_resolution(),
-                path=resolver_testkit.resolver.resolution_path,
+            backend.create_step(
+                step=resolver_testkit.resolver.to_dto(),
+                path=resolver_testkit.resolver.path,
             )
             backend.insert_resolver_data(
-                path=resolver_testkit.resolver.resolution_path,
+                path=resolver_testkit.resolver.path,
                 data=resolver_testkit.resolver.results.to_arrow(),
             )
             dag_testkit.add_resolver(resolver_testkit)
@@ -827,17 +825,17 @@ def create_convergent_partial_scenario(
 
     # Index sources in backend
     for source_testkit in dag_testkit.sources.values():
-        backend.create_resolution(
-            resolution=source_testkit.fake_run().source.to_resolution(),
-            path=source_testkit.resolution_path,
+        backend.create_step(
+            step=source_testkit.fake_run().source.to_dto(),
+            path=source_testkit.path,
         )
         backend.insert_source_data(
-            path=source_testkit.resolution_path,
+            path=source_testkit.path,
             data_hashes=source_testkit.data_hashes,
         )
 
         # Query the raw data
-        source_query = backend.query(source=source_testkit.resolution_path)
+        source_query = backend.query(source=source_testkit.path)
 
         # Build model testkit using query data
         model_testkit = query_to_model_factory(
@@ -847,10 +845,10 @@ def create_convergent_partial_scenario(
             true_entities=tuple(linked.true_entities),
             name=f"naive_test_{source_testkit.name}",
             description=f"Deduplication of {source_testkit.name}",
-            prob_range=(1.0, 1.0),
+            score_range=(1.0, 1.0),
             seed=seed,
         )
-        assert len(model_testkit.probabilities) > 0
+        assert len(model_testkit.scores) > 0
 
         # Add to DAG
         dag_testkit.add_model(model_testkit)
@@ -881,13 +879,13 @@ def create_convergent_scenario(
         linked = dag_testkit.source_to_linked[next(iter(model_testkit.model.sources))]
 
         # Insert model data and create resolvers
-        backend.create_resolution(
-            resolution=model_testkit.fake_run().model.to_resolution(),
-            path=model_testkit.resolution_path,
+        backend.create_step(
+            step=model_testkit.fake_run().model.to_dto(),
+            path=model_testkit.path,
         )
         backend.insert_model_data(
-            path=model_testkit.resolution_path,
-            results=model_testkit.probabilities.to_arrow(),
+            path=model_testkit.path,
+            results=model_testkit.scores.to_arrow(),
         )
 
         resolver_testkit = resolver_factory(
@@ -896,12 +894,12 @@ def create_convergent_scenario(
             inputs=[model_testkit],
             true_entities=linked.true_entities,
         ).fake_run()
-        backend.create_resolution(
-            resolution=resolver_testkit.resolver.to_resolution(),
-            path=resolver_testkit.resolver.resolution_path,
+        backend.create_step(
+            step=resolver_testkit.resolver.to_dto(),
+            path=resolver_testkit.resolver.path,
         )
         backend.insert_resolver_data(
-            path=resolver_testkit.resolver.resolution_path,
+            path=resolver_testkit.resolver.path,
             data=resolver_testkit.resolver.results.to_arrow(),
         )
         dag_testkit.add_resolver(resolver_testkit)
@@ -1171,12 +1169,12 @@ def create_mega_scenario(
 
     # Index sources in backend
     for source_testkit in dag_testkit.sources.values():
-        backend.create_resolution(
-            resolution=source_testkit.fake_run().source.to_resolution(),
-            path=source_testkit.resolution_path,
+        backend.create_step(
+            step=source_testkit.fake_run().source.to_dto(),
+            path=source_testkit.path,
         )
         backend.insert_source_data(
-            path=source_testkit.resolution_path,
+            path=source_testkit.path,
             data_hashes=source_testkit.data_hashes,
         )
 
@@ -1187,8 +1185,8 @@ def create_mega_scenario(
     marketplace_b = dag_testkit.sources["marketplace_b"]
 
     # Query both sources
-    marketplace_a_data = backend.query(source=marketplace_a.resolution_path)
-    marketplace_b_data = backend.query(source=marketplace_b.resolution_path)
+    marketplace_a_data = backend.query(source=marketplace_a.path)
+    marketplace_b_data = backend.query(source=marketplace_b.path)
 
     # Create linking model
     link_model = query_to_model_factory(
@@ -1201,18 +1199,18 @@ def create_mega_scenario(
         true_entities=tuple(linked.true_entities),
         name="mega_product_linker",
         description="Links products across marketplace_a and marketplace_b catalogues",
-        prob_range=(1.0, 1.0),
+        score_range=(1.0, 1.0),
         seed=seed,
     )
 
     # Add model to backend
-    backend.create_resolution(
-        resolution=link_model.fake_run().model.to_resolution(),
-        path=link_model.resolution_path,
+    backend.create_step(
+        step=link_model.fake_run().model.to_dto(),
+        path=link_model.path,
     )
     backend.insert_model_data(
-        path=link_model.resolution_path,
-        results=link_model.probabilities.to_arrow(),
+        path=link_model.path,
+        results=link_model.scores.to_arrow(),
     )
     dag_testkit.add_model(link_model)
 
@@ -1224,12 +1222,12 @@ def create_mega_scenario(
         inputs=[link_model],
         true_entities=linked.true_entities,
     ).fake_run()
-    backend.create_resolution(
-        resolution=mega_resolver_testkit.resolver.to_resolution(),
-        path=mega_resolver_testkit.resolver.resolution_path,
+    backend.create_step(
+        step=mega_resolver_testkit.resolver.to_dto(),
+        path=mega_resolver_testkit.resolver.path,
     )
     backend.insert_resolver_data(
-        path=mega_resolver_testkit.resolver.resolution_path,
+        path=mega_resolver_testkit.resolver.path,
         data=mega_resolver_testkit.resolver.results.to_arrow(),
     )
     dag_testkit.add_resolver(mega_resolver_testkit)
@@ -1247,7 +1245,7 @@ def setup_scenario(
         "index",
         "dedupe",
         "link",
-        "probabilistic_dedupe",
+        "scored_dedupe",
         "alt_dedupe",
         "convergent_partial",
         "convergent",

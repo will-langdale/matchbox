@@ -8,7 +8,7 @@ from sqlalchemy import Engine
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.client.resolvers import Components, ComponentsSettings
-from matchbox.common.exceptions import MatchboxResolutionTypeError
+from matchbox.common.exceptions import MatchboxStepTypeError
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.resolvers import resolver_factory
 from matchbox.common.factories.sources import source_factory
@@ -108,7 +108,7 @@ def test_model_resolver_rejects_resolver_input(
         resolver_settings={"thresholds": {dedupe.name: 0.0}},
     )
 
-    with pytest.raises(MatchboxResolutionTypeError, match="Expected one of: model"):
+    with pytest.raises(MatchboxStepTypeError, match="Expected one of: model"):
         dedupe.resolver(
             first_resolver,
             name="resolver_2",

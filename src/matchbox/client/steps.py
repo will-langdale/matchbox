@@ -12,12 +12,12 @@ import pyarrow as pa
 from matchbox.client import _handler
 from matchbox.common.arrow import check_schema_subset
 from matchbox.common.dtos import (
-    Resolution,
-    ResolutionName,
-    ResolutionPath,
-    SourceResolutionName,
+    SourceStepName,
+    Step,
+    StepName,
+    StepPath,
 )
-from matchbox.common.exceptions import MatchboxResolutionNotFoundError
+from matchbox.common.exceptions import MatchboxStepNotFoundError
 from matchbox.common.hash import hash_arrow_table
 from matchbox.common.logging import logger, profile_time
 
@@ -33,12 +33,12 @@ class StepConfigProtocol(Protocol):
     """Minimal protocol required by client DAG step config DTOs."""
 
     @property
-    def dependencies(self) -> list[ResolutionName]:
+    def dependencies(self) -> list[StepName]:
         """Execution prerequisites required before running the step."""
         ...
 
     @property
-    def parents(self) -> list[ResolutionName]:
+    def parents(self) -> list[StepName]:
         """Direct DAG edges to this step."""
         ...
 
@@ -55,7 +55,7 @@ def post_run(method: Callable[..., T]) -> Callable[..., T]:
     """
 
     @wraps(method)
-    def wrapper(self: "Step", *args: Any, **kwargs: Any) -> T:
+    def wrapper(self: "StepABC", *args: Any, **kwargs: Any) -> T:
         if self._local_data is None:
             raise RuntimeError("The step must be run before attempting this operation.")
         return method(self, *args, **kwargs)
@@ -63,7 +63,7 @@ def post_run(method: Callable[..., T]) -> Callable[..., T]:
     return wrapper
 
 
-class Step(ABC):
+class StepABC(ABC):
     """Base class for client-side DAG nodes that compute and sync data."""
 
     _local_data_schema: ClassVar[pa.Schema]
@@ -95,13 +95,13 @@ class Step(ABC):
 
     @property
     @abstractmethod
-    def resolution_path(self) -> ResolutionPath:
-        """The resolution path used to identify this step on the server."""
+    def path(self) -> StepPath:
+        """The step path used to identify this step on the server."""
         ...
 
     @property
     @abstractmethod
-    def sources(self) -> set[SourceResolutionName]:
+    def sources(self) -> set[SourceStepName]:
         """Set of source names upstream of this node."""
         ...
 
@@ -112,20 +112,20 @@ class Step(ABC):
         ...
 
     @abstractmethod
-    def to_resolution(self) -> Resolution:
-        """Convert to Resolution for API calls."""
+    def to_dto(self) -> Step:
+        """Convert to Step DTO for API calls."""
         ...
 
     @classmethod
-    def from_resolution(
+    def from_dto(
         cls,
-        resolution: Resolution,
-        resolution_name: str,
+        step: Step,
+        step_name: str,
         dag: DAG,
         **kwargs: Any,
-    ) -> "Step":
-        """Reconstruct from Resolution. Subclasses should override this."""
-        raise NotImplementedError(f"{cls.__name__} must implement from_resolution.")
+    ) -> "StepABC":
+        """Reconstruct from Step DTO. Subclasses should override this."""
+        raise NotImplementedError(f"{cls.__name__} must implement from_dto.")
 
     @abstractmethod
     def run(self, *args: Any, **kwargs: Any) -> pl.DataFrame:
@@ -159,14 +159,14 @@ class Step(ABC):
 
     def delete(self, certain: bool = False) -> bool:
         """Delete this step and its associated data from the backend."""
-        return _handler.delete_resolution(
-            path=self.resolution_path,
+        return _handler.delete_step(
+            path=self.path,
             certain=certain,
         ).success
 
     def download(self) -> pl.DataFrame:
         """Fetch remote data for this step and store it locally."""
-        table = _handler.get_data(path=self.resolution_path)
+        table = _handler.get_data(path=self.path)
         check_schema_subset(expected=self._local_data_schema, actual=table.schema)
         self._local_data = pl.from_arrow(table)
         return self._local_data
@@ -179,33 +179,33 @@ class Step(ABC):
         Not resistant to race conditions: only one client should call sync at a time.
         """
         log_prefix = f"Sync {self.name}"
-        resolution = self.to_resolution()
+        step = self.to_dto()
 
         try:
-            existing_resolution = _handler.get_resolution(path=self.resolution_path)
-            logger.info("Found existing resolution", prefix=log_prefix)
-        except MatchboxResolutionNotFoundError:
-            existing_resolution = None
+            existing_step = _handler.get_step(path=self.path)
+            logger.info("Found existing step", prefix=log_prefix)
+        except MatchboxStepNotFoundError:
+            existing_step = None
 
-        if existing_resolution:
-            if (existing_resolution.fingerprint == resolution.fingerprint) and (
-                existing_resolution.config.parents == resolution.config.parents
+        if existing_step:
+            if (existing_step.fingerprint == step.fingerprint) and (
+                existing_step.config.parents == step.config.parents
             ):
-                logger.info("Updating existing resolution", prefix=log_prefix)
-                _handler.update_resolution(
-                    resolution=resolution,
-                    path=self.resolution_path,
+                logger.info("Updating existing step", prefix=log_prefix)
+                _handler.update_step(
+                    step=step,
+                    path=self.path,
                 )
             else:
                 logger.info(
-                    "Update not possible. Deleting existing resolution",
+                    "Update not possible. Deleting existing step",
                     prefix=log_prefix,
                 )
-                _handler.delete_resolution(path=self.resolution_path, certain=True)
-                existing_resolution = None
+                _handler.delete_step(path=self.path, certain=True)
+                existing_step = None
 
-        if not existing_resolution:
-            logger.info("Creating new resolution", prefix=log_prefix)
-            _handler.create_resolution(resolution=resolution, path=self.resolution_path)
-            logger.info("Setting data for new resolution", prefix=log_prefix)
-            _handler.set_data(path=self.resolution_path, data=self._local_data)
+        if not existing_step:
+            logger.info("Creating new step", prefix=log_prefix)
+            _handler.create_step(step=step, path=self.path)
+            logger.info("Setting data for new step", prefix=log_prefix)
+            _handler.set_data(path=self.path, data=self._local_data)

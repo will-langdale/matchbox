@@ -14,12 +14,12 @@ from matchbox.client.resolvers import Resolver
 
 def evaluate(
     collection: CollectionOpt,
-    resolution: Annotated[
+    resolver: Annotated[
         str | None,
         typer.Option(
-            "--resolution",
+            "--resolver",
             "-r",
-            help="Resolution name (defaults to collection's final_step)",
+            help="Resolver name (defaults to collection's default_resolver)",
         ),
     ] = None,
     pending: Annotated[
@@ -50,7 +50,7 @@ def evaluate(
         typer.Option(
             "--file",
             "-f",
-            help="Pre-compiled sample file. If set, ignores resolutions parameters.",
+            help="Pre-compiled sample file. If set, ignores resolver parameters.",
         ),
     ] = None,
     session_tag: Annotated[
@@ -93,28 +93,27 @@ def evaluate(
     dag: DAG = dag.set_client(warehouse_engine)
 
     if sample_file:
-        resolution = None
+        resolver = None
     else:
-        # Resolve explicit name (or default final step) to a resolver path.
-        if resolution is None:
-            node = dag.final_step
-        elif (node := dag.nodes.get(resolution)) is None:
+        if resolver is None:
+            node = dag.default_resolver
+        elif (node := dag.nodes.get(resolver)) is None:
             raise typer.BadParameter(
-                f"Resolution '{resolution}' not found in DAG '{collection}'."
+                f"Resolver '{resolver}' not found in DAG '{collection}'."
             )
 
         if not isinstance(node, Resolver):
             raise typer.BadParameter(
-                "Evaluation requires a resolver resolution. "
+                "Evaluation requires a resolver step. "
                 f"'{node.name}' is a {node.__class__.__name__}."
             )
 
-        resolution = node.resolution_path
+        resolver = node.path
 
     try:
         # Create app with loaded DAG (not warehouse string)
         app = EntityResolutionApp(
-            resolution=resolution,
+            resolver=resolver,
             dag=dag,
             session_tag=session_tag,
             sample_file=sample_file,

@@ -4,26 +4,26 @@ from polars.testing import assert_frame_equal
 from sqlalchemy import Engine
 
 from matchbox.client.dags import DAG
-from matchbox.client.results import ResolvedMatches, normalise_model_probabilities
+from matchbox.client.results import ResolverMatches, normalise_model_scores
 from matchbox.client.sources import Source
 from matchbox.common.arrow import SCHEMA_QUERY_WITH_LEAVES
 from matchbox.common.factories.sources import source_factory, source_from_tuple
 
 
 class TestModelProbabilities:
-    """Test model probability normalisation."""
+    """Test model score normalisation."""
 
     def test_duplicate_removal(self) -> None:
-        """Removes redundant pairs, keeping highest probability."""
+        """Removes redundant pairs, keeping highest score."""
         simple_duplicate = pl.DataFrame(
             [
-                {"left_id": 4, "right_id": 5, "probability": 0.5},
-                {"left_id": 4, "right_id": 5, "probability": 1.0},
+                {"left_id": 4, "right_id": 5, "score": 0.5},
+                {"left_id": 4, "right_id": 5, "score": 1.0},
             ]
         )
 
         assert_frame_equal(
-            normalise_model_probabilities(simple_duplicate),
+            normalise_model_scores(simple_duplicate),
             simple_duplicate.tail(1),
             check_row_order=False,
             check_column_order=False,
@@ -32,13 +32,13 @@ class TestModelProbabilities:
 
         symmetric_duplicate = pl.DataFrame(
             [
-                {"left_id": 5, "right_id": 4, "probability": 0.5},
-                {"left_id": 4, "right_id": 5, "probability": 1.0},
+                {"left_id": 5, "right_id": 4, "score": 0.5},
+                {"left_id": 4, "right_id": 5, "score": 1.0},
             ]
         )
 
         assert_frame_equal(
-            normalise_model_probabilities(symmetric_duplicate),
+            normalise_model_scores(symmetric_duplicate),
             symmetric_duplicate.tail(1),
             check_row_order=False,
             check_column_order=False,
@@ -47,13 +47,13 @@ class TestModelProbabilities:
 
         no_duplicates = pl.DataFrame(
             [
-                {"left_id": 4, "right_id": 6, "probability": 0.5},
-                {"left_id": 4, "right_id": 5, "probability": 1.0},
+                {"left_id": 4, "right_id": 6, "score": 0.5},
+                {"left_id": 4, "right_id": 5, "score": 1.0},
             ]
         )
 
         assert_frame_equal(
-            normalise_model_probabilities(no_duplicates),
+            normalise_model_scores(no_duplicates),
             no_duplicates,
             check_row_order=False,
             check_column_order=False,
@@ -61,8 +61,8 @@ class TestModelProbabilities:
         )
 
 
-class TestResolvedMatches:
-    """Test ResolvedMatches objects."""
+class TestResolverMatches:
+    """Test ResolverMatches objects."""
 
     @pytest.fixture(scope="function")  # warehouse is function-scoped
     def dummy_data(
@@ -128,7 +128,7 @@ class TestResolvedMatches:
     def test_from_dump(
         self, dummy_data: tuple[Source, Source, pl.DataFrame, pl.DataFrame]
     ) -> None:
-        """Can initialise ResolvedMatches from concatenated dataframe representation."""
+        """Can initialise ResolverMatches from concatenated dataframe representation."""
         foo, bar, foo_query_data, bar_query_data = dummy_data
         # These won't be the same sources as above, but we only need them them
         # to have the same name
@@ -136,11 +136,11 @@ class TestResolvedMatches:
         dag.source(**source_factory(name="foo").into_dag())
         dag.source(**source_factory(name="bar").into_dag())
 
-        original = ResolvedMatches(
+        original = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         )
 
-        new = ResolvedMatches.from_dump(cluster_key_map=original.as_dump(), dag=dag)
+        new = ResolverMatches.from_dump(cluster_key_map=original.as_dump(), dag=dag)
 
         assert new.sources[0] == dag.get_source("foo")
         assert new.sources[1] == dag.get_source("bar")
@@ -188,7 +188,7 @@ class TestResolvedMatches:
         )
 
         # Retrieve single table
-        foo_mapping = ResolvedMatches(
+        foo_mapping = ResolverMatches(
             sources=[foo], query_results=[foo_query_data]
         ).as_lookup()
 
@@ -200,7 +200,7 @@ class TestResolvedMatches:
         )
 
         # Retrieve multiple tables
-        foo_bar_mapping = ResolvedMatches(
+        foo_bar_mapping = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         ).as_lookup()
 
@@ -217,7 +217,7 @@ class TestResolvedMatches:
         """Mapping across root, leaf, source and key can be generated."""
         foo, bar, foo_query_data, bar_query_data = dummy_data
 
-        mapping = ResolvedMatches(
+        mapping = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         ).as_dump()
 
@@ -243,7 +243,7 @@ class TestResolvedMatches:
     ) -> None:
         """Can generate grouping of lead IDs."""
         foo, bar, foo_query_data, bar_query_data = dummy_data
-        leaf_sets = ResolvedMatches(
+        leaf_sets = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         ).as_leaf_sets()
 
@@ -255,7 +255,7 @@ class TestResolvedMatches:
         """Single cluster can be viewed with source data."""
         foo, bar, foo_query_data, bar_query_data = dummy_data
 
-        cluster = ResolvedMatches(
+        cluster = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         ).view_cluster(356)
 
@@ -275,7 +275,7 @@ class TestResolvedMatches:
         )
 
         # Compact representation
-        cluster_merged = ResolvedMatches(
+        cluster_merged = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         ).view_cluster(356, merge_fields=True)
 
@@ -296,7 +296,7 @@ class TestResolvedMatches:
         )
 
         # View cluster with multiple keys per leaf, but only one source
-        cluster_convergent = ResolvedMatches(
+        cluster_convergent = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         ).view_cluster(2)
         expected_cluster_convergent = pl.DataFrame(
@@ -321,7 +321,7 @@ class TestResolvedMatches:
         # Define first resolved matches
         foo, bar, foo_query_data, bar_query_data = dummy_data
 
-        resolved_one = ResolvedMatches(
+        resolved_one = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         )
 
@@ -345,7 +345,7 @@ class TestResolvedMatches:
             schema=pl.Schema(SCHEMA_QUERY_WITH_LEAVES),
         )
 
-        resolved_two = ResolvedMatches(
+        resolved_two = ResolverMatches(
             sources=[foo, bar], query_results=[alt_foo_query_data, alt_bar_query_data]
         )
 

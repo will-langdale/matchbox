@@ -744,11 +744,11 @@ class TestMatchboxAdminBackend:
             crn_testkit = dag_testkit.sources.get("crn")
             naive_crn_resolver_path = dag_testkit.resolvers[
                 "resolver_naive_test_crn"
-            ].resolver.resolution_path
+            ].resolver.path
 
             df_crn = self.backend.query(
-                source=crn_testkit.source.resolution_path,
-                point_of_truth=naive_crn_resolver_path,
+                source=crn_testkit.source.path,
+                resolver=naive_crn_resolver_path,
             )
 
             ids = df_crn["id"].to_pylist()
@@ -785,7 +785,7 @@ class TestMatchboxAdminBackend:
             crn_testkit = dag_testkit.sources.get("crn")
             naive_crn_resolver_path = dag_testkit.resolvers[
                 "resolver_naive_test_crn"
-            ].resolver.resolution_path
+            ].resolver.path
 
             count_funcs = [
                 self.backend.sources.count,
@@ -807,8 +807,8 @@ class TestMatchboxAdminBackend:
 
             # Get some specific IDs to verify they're restored properly
             df_crn_before = self.backend.query(
-                source=crn_testkit.resolution_path,
-                point_of_truth=naive_crn_resolver_path,
+                source=crn_testkit.path,
+                resolver=naive_crn_resolver_path,
             )
             sample_ids_before = df_crn_before["id"].to_pylist()[:5]  # Take first 5 IDs
 
@@ -827,8 +827,8 @@ class TestMatchboxAdminBackend:
 
             # Verify specific data was restored correctly
             df_crn_after = self.backend.query(
-                source=crn_testkit.resolution_path,
-                point_of_truth=naive_crn_resolver_path,
+                source=crn_testkit.path,
+                resolver=naive_crn_resolver_path,
             )
             sample_ids_after = df_crn_after["id"].to_pylist()[:5]  # Take first 5 IDs
 
@@ -856,11 +856,11 @@ class TestMatchboxAdminBackend:
             assert initial_all_clusters == self.backend.all_clusters.count()
 
             # TODO: insert judgement for cluster, check that it is not deleted when
-            # deleting model resolution. Then deleting the judgement should cause
+            # deleting model step. Then deleting the judgement should cause
             # exactly 1 orphan.
 
-            model_res = naive_crn_testkit.resolution_path
-            self.backend.delete_resolution(model_res, certain=True)
+            model_res = naive_crn_testkit.path
+            self.backend.delete_step(model_res, certain=True)
 
             # Delete orphans, some should be deleted and total clusters should reduce
             orphans = self.backend.delete_orphans()
@@ -868,9 +868,9 @@ class TestMatchboxAdminBackend:
             all_clusters_2 = self.backend.all_clusters.count()
             assert initial_all_clusters > all_clusters_2
 
-            # Delete source resolution crn
-            source_res = crn_testkit.resolution_path
-            self.backend.delete_resolution(source_res, certain=True)
+            # Delete source step crn
+            source_res = crn_testkit.path
+            self.backend.delete_step(source_res, certain=True)
 
             # Delete orphans again and check number of clusters has reduced
             orphans = self.backend.delete_orphans()

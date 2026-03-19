@@ -11,17 +11,17 @@ from pyarrow import Table as ArrowTable
 from pyarrow import parquet as pq
 
 from matchbox.client.queries import Query
-from matchbox.client.steps import Step, post_run
+from matchbox.client.steps import StepABC, post_run
 from matchbox.common.arrow import SCHEMA_INDEX
 from matchbox.common.datatypes import DataTypes
 from matchbox.common.db import QueryReturnClass, QueryReturnType
 from matchbox.common.dtos import (
-    Resolution,
-    ResolutionType,
     SourceConfig,
     SourceField,
-    SourceResolutionName,
-    SourceResolutionPath,
+    SourceStepName,
+    SourceStepPath,
+    Step,
+    StepType,
 )
 from matchbox.common.hash import HashMethod, hash_rows
 from matchbox.common.logging import logger, profile_time
@@ -37,7 +37,7 @@ else:
 T = TypeVar("T")
 
 
-class Source(Step):
+class Source(StepABC):
     """Client-side wrapper for source configs."""
 
     _local_data_schema: ClassVar[pa.Schema] = SCHEMA_INDEX
@@ -163,41 +163,41 @@ class Source(Step):
         )
 
     @property
-    def sources(self) -> set[SourceResolutionName]:
+    def sources(self) -> set[SourceStepName]:
         """Set of source names upstream of this node."""
         return {self.name}
 
     @post_run
-    def to_resolution(self) -> Resolution:
-        """Convert to Resolution for API calls."""
-        return Resolution(
+    def to_dto(self) -> Step:
+        """Convert to Step DTO for API calls."""
+        return Step(
             description=self.description,
-            resolution_type=ResolutionType.SOURCE,
+            step_type=StepType.SOURCE,
             config=self.config,
             fingerprint=self._fingerprint(),
         )
 
     @classmethod
-    def from_resolution(
+    def from_dto(
         cls,
-        resolution: Resolution,
-        resolution_name: str,
+        step: Step,
+        step_name: str,
         dag: DAG,
         location: Location,
         **kwargs: Any,
     ) -> "Source":
-        """Reconstruct from Resolution."""
-        if resolution.resolution_type != ResolutionType.SOURCE:
-            raise ValueError("Resolution must be of type 'source'")
+        """Reconstruct from Step DTO."""
+        if step.step_type != StepType.SOURCE:
+            raise ValueError("Step must be of type 'source'")
 
         return cls(
             dag=dag,
             location=location,
-            name=SourceResolutionName(resolution_name),
-            extract_transform=resolution.config.extract_transform,
-            key_field=resolution.config.key_field,
-            index_fields=resolution.config.index_fields,
-            description=resolution.description,
+            name=SourceStepName(step_name),
+            extract_transform=step.config.extract_transform,
+            key_field=step.config.key_field,
+            index_fields=step.config.index_fields,
+            description=step.description,
             infer_types=False,
         )
 
@@ -343,9 +343,9 @@ class Source(Step):
         return self._local_data
 
     @property
-    def resolution_path(self) -> SourceResolutionPath:
-        """Returns the source resolution path."""
-        return SourceResolutionPath(
+    def path(self) -> SourceStepPath:
+        """Return the source step path."""
+        return SourceStepPath(
             collection=self.dag.name,
             run=self.dag.run,
             name=self.name,

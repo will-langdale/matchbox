@@ -14,12 +14,12 @@ def test_components_compute_clusters_uses_thresholds() -> None:
             {
                 "left_id": [1, 2],
                 "right_id": [2, 3],
-                "probability": [0.8, 0.4],
+                "score": [0.8, 0.4],
             },
             schema={
                 "left_id": pl.UInt64,
                 "right_id": pl.UInt64,
-                "probability": pl.Float32,
+                "score": pl.Float32,
             },
         )
     }
@@ -49,19 +49,19 @@ def test_components_compute_clusters_merges_multiple_models() -> None:
     )
     model_edges = {
         "model_a": pl.DataFrame(
-            {"left_id": [1], "right_id": [2], "probability": [0.9]},
+            {"left_id": [1], "right_id": [2], "score": [0.9]},
             schema={
                 "left_id": pl.UInt64,
                 "right_id": pl.UInt64,
-                "probability": pl.Float32,
+                "score": pl.Float32,
             },
         ),
         "model_b": pl.DataFrame(
-            {"left_id": [3], "right_id": [4], "probability": [0.8]},
+            {"left_id": [3], "right_id": [4], "score": [0.8]},
             schema={
                 "left_id": pl.UInt64,
                 "right_id": pl.UInt64,
-                "probability": pl.Float32,
+                "score": pl.Float32,
             },
         ),
     }

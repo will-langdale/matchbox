@@ -31,12 +31,12 @@ When you're done, submit, and do another!
 """.strip()
 
 NO_SAMPLES_TEXT = """
-No samples are available for this resolution.
+No samples are available for this resolver.
 
 Possible reasons:
 • All clusters have been recently judged by you
-• The resolution has no probability data
-• No clusters exist for this resolution
+• The resolver has no score data
+• No clusters exist for this resolver
 
 Press Ctrl+Q to quit.
 """.strip()

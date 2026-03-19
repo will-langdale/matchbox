@@ -18,7 +18,7 @@ from frozendict import frozendict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from matchbox.common.datatypes import DataTypes
-from matchbox.common.dtos import SourceResolutionName
+from matchbox.common.dtos import SourceStepName
 from matchbox.common.transform import DisjointSet
 
 if TYPE_CHECKING:
@@ -166,12 +166,12 @@ class FeatureConfig(BaseModel):
 class EntityReference(frozendict):
     """Reference to an entity's presence in specific sources.
 
-    Maps source resolution names to sets of primary keys.
+    Maps source step names to sets of primary keys.
     """
 
     def __init__(
         self,
-        mapping: dict[SourceResolutionName, frozenset[str]] | None = None,
+        mapping: dict[SourceStepName, frozenset[str]] | None = None,
     ) -> None:
         """Initialise the EntityReference."""
         super().__init__({} if mapping is None else mapping)
@@ -250,7 +250,7 @@ class SourceKeyMixin:
 
     keys: EntityReference
 
-    def get_keys(self, name: SourceResolutionName) -> set[str]:
+    def get_keys(self, name: SourceStepName) -> set[str]:
         """Get keys for a specific source.
 
         Args:
@@ -262,15 +262,15 @@ class SourceKeyMixin:
         return set(self.keys.get(name, frozenset()))
 
     def get_values(
-        self, sources: dict[SourceResolutionName, "SourceTestkit"]
-    ) -> dict[SourceResolutionName, dict[str, list[str]]]:
+        self, sources: dict[SourceStepName, "SourceTestkit"]
+    ) -> dict[SourceStepName, dict[str, list[str]]]:
         """Get all unique values for this entity across sources.
 
         Each source may have its own variations/transformations of the base data,
         so we maintain separation between sources.
 
         Args:
-            sources: Dictionary of source resolution name to source data
+            sources: Dictionary of source step name to source data
 
         Returns:
             Dictionary mapping:
@@ -405,7 +405,7 @@ class SourceEntity(BaseModel, EntityIDMixin, SourceKeyMixin):
         """Hash based on sorted base values."""
         return hash(tuple(sorted(self.base_values.items())))
 
-    def add_source_reference(self, name: SourceResolutionName, keys: list[str]) -> None:
+    def add_source_reference(self, name: SourceStepName, keys: list[str]) -> None:
         """Add or update a source reference.
 
         Args:
@@ -416,7 +416,7 @@ class SourceEntity(BaseModel, EntityIDMixin, SourceKeyMixin):
         mapping[name] = frozenset(keys)
         self.keys = EntityReference(mapping)
 
-    def to_cluster_entity(self, *names: SourceResolutionName) -> ClusterEntity | None:
+    def to_cluster_entity(self, *names: SourceStepName) -> ClusterEntity | None:
         """Convert this SourceEntity to a ClusterEntity with the specified sources.
 
         This method makes diffing really easy. Testing whether ClusterEntity objects
@@ -457,16 +457,16 @@ class SourceEntity(BaseModel, EntityIDMixin, SourceKeyMixin):
 
 def query_to_cluster_entities(
     data: pa.Table | pd.DataFrame | pl.DataFrame,
-    keys: dict[SourceResolutionName, str],
+    keys: dict[SourceStepName, str],
 ) -> set[ClusterEntity]:
     """Convert a query result to a set of ClusterEntities.
 
-    Useful for turning a real query from a real model resolution in Matchbox into
+    Useful for turning a real query from a real model step in Matchbox into
     a set of ClusterEntities that can be used in `LinkedSourcesTestkit.diff_entities()`.
 
     Args:
         data: A PyArrow table or DataFrame representing a query result
-        keys: Mapping of source resolution names to key field names
+        keys: Mapping of source step names to key field names
 
     Returns:
         A set of ClusterEntity objects
@@ -523,13 +523,13 @@ def generate_entities(
     return tuple(entities)
 
 
-def probabilities_to_results_entities(
-    probabilities: pl.DataFrame,
+def scores_to_results_entities(
+    scores: pl.DataFrame,
     left_clusters: tuple[ClusterEntity, ...],
     right_clusters: tuple[ClusterEntity, ...] | None = None,
     threshold: float = 0.0,
 ) -> tuple[ClusterEntity, ...]:
-    """Convert probabilities to ClusterEntity objects based on a threshold."""
+    """Convert scores to ClusterEntity objects based on a threshold."""
     left_lookup = {entity.id: entity for entity in left_clusters}
     if right_clusters is not None:
         right_lookup = {entity.id: entity for entity in right_clusters}
@@ -546,8 +546,8 @@ def probabilities_to_results_entities(
             djs.add(entity)
 
     # Add edges to the disjoint set
-    for record in probabilities.to_dicts():
-        if record["probability"] >= threshold:
+    for record in scores.to_dicts():
+        if record["score"] >= threshold:
             djs.union(
                 left_lookup[record["left_id"]],
                 right_lookup[record["right_id"]],
