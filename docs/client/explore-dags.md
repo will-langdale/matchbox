@@ -1,40 +1,82 @@
-Matchbox lets you link many sources of data in many different ways. But when you query it, which way should you choose?
+# Explore DAGs
 
-A DAG (i.e. a Matchbox pipeline) represents a queriable state describing how to cluster entities from one or more data sources. It brings together deduplicated and linked data sources.
+A Matchbox collection can store several runs of a DAG. Each run is a server-side snapshot of the sources, models, and resolvers that define one entity view for that collection.
 
-You can explore which DAGs are stored on Matchbox.
+This guide shows how to list collections, download one stored run, and inspect the pipeline it contains.
 
+## Listing collections
 
-```python
-from matchbox.client.dags import DAG
+=== "Example"
+    ```python
+    from matchbox.client.dags import DAG
 
-DAG.list_all()
-```
+    DAG.list_all()
+    ```
 
+You can also do lightweight exploration from the [CLI](../server/cli.md).
 
-## Download a DAG locally
+=== "CLI"
+    ```shell
+    mbx collections
+    ```
 
-A DAG also stores serialisable descriptions of all the steps that produced a queriable state. You can [create your own DAGs](link-data.md) and push them to the Matchbox server. But you can also re-construct a DAG locally based on its server snapshot:
+Run `mbx collections --help` to inspect the available collection commands and options.
 
-```python
-dag = DAG(name="companies").load_default()
-```
+## Downloading a DAG
 
-This will load the "default" version of a DAG, if available. A DAG can only have one version set as "default". There may also be a "pending" version of a DAG that's currently being worked on:
+Load the default or pending run for a collection.
 
-```
-dag = DAG(name="companies").load_pending()
-```
+`load_default()` reconstructs the published run for that collection. This is the run other users and services query by default.
 
-Once you have retrieved your DAG's structure, you can inspect it:
+=== "Default run"
+    ```python
+    from matchbox.client.dags import DAG
 
-```python
-print(dag.draw())
-```
+    dag = DAG(name="companies").load_default()
+    ```
 
-This will print the hierarchy of nodes making up the DAG. You can retrieve individual nodes and inspect their configuration:
+`load_pending()` reconstructs the latest non-default run, which is usually the draft currently being worked on before publication.
 
-```python
-source1 = dag.get_source("source1")
-dedupe_source1 = dag.get_model("dedupe_source1")
-```
+=== "Pending run"
+    ```python
+    from matchbox.client.dags import DAG
+
+    dag = DAG(name="companies").load_pending()
+    ```
+
+The downloaded DAG includes the serialisable definitions of every source, model, and resolver in that run. Once you have that structure locally, you can inspect it, attach warehouse clients, or create a new run from it.
+
+## Inspecting the pipeline
+
+Use `draw()` to inspect the dependency graph.
+
+=== "Tree view"
+    ```python
+    print(dag.draw())
+    ```
+
+=== "Execution order"
+    ```python
+    print(dag.draw(mode="list"))
+    print(dag.sequence)
+    ```
+
+The default resolver is the single final resolver in a complete published DAG. If a DAG has more than one final resolver, `default_resolver` is ambiguous and you need to pick a named resolver explicitly.
+
+=== "Example"
+    ```python
+    resolver = dag.default_resolver
+    ```
+
+## Inspecting individual steps
+
+You can retrieve sources, models, and resolvers by name.
+
+=== "Example"
+    ```python
+    source = dag.get_source("companies_house")
+    model = dag.get_model("dedupe_companies_house")
+    resolver = dag.get_resolver("companies_resolver")
+    ```
+
+Once you have the DAG locally, you can attach warehouse clients, query resolved entities, or start a new run from the same structure.

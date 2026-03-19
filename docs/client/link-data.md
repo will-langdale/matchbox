@@ -1,99 +1,83 @@
-# Building with Matchbox DAGs
+# Building Matchbox DAGs
 
-Data matching and entity resolution are complex tasks that often require multiple processing steps. Matchbox provides a powerful Directed Acyclic Graph (DAG) framework that allows you to define and run sophisticated matching pipelines with clearly defined dependencies.
+Entity resolution usually needs more than one matching step. Matchbox uses a directed acyclic graph (DAG) to describe that workflow and keep each step explicit.
 
-This guide walks through creating complete matching pipelines using the Matchbox DAG API, covering everything from [defining data sources](#2-defining-data-sources) to [executing complex multi-step matching processes](#advanced-use-cases). In our examples we'll be referencing publicly available datasets about UK companies, specifically [Companies House data](https://find-and-update.company-information.service.gov.uk), and [UK trade data](https://www.uktradeinfo.com).
+In Matchbox, a complete pipeline uses three kinds of node:
 
-## Understanding DAGs in Matchbox
+- [`Source`][matchbox.client.sources.Source] steps index data from warehouses or files.
+- [`Model`][matchbox.client.models.Model] steps score pairs of records that may refer to the same entity.
+- [`Resolver`][matchbox.client.resolvers.Resolver] steps turn one or more model outputs into entity clusters.
 
-A DAG (Directed Acyclic Graph) represents a sequence of operations where each step depends on the outputs of previous steps, without any circular dependencies. In Matchbox, a DAG consists of:
+This guide walks through the full flow: define sources, build models, add resolvers, run the DAG, and publish a default run.
 
-* [`Source`s][matchbox.client.sources.Source]: indexing data from sources
-* [`Model`s][matchbox.client.models.Model]: Removing duplicates within one data input, or linking two data inputs. As data inputs, `Model`s can take `Source`s or other `Model`s.
+## Understanding Matchbox DAGs
 
-`Source`s and `Model`s can form [`Query`][matchbox.client.models.Model] objects, which allow you to retrieve the version of the data implied by that DAG step. Querying a source gives you the records in that source, and querying from a model gives you the deduplicated or linked records at that point in the DAG. When querying from a model, you need to specify which sources you want to query from that model's lineage.
+Sources provide raw records. Models emit scored edges. Resolvers consume model outputs and materialise the clusters that Matchbox queries. A DAG can alternate between scoring and clustering layers several times.
 
-```python
-source: Source
-deduper: Model
-# ... define your source and a model deduplicating it ...
-source_query = source.query()
-model_query = deduper.query(source)
+```mermaid
+graph TD
+    SA["Source A"] --> MA["Deduper A"]
+    MA --> RA["Resolver A"]
+    RA --> LAB["Linker AB"]
+    SB["Source B"] --> LAB
+    LAB --> RF["Final resolver"]
 ```
 
-`Model`s are formed from `Query` objects.
+All nodes are lazy until you run them.
 
 ```python
-other_source: Source
-# ... define your second source ...
-deduper = source.query().deduper(...)
-linker = deduper.query().linker(other_source.query())
+query_data = companies_house.query().data()
+model_scores = dedupe_companies_house.run()
+resolver_clusters = companies_resolver.run()
 ```
-
-All these objects are lazy: they don't actually retrieve any data unless you run them, for example:
-
-```python
-queried_data = query.data()
-deduper_results = deduper.run()
-linker_results = linker.run()
-```
-
-The steps need to be run in order, but once you've finalised your DAG, it's better to automatically run all of them using a single DAG command, as is shown later.
 
 ## Setting up your environment
 
-Before building a pipeline, it's worth configuring logging:
+When building a pipeline, it helps to configure logging and create the warehouse client you will attach to your sources.
 
 === "Example"
     ```python
     import logging
 
-    # Configure logging
+    from sqlalchemy import create_engine
+
     logging.basicConfig(
         format="%(asctime)s [%(name)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     logging.getLogger("matchbox").setLevel(logging.INFO)
+
+    engine = create_engine("postgresql://user:password@host:port/database")
     ```
 
-You will also need to define the engine to read your data sources:
+## 1. Defining a DAG
 
-=== "Example"
-    ```python
-    # Get your database engine
-    from sqlalchemy import create_engine
-    engine = create_engine("postgresql://user:password@host:port/")
-    ```
-
-## 1. Defining a new DAG
-
-You're now ready to create your first [`DAG`][matchbox.client.dags.DAG].
+Create a [`DAG`][matchbox.client.dags.DAG] and call
+[`new_run()`][matchbox.client.dags.DAG.new_run] to start an editable run.
 
 === "Example"
     ```python
     from matchbox.client.dags import DAG
+
     dag = DAG(name="companies").new_run()
     ```
 
-A DAG needs a name, which will be used to identify this DAG once you publish it to the Matchbox server. You also need to use the `.new_run()` method to prepare the DAG to send results to the server.
+The DAG owns every source, model, and resolver you define afterwards. A run is
+the stored snapshot of that DAG inside the collection. The
+[`new_run()`][matchbox.client.dags.DAG.new_run] method creates the run that you
+populate and sync.
 
-This DAG will own all the sources and models you define later.
+## 2. Defining sources
 
-## 2. Defining data sources
-
-Now you can define your data sources. Each source represents data that will be used in the matching process.
-
-The `index_fields` are what Matchbox will use to store a reference to your data, and are the only fields it will permit you to match on.
-
-The `key_field` is the field in your source that contains some unique code that identifies each entity. For example, in a relational database, this would typically be your primary key.
+Add each dataset with [`source()`][matchbox.client.dags.DAG.source]. See
+[`Source`][matchbox.client.sources.Source] for the full argument list.
 
 === "Example"
     ```python
     from matchbox.client import RelationalDBLocation
 
-    warehouse = RelationalDBLocation(name="dbname").set_client(engine)
+    warehouse = RelationalDBLocation(name="warehouse").set_client(engine)
 
-    # Companies House data
     companies_house = dag.source(
         name="companies_house",
         location=warehouse,
@@ -102,16 +86,14 @@ The `key_field` is the field in your source that contains some unique code that 
                 id,
                 company_number::text as company_number,
                 company_name,
-                upper(postcode) as postcode,
-            from
-                companieshouse.companies;
+                upper(postcode) as postcode
+            from companieshouse.companies
         """,
         infer_types=True,
         index_fields=["company_name", "company_number", "postcode"],
         key_field="id",
     )
-    
-    # Exporters data
+
     exporters = dag.source(
         name="hmrc_exporters",
         location=warehouse,
@@ -119,9 +101,8 @@ The `key_field` is the field in your source that contains some unique code that 
             select
                 id,
                 company_name,
-                upper(postcode) as postcode,
-            from
-                hmrc.trade__exporters;
+                upper(postcode) as postcode
+            from hmrc.trade__exporters
         """,
         infer_types=True,
         index_fields=["company_name", "postcode"],
@@ -129,22 +110,79 @@ The `key_field` is the field in your source that contains some unique code that 
     )
     ```
 
-Each [`Source`][matchbox.client.sources.Source] object requires:
+Each source needs:
 
-- A `location`, such as [`RelationalDBLocation`][matchbox.client.locations.RelationalDBLocation]. This will need a `name`, and `client`
-    - The name of a location is a way of tagging it, such that later on you can filter sources you want to retrieve from the server
-    - For a relational database, a SQLAlchemy engine is your client
-- An `extract_transform` string, which will take data from the location and transform it into your key and index fields. Its syntax will depend on the type of location
-    - For most a relational database location, this will be SQL
-- A list of `index_fields` that will be used for matching
-    - These must be found in the result of the `extract_transform` logic
-- A key field (`key_field`) that uniquely identifies each record
-    - This must be found in the result of the `extract_transform` logic
-    - The key field cannot be in the index fields
+- A `location`, such as [`RelationalDBLocation`][matchbox.client.locations.RelationalDBLocation].
+- An `extract_transform` statement that produces the source data.
+- A list of `index_fields` that Matchbox is allowed to match on.
+- A `key_field` that uniquely identifies each record in the source output.
 
-## 3. Creating dedupers
+## 3. Preparing query data
 
-Dedupe steps identify and resolve duplicates within a single source.
+To prepare model inputs, call [`query()`][matchbox.client.sources.Source.query]
+on a source or [`query()`][matchbox.client.resolvers.Resolver.query] on a
+resolver. See [`Query`][matchbox.client.queries.Query] for the full argument
+list.
+
+### Cleaning query data
+
+The `cleaning` dictionary controls which columns flow into the model.
+
+- The dictionary key becomes the output column name.
+- The dictionary value is a DuckDB SQL expression.
+- Only the cleaned columns you declare are passed through, plus `id`, `leaf_id`, and key columns.
+
+!!! tip "Include every field the model needs"
+    If a field is missing from `cleaning`, it does not reach the model. Include pass-through aliases for every field referenced by `model_settings`.
+
+### Field qualification
+
+Without cleaning, Matchbox qualifies source fields with the source name.
+
+```python
+companies_house.query().data()
+# Columns: id, companies_house_key, companies_house_company_name, ...
+```
+
+With cleaning, the result columns use the aliases you define.
+
+```python
+companies_house.query(
+    cleaning={
+        "name": f"lower({companies_house.f('company_name')})",
+        "number": companies_house.f("company_number"),
+    }
+).data()
+# Columns: id, companies_house_key, name, number
+```
+
+Use `source.f()` inside cleaning expressions when you need a qualified reference.
+
+```python
+companies_house.f("company_name")
+```
+
+## 4. Creating models
+
+To create a model, call [`deduper()`][matchbox.client.queries.Query.deduper] or
+[`linker()`][matchbox.client.queries.Query.linker] on a query. See
+[`Model`][matchbox.client.models.Model] for the full argument list.
+
+### Choosing model methodologies
+
+Matchbox includes deterministic, weighted, and learned linkers, as well as dedupers.
+
+- [`NaiveDeduper`][matchbox.client.models.dedupers.NaiveDeduper] groups records by identical cleaned fields.
+- [`DeterministicLinker`][matchbox.client.models.linkers.DeterministicLinker] links records with explicit DuckDB comparison rules.
+- [`WeightedDeterministicLinker`][matchbox.client.models.linkers.WeightedDeterministicLinker] combines several deterministic checks into a weighted score.
+- [`SplinkLinker`][matchbox.client.models.linkers.SplinkLinker] emits learned scores using [Splink](https://moj-analytical-services.github.io/splink/index.html).
+
+See the [models API](../api/client/models.md) for full settings.
+
+### Creating source-level dedupers
+
+To create a deduper, call [`query()`][matchbox.client.sources.Source.query] on a
+source and then [`deduper()`][matchbox.client.queries.Query.deduper].
 
 === "Example"
     ```python
@@ -156,138 +194,68 @@ Dedupe steps identify and resolve duplicates within a single source.
             "company_number": companies_house.f("company_number"),
         }
     ).deduper(
-        name="naive_companieshouse_companies",
-        description="Deduplication based on company name",
+        name="dedupe_companies_house",
+        description="Deduplicate Companies House companies",
         model_class=NaiveDeduper,
         model_settings={
-            "unique_fields": ["company_name", "company_number],
+            "unique_fields": ["company_name", "company_number"],
+        },
+    )
+
+    dedupe_exporters = exporters.query(
+        cleaning={
+            "company_name": f"lower({exporters.f('company_name')})",
+            "postcode": exporters.f("postcode"),
         }
+    ).deduper(
+        name="dedupe_exporters",
+        description="Deduplicate exporter records",
+        model_class=NaiveDeduper,
+        model_settings={
+            "unique_fields": ["company_name", "postcode"],
+        },
     )
     ```
 
-A query can optionally take instructions on how to clean the data. These are defined using a dictionary where:
+## 5. Creating resolvers and a linker
 
-* the dictionary **key** is the desired column name that will be output
-* the dictionary **value** is a SQL expression in DuckDB format
+To create a resolver, call
+[`resolver()`][matchbox.client.models.Model.resolver] on a model and, if
+needed, pass extra model inputs that should contribute to the same clustering
+policy. See [`Resolver`][matchbox.client.resolvers.Resolver] for the full
+argument list.
 
-!!! warning "Only cleaned columns are passed through"
-    
-    When you specify a `cleaning` dictionary, **only the columns you explicitly include** (plus `id`, `leaf_id`, and key columns) will be passed through to the next step. Any columns not mentioned in the cleaning dictionary will be dropped.
-    
-    This means you must include **all fields** you need for your model in the cleaning dictionary, even if you're just passing them through unchanged.
-
-A deduper takes:
-
-- A unique `name` for the step
-- An optional `description` explaining the purpose of the step
-- The deduplication algorithm to use (`model_class`)
-- Configuration settings (`model_settings`) for the algorithm
-
-### On cleaning
-
-!!! tip "Always clean all fields you need"
-    
-    Since only columns in the cleaning dictionary are passed through, you should include **all fields** required by your model - even if you're just aliasing them without transformation. This makes your configuration explicit and prevents fields from being accidentally dropped.
-    
-    ```python
-    # ❌ BAD: company_number will be dropped
-    cleaning={
-        "company_name": f"lower({companies_house.f('company_name')})",
-        # company_number not included - will be DROPPED!
-    }
-    model_settings={
-        "unique_fields": [
-            "company_name",
-            "company_number",  # This field won't exist!
-        ],
-    }
-    
-    # ✅ GOOD: Include all fields you need
-    cleaning = {
-        "company_name": f"lower({companies_house.f('company_name')})",
-        "company_number": companies_house.f("company_number"),  # Pass through
-    }
-
-    model_settings = {
-        "unique_fields": [
-            "company_name",
-            "company_number",  # Both fields available
-        ],
-    }
-    ```
-    
-    This approach makes your configuration explicit and ensures all necessary fields are available to your models.
-
-It's worth understanding how data moves through steps, as it helps knowing when or if to qualify column names. When would I use `"company_number"` vs. `companies_house.f("company_number")`, for example?
-
-### Columns before and after cleaning
-
-When you query a source without cleaning, all columns are qualified with the source name:
-
-```python
-# No cleaning - all columns qualified
-companies_house.query().data()
-# Columns: id, companies_house_key, companies_house_company_name, companies_house_company_number, companies_house_postcode
-```
-
-When you apply cleaning, the columns become the aliases you specify in the cleaning dictionary:
-
-```python
-# With cleaning - only specified columns, with your aliases
-companies_house.query(
-    cleaning={
-        "name": f"lower({companies_house.f('company_name')})",
-        "number": companies_house.f("company_number"),
-    }
-).data()
-# Columns: id, companies_house_key, name, number
-# Note: postcode is DROPPED because it's not in cleaning dict
-```
-
-Special columns are always passed through:
-
-- `id`: The Matchbox entity ID (always present)
-- `leaf_id`: If present, identifies the source cluster (optional)
-- Key columns: One per source (e.g., `companies_house_key`, `exporters_key`)
-
-### Qualified field references
-
-Use `source.f()` to create qualified references in SQL expressions:
-
-```python
-# Inside cleaning dictionary values (SQL expressions)
-companies_house.f("company_name")  # → "companies_house_company_name"
-
-# In model_settings, use the cleaned aliases
-model_settings = {
-    "unique_fields": ["company_name"]  # Use the alias from cleaning dict
-}
-```
-
-## 4. Creating linkers
-
-Link steps match records across different sources or models.
+Resolvers can sit between model layers. Call
+[`query()`][matchbox.client.resolvers.Resolver.query] on a resolver when you
+want the next model layer to work from a resolved entity view.
 
 === "Example"
     ```python
     from matchbox.client.models.linkers import DeterministicLinker
+    from matchbox.client.resolvers import Components, ComponentsSettings
 
-    link_ch_exporters = dedupe_companies_house.query(
-        companies_house,
-        cleaning={
-            "company_name": f"lower({companies_house.f('company_name')})",
-            "postcode": companies_house.f("postcode"),
-        },
-    ).linker(
-        dedupe_exporters.query(
-            exporters,
-            cleaning={
-                "company_name": f"lower({exporters.f('company_name')})",
-                "postcode": exporters.f("postcode"),
-            },
+    resolve_companies_house = dedupe_companies_house.resolver(
+        name="resolve_companies_house",
+        description="Resolve Companies House duplicates",
+        resolver_class=Components,
+        resolver_settings=ComponentsSettings(
+            thresholds={dedupe_companies_house.name: 1.0}
         ),
-        name="deterministic_ch_exporters",
-        description="Link Companies House to exporters",
+    )
+
+    resolve_exporters = dedupe_exporters.resolver(
+        name="resolve_exporters",
+        description="Resolve exporter duplicates",
+        resolver_class=Components,
+        resolver_settings=ComponentsSettings(
+            thresholds={dedupe_exporters.name: 1.0}
+        ),
+    )
+
+    link_resolved = resolve_companies_house.query().linker(
+        resolve_exporters.query(),
+        name="link_resolved_companies",
+        description="Link resolved company views",
         model_class=DeterministicLinker,
         model_settings={
             "left_id": "id",
@@ -297,253 +265,117 @@ Link steps match records across different sources or models.
             ],
         },
     )
-    ```
 
-A linker requires:
-
-- A second query which represents the data to link on the right side
-- A unique `name` for the step
-- An optional `description` explaining the purpose of the step
-- The linking algorithm to use (`model_class`)
-- Configuration (`model_settings`) for the algorithm
-
-As with deduplication, the `cleaning` dictionary maps field aliases to DuckDB SQL expressions that can reference input columns. See [On cleaning](#on-cleaning) for how to specify this functionality.
-
-### Available linker types
-
-Matchbox provides several linking methodologies:
-
-1. [`DeterministicLinker`][matchbox.client.models.linkers.DeterministicLinker]: Links records based on exact matches of specified fields
-
-    ```python
-    from matchbox.client.models.linkers import DeterministicLinker
-    
-    model_settings = {
-        "left_id": "id",
-        "right_id": "id",
-        "comparisons": "l.name = r.name and l.postcode = r.postcode"
-    }
-    ```
-
-2. [`WeightedDeterministicLinker`][matchbox.client.models.linkers.WeightedDeterministicLinker]: Assigns different weights to different comparison fields
-
-    ```python
-    from matchbox.client.models.linkers import WeightedDeterministicLinker
-    
-    model_settings = {
-        "left_id": "id",
-        "right_id": "id",
-        "weighted_comparisons": [
-            {"comparison": "l.company_name = r.company_name", "weight": 0.7},
-            {"comparison": "l.postcode = r.postcode", "weight": 0.3}
-        ],
-        "threshold": 0.8
-    }
-    ```
-
-3. [`SplinkLinker`][matchbox.client.models.linkers.SplinkLinker]: Uses probabilistic matching with the [Splink](https://moj-analytical-services.github.io/splink/index.html) library
-
-    ```python
-    from matchbox.client.models.linkers import SplinkLinker
-    from splink import SettingsCreator
-    import splink.comparison_library as cl
-    
-    splink_settings = SettingsCreator(
-        link_type="link_only",
-        blocking_rules_to_generate_predictions=["l.postcode = r.postcode"],
-        comparisons=[
-            cl.jaro_winkler_at_thresholds("company_name", [0.9, 0.6], term_frequency_adjustments=True)
-        ]
-    )
-    
-    model_settings = {
-        "left_id": "id",
-        "right_id": "id",
-        "linker_settings": splink_settings,
-        "linker_training_functions": [
-            {
-                "function": "estimate_probability_two_random_records_match",
-                "arguments": {
-                    "deterministic_matching_rules": "l.company_number = r.company_number",
-                    "recall": 0.7
-                }
+    companies_resolver = link_resolved.resolver(
+        dedupe_companies_house,
+        dedupe_exporters,
+        name="companies_resolver",
+        description="Resolve company entities across both sources",
+        resolver_class=Components,
+        resolver_settings=ComponentsSettings(
+            thresholds={
+                dedupe_companies_house.name: 1.0,
+                dedupe_exporters.name: 1.0,
+                link_resolved.name: 0.8,
             }
-        ],
-        "threshold": 0.8
-    }
+        ),
+    )
     ```
 
-## 5. Running and publishing the DAG
+This pattern separates scoring from clustering.
 
-Once you've defined all your steps, you can run and store the results of your [`DAG`][matchbox.client.dags.DAG].
+- Models focus on generating candidate matches and scores.
+- Resolvers decide which model edges are strong enough to merge and how several model outputs work together.
+- A DAG can include several resolvers over the same model graph, each representing a different clustering policy.
+
+## 6. Running and publishing the DAG
+
+Run every step in execution order with
+[`run_and_sync()`][matchbox.client.dags.DAG.run_and_sync].
 
 === "Example"
-    ```python    
-    # Run the entire DAG
+    ```python
     dag.run_and_sync()
     ```
 
-Once you're happy with your results, you need to publish your DAG so that other users can query from it.
-
-=== "Example"
-    ```python    
-    dag.set_default()
-    ```
-
-
-
-### Visualising DAG execution
-
-When you run a DAG, Matchbox provides real-time status information:
-
-=== "Output"
-    ```
-    ⏸️ deterministic_ch_hmrc
-    └── ⏸️ naive_companieshouse_companies
-    │   └── ⏸️ companieshouse.companies
-    └── ⏸️ deterministic_exp_imp
-        └── ⏸️ naive_hmrc_exporters
-        │   └── ⏸️ hmrc.trade__exporters
-        └── ⏸️ naive_hmrc_importers
-            └── ⏸️ hmrc.trade__importers
-    
-    ...
-    
-    ⏸️ deterministic_ch_hmrc
-    └── ⏸️ naive_companieshouse_companies
-    │   └── ⏸️ companieshouse.companies
-    └── 🔄 deterministic_exp_imp
-        └── ✅ naive_hmrc_exporters
-        │   └── ✅ hmrc.trade__exporters
-        └── ⏭️ naive_hmrc_importers
-            └── ⏭️ hmrc.trade__importers
-    
-    ...
-    
-    ✅ deterministic_ch_hmrc
-    └── ✅ naive_companieshouse_companies
-    │   └── ✅ companieshouse.companies
-    └── ✅ deterministic_exp_imp
-        └── ✅ naive_hmrc_exporters
-        │   └── ✅ hmrc.trade__exporters
-        └── ✅ naive_hmrc_importers
-            └── ✅ hmrc.trade__importers
-    ```
-
-Status indicators:
-
-- ⏸️ Awaiting execution
-- 🔄 Currently executing
-- ✅ Completed
-- ⏭️ Skipped
-
-## Advanced use cases
-
-### Multi-source linking
-
-You can link across multiple sources in a single step:
+Publish the run with [`set_default()`][matchbox.client.dags.DAG.set_default]
+when other users and services should query it.
 
 === "Example"
     ```python
-    # Link Companies House data with both exporters and importers
-    link_ch_traders = dedupe_companies_house.query(
-        companies_house,
-        cleaning={
-            "company_name": f"lower({companies_house.f('company_name')})",
-            "postcode": companies_house.f("postcode"),
-        },
-    ).linker(
-        link_exp_imp.query(
-            importers,
-            exporters,
-            cleaning={
-                "company_name": f"""
-                    coalesce(
-                        lower({exporters.f('company_name')}), 
-                        lower({importers.f('company_name')})
-                    )
-                """,
-                "postcode": f"""
-                    coalesce(
-                        {exporters.f('postcode')}, 
-                        {importers.f('postcode')}
-                    )
-                """,
-            },
-        ),
-        name="deterministic_ch_hmrc",
-        description="Link Companies House to HMRC traders",
-        model_class=DeterministicLinker,
-        model_settings={
-            "left_id": "id",
-            "right_id": "id",
-            "comparisons": [
-                """
-                    l.company_name = r.company_name
-                        and l.postcode = r.postcode
-                """
-            ],
-        },
-    )
+    dag.set_default()
     ```
 
-This example demonstrates how you can:
+`set_default()` marks the run as the published version that `load_default()` retrieves. It requires all steps in the DAG to be reachable from a single final resolver.
 
-1. Use the results of a previous linking step as input
-2. Select fields from multiple sources in a single query
-3. Use SQL functions like `coalesce()` in your cleaning expressions to handle data from multiple sources
-4. Create unified field names for comparison across sources
+### Visualising execution
 
-### Re-run a previous DAG
+Use `dag.draw()` to inspect the pipeline, or `dag.draw(mode="list")` to see the
+execution order.
 
-You might want to publish a new run of your DAG based on newer data. You can retrieve the old DAG and inspect it. You can't sync or publish it, as it will be read-only. However, you can generate a new run from it explicitly
-```python    
-# Create a new DAG identical to the previous default
-dag = DAG(name="companies").load_default().set_client(engine).new_run()
-# Run new DAG
-dag.run_and_sync()
-# Make the DAG the new default
-dag.set_default()
-```
+=== "Example"
+    ```python
+    print(dag.draw(mode="list"))
+    ```
 
-## Best practices
+    ```text
+    Collection: companies
+    └── Run: <run_id>
 
-### 1. Data preparation
+    1. 📄 companies_house
+    2. 📄 hmrc_exporters
+    3. ⚙️ dedupe_companies_house
+    4. ⚙️ dedupe_exporters
+    5. 💎 resolve_companies_house
+    6. 💎 resolve_exporters
+    7. ⚙️ link_resolved_companies
+    8. 💎 companies_resolver
+    ```
 
-Data cleaning is 90% of any record matching problem.
+## 7. Querying resolved entities
 
-- Clean your data before matching
-- Create appropriate indexes on your database tables
-- Test your cleaning functions on sample data
-- **Always include all fields needed by your models** in the cleaning dictionary
+Use [`get_matches()`][matchbox.client.dags.DAG.get_matches] to fetch
+[`ResolverMatches`][matchbox.client.results.ResolverMatches] for the default
+resolver, or for a named resolver if you pass one explicitly.
 
-### 2. Pipeline design
+=== "Example"
+    ```python
+    resolved = dag.get_matches()
+    lookup = resolved.as_lookup()
+    cluster_dump = resolved.as_dump()
 
-- Break complex matching tasks into smaller steps
-- Use appropriate batch sizes for large sources
-- Create clear, descriptive names for your steps
-- Be explicit about which fields you need at each step
+    strict_resolved = dag.get_matches(resolver="companies_resolver")
+    ```
 
-### 3. Cleaning dictionaries
+You can also call [`query()`][matchbox.client.resolvers.Resolver.query] on a
+resolver and then [`data()`][matchbox.client.queries.Query.data] if you want
+the tabular entity view behind that resolver.
 
-- **Include all fields** your model needs, even if just passing them through
-- Use consistent aliases across left and right queries when linking
-- Test your cleaning logic on sample data before running the full pipeline
-- Remember that key columns are automatically passed through
+=== "Example"
+    ```python
+    entity_query = companies_resolver.query()
+    entity_query.data()
+    ```
 
-### 4. Execution
+## 8. Re-running a published DAG
 
-- Start with small samples to test your pipeline
-- Monitor performance and adjust batch sizes accordingly
-- Use the `draw()` method to visualise and debug your DAG
-- Pass `low_memory=True` to `dag.run_and_sync()` to reduce memory usage for a scheduled pipeline
+You can load a stored DAG from the server with
+[`load_default()`][matchbox.client.dags.DAG.load_default] or
+[`load_pending()`][matchbox.client.dags.DAG.load_pending], attach a warehouse
+client with [`set_client()`][matchbox.client.dags.DAG.set_client], and then
+call [`new_run()`][matchbox.client.dags.DAG.new_run] to reuse the same
+structure for another run.
 
-## Conclusion
+=== "Example"
+    ```python
+    dag = DAG(name="companies").load_default().set_client(engine).new_run()
+    dag.run_and_sync()
+    dag.set_default()
+    ```
 
-The Matchbox DAG API provides a powerful framework for building sophisticated data matching pipelines. By combining different types of steps (index, dedupe, link) with appropriate cleaning operations and matching algorithms, you can solve complex entity resolution problems efficiently.
+## Further reading
 
-For more information, explore the API reference for specific components:
-
-- [DAG API](../api/client/dags.md)
-- [Models](../api/client/models.md)
-- [Results](../api/client/results.md)
+- [Explore DAGs](explore-dags.md)
+- [Look up matches](look-up.md)
+- [Evaluate resolver output](evaluation.md)
+- [Client API reference](../api/client/index.md)

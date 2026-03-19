@@ -13,7 +13,7 @@ nav:
   - Look up matches: client/look-up.md
   - Link and deduplicate: client/link-data.md
   - Run DAGs interactively: client/dag-interactive.md
-  - Evaluate models: client/evaluation.md
+  - Evaluate resolver output: client/evaluation.md
   - API: 
     - Overview: api/client/index.md
 - Server:
@@ -24,6 +24,8 @@ nav:
   - Data and security risks: server/risks.md
   - API: 
     - Overview: api/server/index.md
+- Migration:
+  - Pre-0.10 to 0.10: migration/pre-0.10-to-0.10.md
 - API reference:
   - Client:
     - Overview: api/client/index.md
@@ -32,6 +34,7 @@ nav:
     - Sources: api/client/sources.md
     - Queries: api/client/queries.md
     - Models: api/client/models.md
+    - Resolvers: api/client/resolvers.md
     - Evaluation: api/client/eval.md
     - Results: api/client/results.md
   - Server: 
@@ -50,6 +53,7 @@ nav:
       - Entities: api/common/factories/entities.md
       - Sources: api/common/factories/sources.md
       - Models: api/common/factories/models.md
+      - Resolvers: api/common/factories/resolvers.md
       - Scenarios: api/common/factories/scenarios.md
     - Hashing: api/common/hash.md
     - Logging: api/common/logging.md
