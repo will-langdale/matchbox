@@ -1,6 +1,7 @@
 """Tests for the Components resolver methodology."""
 
 import polars as pl
+import pytest
 
 from matchbox.client.resolvers import Components, ComponentsSettings
 from matchbox.common.arrow import SCHEMA_CLUSTERS
@@ -45,7 +46,9 @@ def test_components_compute_clusters_returns_empty_for_no_edges() -> None:
 def test_components_compute_clusters_merges_multiple_models() -> None:
     """Test Components.compute_clusters can work with multiple models."""
     method = Components(
-        settings=ComponentsSettings(thresholds={"model_a": 0.0, "model_b": 0.0})
+        settings=ComponentsSettings(
+            thresholds={"model_a": 0.0}  # one threshold implicit
+        )
     )
     model_edges = {
         "model_a": pl.DataFrame(
@@ -73,3 +76,11 @@ def test_components_compute_clusters_merges_multiple_models() -> None:
         for group in clusters.partition_by("parent_id")
     }
     assert grouped_clusters == {frozenset({1, 2}), frozenset({3, 4})}
+
+
+def test_components_compute_clusters_errors_on_unknown_model() -> None:
+    """Test that a threshold for an unknown model raises a RuntimeError."""
+    method = Components(settings=ComponentsSettings(thresholds={"fooo": 0.5}))
+
+    with pytest.raises(RuntimeError, match="Unknown models in thresholds"):
+        method.compute_clusters(model_edges={"foo": pl.DataFrame()})

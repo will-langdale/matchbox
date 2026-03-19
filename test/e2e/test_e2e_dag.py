@@ -12,7 +12,7 @@ from matchbox.client.dags import DAG
 from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
-from matchbox.client.resolvers import Components, ComponentsSettings
+from matchbox.client.resolvers import Components
 from matchbox.client.sources import Source, SourceField
 from matchbox.common.datatypes import DataTypes
 from matchbox.common.exceptions import MatchboxStepNotFoundError
@@ -199,14 +199,10 @@ class TestE2EPipelineBuilder:
         )
 
         dedupe_a_resolver = dedupe_a.resolver(
-            name="resolver_dedupe_source_a",
-            resolver_class=Components,
-            resolver_settings=ComponentsSettings(thresholds={dedupe_a.name: 0.0}),
+            name="resolver_dedupe_source_a", resolver_class=Components
         )
         dedupe_b_resolver = dedupe_b.resolver(
-            name="resolver_dedupe_source_b",
-            resolver_class=Components,
-            resolver_settings=ComponentsSettings(thresholds={dedupe_b.name: 0.0}),
+            name="resolver_dedupe_source_b", resolver_class=Components
         )
 
         # Link deduplicated sources A and B
@@ -232,13 +228,7 @@ class TestE2EPipelineBuilder:
             model_settings={"comparisons": ["l.registration_id = r.registration_id"]},
         )
         final_resolver = link_a_b.resolver(
-            name="resolver_final",
-            resolver_class=Components,
-            resolver_settings=ComponentsSettings(
-                thresholds={
-                    link_a_b.name: 0.0,
-                }
-            ),
+            name="resolver_final", resolver_class=Components
         )
 
         # === FIRST RUN ===

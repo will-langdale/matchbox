@@ -265,7 +265,7 @@ class Model(StepABC):
         *other_models: "Model",
         name: str,
         resolver_class: type["ResolverMethod"] | str,
-        resolver_settings: "ResolverSettings | dict[str, Any]",
+        resolver_settings: "ResolverSettings | dict[str, Any] | None" = None,
         description: str | None = None,
     ) -> "Resolver":
         """Create a resolver rooted at this model and add it to the DAG."""
@@ -273,6 +273,6 @@ class Model(StepABC):
             name=name,
             inputs=[self, *other_models],
             resolver_class=resolver_class,
-            resolver_settings=resolver_settings,
+            resolver_settings=resolver_settings if resolver_settings else {},
             description=description,
         )

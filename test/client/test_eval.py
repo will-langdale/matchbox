@@ -15,7 +15,7 @@ from sqlalchemy import Engine
 from matchbox.client.dags import DAG
 from matchbox.client.eval import EvalData, get_samples
 from matchbox.client.models.linkers import DeterministicLinker
-from matchbox.client.resolvers import Components, ComponentsSettings
+from matchbox.client.resolvers import Components
 from matchbox.client.results import ResolverMatches
 from matchbox.common.arrow import (
     SCHEMA_EVAL_SAMPLES,
@@ -153,14 +153,7 @@ def test_get_samples_remote(
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.key=r.key"},
     )
-    resolver = foo_bar.resolver(
-        bar_baz,
-        name="resolver",
-        resolver_class=Components,
-        resolver_settings=ComponentsSettings(
-            thresholds={foo_bar.name: 0.0, bar_baz.name: 0.0}
-        ),
-    )
+    resolver = foo_bar.resolver(bar_baz, name="resolver", resolver_class=Components)
 
     # Mock the collection and run endpoint that load_pending() calls
     collection_data = Collection(runs=[dag.run])

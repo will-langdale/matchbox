@@ -153,12 +153,7 @@ def test_query_multiple_sources(
         model_class="NaiveDeduper",
         model_settings={"unique_fields": []},
     )
-    resolver = model_foo.resolver(
-        model_bar,
-        name="resolver",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {model_foo.name: 0, model_bar.name: 0}},
-    )
+    resolver = model_foo.resolver(model_bar, name="resolver", resolver_class=Components)
 
     # Validate results (no cleaning, so all columns passed through)
     results = resolver.query(foo_source, bar_source).data()
@@ -359,12 +354,7 @@ def test_query_combine_type(
         model_class="NaiveDeduper",
         model_settings={"unique_fields": []},
     )
-    resolver = foo_model.resolver(
-        bar_model,
-        name="resolver",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {foo_model.name: 0, bar_model.name: 0}},
-    )
+    resolver = foo_model.resolver(bar_model, name="resolver", resolver_class=Components)
 
     # Validate results
     results = resolver.query(foo_source, bar_source, combine_type=combine_type).data()
@@ -457,12 +447,7 @@ def test_query_leaf_ids(
         model_class="NaiveDeduper",
         model_settings={"unique_fields": []},
     )
-    resolver = foo_model.resolver(
-        bar_model,
-        name="resolver",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {foo_model.name: 0, bar_model.name: 0}},
-    )
+    resolver = foo_model.resolver(bar_model, name="resolver", resolver_class=Components)
 
     query = resolver.query(foo_source, bar_source, combine_type=combine_type)
     data: pl.DataFrame = query.data(cache_leaf_ids=True)
@@ -566,10 +551,7 @@ def test_query_from_config() -> None:
     )
 
     resolver = linker_model.resolver(
-        dedupe_model,
-        name="resolver",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {linker_model.name: 0, dedupe_model.name: 0}},
+        dedupe_model, name="resolver", resolver_class=Components
     )
 
     # Create original query
@@ -645,12 +627,7 @@ def test_query_from_config_resolver_roundtrip() -> None:
         )
     )
 
-    resolver = linker.resolver(
-        dedupe,
-        name="resolver",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {linker.name: 0, dedupe.name: 0}},
-    )
+    resolver = linker.resolver(dedupe, name="resolver", resolver_class=Components)
 
     original_query = resolver.query(
         dag.get_source(crn_testkit.name),

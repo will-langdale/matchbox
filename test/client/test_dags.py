@@ -120,15 +120,7 @@ def test_dag_run_and_sync(
         model_settings={"comparisons": "l.field=r.field"},
     )
 
-    root = foo_bar.resolver(
-        d_foo,
-        foo_baz,
-        name="root",
-        resolver_class=Components,
-        resolver_settings={
-            "thresholds": {d_foo.name: 0, foo_bar.name: 0, foo_baz.name: 0}
-        },
-    )
+    root = foo_bar.resolver(d_foo, foo_baz, name="root", resolver_class=Components)
 
     assert set(dag.nodes.keys()) == {
         foo.name,
@@ -266,7 +258,7 @@ def test_dags_missing_dependency(sqla_sqlite_warehouse: Engine) -> None:
             inputs=[d_foo],
             name="r_foo",
             resolver_class=Components,
-            resolver_settings={"thresholds": {"d_foo": 0.0}},
+            resolver_settings={},
         )
 
     # Failure leads to no dags being added
@@ -357,12 +349,7 @@ def test_dag_name_clash(sqla_sqlite_warehouse: Engine) -> None:
         )
 
     # Create a valid resolver, then verify clashes
-    root = linker.resolver(
-        d_foo,
-        name="root",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {linker.name: 0, d_foo.name: 0}},
-    )
+    root = linker.resolver(d_foo, name="root", resolver_class=Components)
 
     # Cannot overwrite resolver with source
     updated_root_args = foo_tkit.into_dag()
@@ -380,11 +367,7 @@ def test_dag_name_clash(sqla_sqlite_warehouse: Engine) -> None:
 
     # Cannot change inputs of resolver
     with pytest.raises(ValueError, match="Cannot re-assign"):
-        linker.resolver(
-            name="root",
-            resolver_class=Components,
-            resolver_settings={"thresholds": {linker.name: 0}},
-        )
+        linker.resolver(name="root", resolver_class=Components)
 
     # After failed attempts, DAG is as we expect
     assert dag.get_source(foo.name) == foo
@@ -462,15 +445,7 @@ def test_dag_draw_tree(sqla_sqlite_warehouse: Engine) -> None:
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.field=r.field"},
     )
-    root = foo_bar.resolver(
-        d_foo,
-        foo_baz,
-        name="root",
-        resolver_class=Components,
-        resolver_settings={
-            "thresholds": {d_foo.name: 0, foo_bar.name: 0, foo_baz.name: 0}
-        },
-    )
+    root = foo_bar.resolver(d_foo, foo_baz, name="root", resolver_class=Components)
 
     node_names = [
         foo.name,
@@ -556,11 +531,7 @@ def test_dag_draw_list(sqla_sqlite_warehouse: Engine) -> None:
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.field=r.field"},
     )
-    root = foo_bar.resolver(
-        name="root",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {foo_bar.name: 0}},
-    )
+    root = foo_bar.resolver(name="root", resolver_class=Components)
 
     list_str = dag.draw(mode="list")
     lines = list_str.strip().split("\n")
@@ -622,12 +593,7 @@ def test_dag_draw_status(sqla_sqlite_warehouse: Engine, mode: str) -> None:
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.field=r.field"},
     )
-    root = foo_bar.resolver(
-        d_foo,
-        name="root",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {d_foo.name: 0, foo_bar.name: 0}},
-    )
+    root = foo_bar.resolver(d_foo, name="root", resolver_class=Components)
 
     draw_str = dag.draw(
         mode=mode,
@@ -742,13 +708,7 @@ def test_get_matches(matchbox_api: MockRouter) -> None:
         model_settings={"comparisons": "l.field=r.field"},
     )
     foo_bar_baz = foo_bar.resolver(
-        foo_dedupe,
-        bar_baz,
-        name="foo_bar_baz",
-        resolver_class=Components,
-        resolver_settings={
-            "thresholds": {foo_dedupe.name: 0, foo_bar.name: 0, bar_baz.name: 0}
-        },
+        foo_dedupe, bar_baz, name="foo_bar_baz", resolver_class=Components
     )
     dag.new_run()
 
@@ -791,10 +751,7 @@ def test_get_matches(matchbox_api: MockRouter) -> None:
 
     # Add a second resolver after the apex assertion.
     foo_bar_resolver = foo_bar.resolver(
-        foo_dedupe,
-        name="foo_bar_resolver",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {foo_dedupe.name: 0, foo_bar.name: 0}},
+        foo_dedupe, name="foo_bar_resolver", resolver_class=Components
     )
 
     # Intermediate resolver has a narrower source set (foo + bar only).
@@ -960,14 +917,7 @@ def test_lookup_key_ok(matchbox_api: MockRouter, sqla_sqlite_warehouse: Engine) 
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.field=r.field"},
     )
-    linker_foo_bar.resolver(
-        linker_bar_baz,
-        name="root",
-        resolver_class=Components,
-        resolver_settings={
-            "thresholds": {linker_foo_bar.name: 0, linker_bar_baz.name: 0}
-        },
-    )
+    linker_foo_bar.resolver(linker_bar_baz, name="root", resolver_class=Components)
 
     foo_path = StepPath(name="foo", collection=dag.name, run=dag.run)
     bar_path = StepPath(name="bar", collection=dag.name, run=dag.run)
@@ -1015,19 +965,10 @@ def test_resolver_rejects_resolver_inputs(sqla_sqlite_warehouse: Engine) -> None
         model_class=NaiveDeduper,
         model_settings={"unique_fields": []},
     )
-    first_resolver = dedupe.resolver(
-        name="resolver_1",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {dedupe.name: 0}},
-    )
+    first_resolver = dedupe.resolver(name="resolver_1", resolver_class=Components)
 
     with pytest.raises(MatchboxStepTypeError, match="Expected one of: model"):
-        dedupe.resolver(
-            first_resolver,
-            name="resolver_2",
-            resolver_class=Components,
-            resolver_settings={"thresholds": {first_resolver.name: 0, dedupe.name: 0}},
-        )
+        dedupe.resolver(first_resolver, name="resolver_2", resolver_class=Components)
 
 
 def test_lookup_key_404_source(matchbox_api: MockRouter) -> None:
@@ -1051,12 +992,7 @@ def test_lookup_key_404_source(matchbox_api: MockRouter) -> None:
         model_class=NaiveDeduper,
         model_settings={"unique_fields": []},
     )
-    linker.resolver(
-        source_dedupe,
-        name="root_resolver",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {linker.name: 0, source_dedupe.name: 0}},
-    )
+    linker.resolver(source_dedupe, name="root_resolver", resolver_class=Components)
 
     matchbox_api.get("/match").mock(
         return_value=Response(
@@ -1100,12 +1036,7 @@ def test_lookup_key_no_matches(
         model_class=NaiveDeduper,
         model_settings={"unique_fields": []},
     )
-    linker.resolver(
-        source_dedupe,
-        name="root_resolver",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {linker.name: 0, source_dedupe.name: 0}},
-    )
+    linker.resolver(source_dedupe, name="root_resolver", resolver_class=Components)
 
     # Mock empty match results
     matchbox_api.get("/match").mock(return_value=Response(200, content="[]"))
@@ -1614,11 +1545,7 @@ def test_dag_set_default_ok(
     dd = crn.query().deduper(
         name="dd", model_class=NaiveDeduper, model_settings={"unique_fields": []}
     )
-    dd.resolver(
-        name="r",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {dd.name: 0}},
-    )
+    dd.resolver(name="r", resolver_class=Components)
 
     # Mock set mutable
     api_mutable = matchbox_api.patch(
@@ -1663,11 +1590,7 @@ def test_dag_set_default_not_connected() -> None:
     dd = crn.query().deduper(
         name="dd", model_class=NaiveDeduper, model_settings={"unique_fields": []}
     )
-    dd.resolver(
-        name="r",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {dd.name: 0}},
-    )
+    dd.resolver(name="r", resolver_class=Components)
 
     with pytest.raises(RuntimeError, match="has not been connected"):
         dag.set_default()
@@ -1686,11 +1609,7 @@ def test_dag_set_default_unreachable_nodes(sqla_sqlite_warehouse: Engine) -> Non
     dd = foo.query().deduper(
         name="dd", model_class=NaiveDeduper, model_settings={"unique_fields": []}
     )
-    dd.resolver(
-        name="r",
-        resolver_class=Components,
-        resolver_settings={"thresholds": {dd.name: 0}},
-    )
+    dd.resolver(name="r", resolver_class=Components)
 
     with pytest.raises(ValueError, match="unreachable"):
         dag.set_default()

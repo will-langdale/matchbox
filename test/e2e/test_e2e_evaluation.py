@@ -13,7 +13,7 @@ from matchbox.client.dags import DAG
 from matchbox.client.eval import EvalData
 from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.models.dedupers import NaiveDeduper
-from matchbox.client.resolvers import Components, ComponentsSettings
+from matchbox.client.resolvers import Components
 from matchbox.common.factories.sources import (
     FeatureConfig,
     SourceTestkitParameters,
@@ -118,9 +118,7 @@ class TestE2EModelEvaluation:
             },
         )
         self.resolver = final_model_1.resolver(
-            name=f"resolver_{final_step_1_name}",
-            resolver_class=Components,
-            resolver_settings=ComponentsSettings(thresholds={final_model_1.name: 0.0}),
+            name=f"resolver_{final_step_1_name}", resolver_class=Components
         )
 
         dag1.run_and_sync()
@@ -160,9 +158,7 @@ class TestE2EModelEvaluation:
             model_settings={"id": "id", "unique_fields": ["company_name"]},
         )
         final_model_2.resolver(
-            name=f"resolver_{final_step_2_name}",
-            resolver_class=Components,
-            resolver_settings=ComponentsSettings(thresholds={final_model_2.name: 0.0}),
+            name=f"resolver_{final_step_2_name}", resolver_class=Components
         )
 
         dag2.run_and_sync()

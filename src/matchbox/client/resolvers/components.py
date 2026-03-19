@@ -20,12 +20,15 @@ class ComponentsSettings(ResolverSettings):
     )
 
     def validate_inputs(self, model_names: Iterable[ModelStepName]) -> None:  # noqa: D102
-        if missing := set(model_names) - set(self.thresholds.keys()):
-            raise RuntimeError(f"Missing thresholds for models: {missing}")
+        if invalid := set(self.thresholds.keys()) - set(model_names):
+            raise RuntimeError(f"Unknown models in thresholds: {invalid}")
 
 
 class Components(ResolverMethod):
-    """Resolver methodology that computes connected components."""
+    """Resolver methodology that computes connected components.
+
+    Thresholds are assumed to be 0.0 unless otherwise specified.
+    """
 
     resolver_type: ClassVar[ResolverType] = ResolverType.COMPONENTS
     settings: ComponentsSettings
@@ -41,7 +44,7 @@ class Components(ResolverMethod):
             if edges.height == 0:
                 continue
 
-            threshold = self.settings.thresholds[model_name]
+            threshold = self.settings.thresholds.get(model_name, 0.0)
             filtered_edges = edges.filter(pl.col("score") >= threshold)
 
             for left_id, right_id in filtered_edges.select(
