@@ -1,7 +1,6 @@
 """Functions and classes to define, run and register models."""
 
 import inspect
-import json
 from typing import TYPE_CHECKING, Any, ClassVar, ParamSpec, TypeVar, overload
 
 import polars as pl
@@ -142,7 +141,7 @@ class Model(StepABC):
         return ModelConfig(
             type=self.model_type,
             model_class=self.model_class.__name__,
-            model_settings=self.model_settings.model_dump_json(),
+            model_settings=self.model_settings.model_dump(mode="json"),
             left_query=self.left_query.config,
             right_query=self.right_query.config if self.right_query else None,
         )
@@ -191,7 +190,7 @@ class Model(StepABC):
             name=ModelStepName(step_name),
             description=step.description,
             model_class=step.config.model_class,
-            model_settings=json.loads(step.config.model_settings),
+            model_settings=step.config.model_settings,
             left_query=Query.from_config(step.config.left_query, dag=dag),
             right_query=Query.from_config(step.config.right_query, dag=dag)
             if step.config.right_query

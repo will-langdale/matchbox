@@ -6,6 +6,7 @@ Create Date: 2026-02-19 11:18:35.699303
 
 """
 
+import json
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -19,6 +20,15 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 SCHEMA = "mb"
+MODEL_CONFIGS = sa.Table(
+    "model_configs",
+    sa.MetaData(),
+    sa.Column("model_config_id", sa.BIGINT()),
+    sa.Column("model_settings", postgresql.JSONB()),
+    sa.Column("left_query", postgresql.JSONB()),
+    sa.Column("right_query", postgresql.JSONB()),
+    schema=SCHEMA,
+)
 
 
 def _rename_constraint(table_name: str, old_name: str, new_name: str) -> None:
@@ -34,6 +44,75 @@ def _rename_constraint(table_name: str, old_name: str, new_name: str) -> None:
 def _rename_sequence(old_name: str, new_name: str) -> None:
     """Rename a sequence in the Matchbox schema."""
     op.execute(sa.text(f"ALTER SEQUENCE {SCHEMA}.{old_name} RENAME TO {new_name}"))
+
+
+def _load_json_payload(value: object | None) -> dict[str, object] | None:
+    """Load JSON payloads stored either as JSON text or JSON objects."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = json.loads(value)
+    if not isinstance(value, dict):
+        raise TypeError(f"Expected JSON object payload, got {type(value)!r}")
+    return value
+
+
+def _rewrite_model_query_configs() -> None:
+    """Normalise legacy JSON text payloads and rewrite query config shape."""
+    bind = op.get_bind()
+    rows = bind.execute(
+        sa.select(
+            MODEL_CONFIGS.c.model_config_id,
+            MODEL_CONFIGS.c.model_settings,
+            MODEL_CONFIGS.c.left_query,
+            MODEL_CONFIGS.c.right_query,
+        )
+    ).mappings()
+
+    for row in rows:
+        model_settings = _load_json_payload(row["model_settings"])
+        left_query = _load_json_payload(row["left_query"])
+        right_query = _load_json_payload(row["right_query"])
+
+        bind.execute(
+            MODEL_CONFIGS.update()
+            .where(MODEL_CONFIGS.c.model_config_id == row["model_config_id"])
+            .values(
+                model_settings=model_settings,
+                left_query=(
+                    None
+                    if left_query is None
+                    else left_query
+                    if "sources" in left_query
+                    else {
+                        "sources": left_query["source_resolutions"],
+                        "resolver": (
+                            None
+                            if left_query.get("model_resolution") is None
+                            else f"{left_query['model_resolution']}_resolver"
+                        ),
+                        "combine_type": left_query.get("combine_type", "concat"),
+                        "cleaning": left_query.get("cleaning"),
+                    }
+                ),
+                right_query=(
+                    None
+                    if right_query is None
+                    else right_query
+                    if "sources" in right_query
+                    else {
+                        "sources": right_query["source_resolutions"],
+                        "resolver": (
+                            None
+                            if right_query.get("model_resolution") is None
+                            else f"{right_query['model_resolution']}_resolver"
+                        ),
+                        "combine_type": right_query.get("combine_type", "concat"),
+                        "cleaning": right_query.get("cleaning"),
+                    }
+                ),
+            )
+        )
 
 
 def upgrade() -> None:
@@ -128,7 +207,7 @@ def upgrade() -> None:
         sa.Column("resolver_class", sa.TEXT(), nullable=False),
         sa.Column(
             "resolver_settings",
-            postgresql.JSONB(astext_type=sa.Text()),
+            postgresql.JSONB(),
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
@@ -184,7 +263,16 @@ def upgrade() -> None:
                 resolver.resolution_id,
                 'Components',
                 jsonb_build_object(
-                    'thresholds', jsonb_build_object(model.name, model.truth)
+                    'thresholds',
+                    jsonb_strip_nulls(
+                        jsonb_build_object(
+                            model.name,
+                            CASE
+                                WHEN model.truth IS NULL THEN NULL
+                                ELSE model.truth::real / 100.0
+                            END
+                        )
+                    )
                 )
             FROM mb.resolutions model
             JOIN mb.resolutions resolver
@@ -193,6 +281,7 @@ def upgrade() -> None:
             WHERE model.type = 'model'
         """)
     )
+    _rewrite_model_query_configs()
 
     # Move cluster associations from the model to its paired resolver.
     op.execute(

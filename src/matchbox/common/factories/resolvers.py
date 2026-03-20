@@ -1,6 +1,5 @@
 """Factory helpers for resolver testkits."""
 
-import json
 from collections.abc import Iterable, Mapping
 from typing import Annotated, Any, ClassVar, Self
 
@@ -123,7 +122,7 @@ class ResolverTestkit(BaseModel):
             "name": self.resolver.name,
             "inputs": list(config.inputs),
             "resolver_class": config.resolver_class,
-            "resolver_settings": json.loads(config.resolver_settings),
+            "resolver_settings": config.resolver_settings,
             "description": self.resolver.description,
         }
 

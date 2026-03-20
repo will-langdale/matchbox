@@ -1,6 +1,5 @@
 """Resolver nodes and methodology registry for client-side execution."""
 
-import json
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -139,7 +138,7 @@ class Resolver(StepABC):
         """Generate config DTO from Resolver."""
         return ResolverConfig(
             resolver_class=self.resolver_class.__name__,
-            resolver_settings=self.resolver_settings.model_dump_json(),
+            resolver_settings=self.resolver_settings.model_dump(mode="json"),
             inputs=tuple(node.name for node in self.inputs),
         )
 
@@ -219,7 +218,7 @@ class Resolver(StepABC):
             description=step.description,
             inputs=[dag.nodes[name] for name in step.config.inputs],
             resolver_class=step.config.resolver_class,
-            resolver_settings=json.loads(step.config.resolver_settings),
+            resolver_settings=step.config.resolver_settings,
         )
 
     def query(self, *sources: Source, **kwargs: Any) -> Query:

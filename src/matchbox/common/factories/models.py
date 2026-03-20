@@ -1,6 +1,5 @@
 """Factory functions for generating model testkits and data for testing."""
 
-import json
 import warnings
 from collections import Counter
 from collections.abc import Hashable
@@ -639,7 +638,7 @@ class ModelTestkit(BaseModel):
         return {
             "name": self.model.name,
             "model_class": self.model.config.model_class,
-            "model_settings": json.loads(self.model.config.model_settings),
+            "model_settings": self.model.config.model_settings,
             "left_query": self.model.left_query,
             "right_query": self.model.right_query,
             "description": self.model.description,
