@@ -1,33 +1,29 @@
 """Interface to source data."""
 
 from collections.abc import Callable, Generator, Iterable
-from functools import wraps
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, overload
 
 import polars as pl
+import pyarrow as pa
 from pandas import DataFrame as PandasDataFrame
 from polars import DataFrame as PolarsDataFrame
 from pyarrow import Table as ArrowTable
 from pyarrow import parquet as pq
 
-from matchbox.client import _handler
 from matchbox.client.queries import Query
+from matchbox.client.steps import StepABC, post_run
+from matchbox.common.arrow import SCHEMA_INDEX
 from matchbox.common.datatypes import DataTypes
-from matchbox.common.db import (
-    QueryReturnClass,
-    QueryReturnType,
-)
+from matchbox.common.db import QueryReturnClass, QueryReturnType
 from matchbox.common.dtos import (
-    Resolution,
-    ResolutionType,
     SourceConfig,
     SourceField,
-    SourceResolutionName,
-    SourceResolutionPath,
+    SourceStepName,
+    SourceStepPath,
+    Step,
+    StepType,
 )
-from matchbox.common.exceptions import MatchboxResolutionNotFoundError
-from matchbox.common.hash import HashMethod, hash_arrow_table, hash_rows
+from matchbox.common.hash import HashMethod, hash_rows
 from matchbox.common.logging import logger, profile_time
 
 if TYPE_CHECKING:
@@ -41,26 +37,10 @@ else:
 T = TypeVar("T")
 
 
-def post_run(method: Callable[..., T]) -> Callable[..., T]:
-    """Decorator to ensure that a method is called after source run.
-
-    Raises:
-        RuntimeError: If run hasn't happened.
-    """
-
-    @wraps(method)
-    def wrapper(self: "Source", *args: Any, **kwargs: Any) -> T:
-        if self.hashes is None:
-            raise RuntimeError(
-                "The source must be run before attempting this operation."
-            )
-        return method(self, *args, **kwargs)
-
-    return wrapper
-
-
-class Source:
+class Source(StepABC):
     """Client-side wrapper for source configs."""
+
+    _local_data_schema: ClassVar[pa.Schema] = SCHEMA_INDEX
 
     @overload
     def __init__(
@@ -123,20 +103,17 @@ class Source:
                 perform query validation. It should be False when loading sources from
                 the server. Default True.
         """
+        super().__init__(dag=dag, name=name, description=description)
+
         if validate_etl:
             location.validate_extract_transform(extract_transform)
 
         self.location = location
-        self.dag = dag
-        self.name = name
-        self.description = description
         self.extract_transform = extract_transform
-        self.hashes: ArrowTable | None = None
 
         if infer_types:
             self._validate_fields(key_field, index_fields, str)
 
-            # Assumes client has been set on location
             inferred_types = location.infer_types(extract_transform)
             remote_fields = {
                 field_name: SourceField(name=field_name, type=dtype)
@@ -149,6 +126,15 @@ class Source:
                 key_field, index_fields, SourceField
             )
 
+    @property
+    def hashes(self) -> pl.DataFrame | None:
+        """The locally computed hashes. Alias for local_data."""
+        return self._local_data
+
+    @hashes.setter
+    def hashes(self, value: pl.DataFrame | None) -> None:
+        self._local_data = value
+
     def _validate_fields(
         self,
         key_field: str | SourceField,
@@ -160,12 +146,10 @@ class Source:
             raise ValueError(
                 f"Expected {type_check.__name__}, got {type(key_field).__name__}"
             )
-
         if not all(isinstance(f, type_check) for f in index_fields):
             raise ValueError(
                 f"All index_fields must be {type_check.__name__} instances"
             )
-
         return key_field, tuple(index_fields)
 
     @property
@@ -179,58 +163,43 @@ class Source:
         )
 
     @property
-    def sources(self) -> set[SourceResolutionName]:
+    def sources(self) -> set[SourceStepName]:
         """Set of source names upstream of this node."""
         return {self.name}
 
     @post_run
-    def to_resolution(self) -> Resolution:
-        """Convert to Resolution for API calls."""
-        return Resolution(
+    def to_dto(self) -> Step:
+        """Convert to Step DTO for API calls."""
+        return Step(
             description=self.description,
-            truth=None,
-            resolution_type=ResolutionType.SOURCE,
+            step_type=StepType.SOURCE,
             config=self.config,
-            fingerprint=hash_arrow_table(self.hashes),
+            fingerprint=self._fingerprint(),
         )
 
     @classmethod
-    def from_resolution(
+    def from_dto(
         cls,
-        resolution: Resolution,
-        resolution_name: str,
+        step: Step,
+        step_name: str,
         dag: DAG,
         location: Location,
+        **kwargs: Any,
     ) -> "Source":
-        """Reconstruct from Resolution."""
-        if resolution.resolution_type != ResolutionType.SOURCE:
-            raise ValueError("Resolution must be of type 'source'")
+        """Reconstruct from Step DTO."""
+        if step.step_type != StepType.SOURCE:
+            raise ValueError("Step must be of type 'source'")
 
         return cls(
             dag=dag,
             location=location,
-            name=SourceResolutionName(resolution_name),
-            extract_transform=resolution.config.extract_transform,
-            key_field=resolution.config.key_field,
-            index_fields=resolution.config.index_fields,
-            description=resolution.description,
+            name=SourceStepName(step_name),
+            extract_transform=step.config.extract_transform,
+            key_field=step.config.key_field,
+            index_fields=step.config.index_fields,
+            description=step.description,
             infer_types=False,
         )
-
-    def __hash__(self) -> int:
-        """Return a hash of the Source based on its config."""
-        return hash(self.config)
-
-    def __eq__(self, other: object) -> bool:
-        """Check equality of two Source objects based on their config."""
-        if not isinstance(other, Source):
-            return False
-        return self.config == other.config
-
-    @property
-    def cache_path(self) -> Path:
-        """The path within the DAG cache for storing this source data."""
-        return self.dag.cache_path / f"{self.name}.parquet"
 
     @overload
     def fetch(
@@ -266,7 +235,7 @@ class Source:
         return_type: QueryReturnType = QueryReturnType.POLARS,
         keys: list[str] | None = None,
     ) -> Generator[QueryReturnClass, None, None]:
-        """Applies the extract/transform logic to the source and returns batches lazily.
+        """Apply the extract/transform logic to the source and return batches lazily.
 
         Args:
             qualify_names: If True, qualify the names of the columns with the
@@ -312,13 +281,11 @@ class Source:
         return next(self.fetch(batch_size=n, return_type=return_type))
 
     @profile_time(attr="name")
-    def run(self, batch_size: int | None = None) -> ArrowTable:
+    def run(self, batch_size: int | None = None) -> pl.DataFrame:
         """Hash a dataset from its warehouse, ready to be inserted, and cache hashes.
 
         Hashes the index fields defined in the source based on the
-        extract/transform logic.
-
-        Does not hash the key field.
+        extract/transform logic. Does not hash the key field.
 
         Args:
             batch_size: If set, process data in batches internally. Indicates the
@@ -334,15 +301,13 @@ class Source:
             batch_size=batch_size, return_type=QueryReturnType.ARROW
         ):
             if writer is None:
-                # Initialise writer with the first batch's schema
                 writer = pq.ParquetWriter(
                     self.cache_path,
                     schema=batch.schema,
                     compression="snappy",
                     use_dictionary=True,
                 )
-
-            writer.write_table(batch)  # appends as a new row group
+            writer.write_table(batch)
 
         if writer is not None:
             writer.close()
@@ -373,16 +338,14 @@ class Source:
             )
             all_results.append(result)
 
-        self.hashes = (
-            pl.concat(all_results).group_by("hash").agg(pl.col("keys")).to_arrow()
-        )
+        self._local_data = pl.concat(all_results).group_by("hash").agg(pl.col("keys"))
 
-        return self.hashes
+        return self._local_data
 
     @property
-    def resolution_path(self) -> SourceResolutionPath:
-        """Returns the source resolution path."""
-        return SourceResolutionPath(
+    def path(self) -> SourceStepPath:
+        """Return the source step path."""
+        return SourceStepPath(
             collection=self.dag.name,
             run=self.dag.run,
             name=self.name,
@@ -404,14 +367,13 @@ class Source:
         return self.config.qualified_index_fields(self.name)
 
     def qualify_field(self, field: str) -> str:
-        """Qualify field names with the source name.
+        """Qualify a field name with the source name.
 
         Args:
             field: The field name to qualify.
 
         Returns:
             A single qualified field.
-
         """
         return self.config.qualify_field(self.name, field)
 
@@ -423,57 +385,9 @@ class Source:
 
         Returns:
             A single qualified field, or a list of qualified field names.
-
         """
         return self.config.f(self.name, fields)
-
-    @post_run
-    @profile_time(attr="name")
-    def sync(self) -> None:
-        """Send the source config and hashes to the server.
-
-        Not resistant to race conditions: only one client should call sync at a time.
-        """
-        log_prefix = f"Sync {self.name}"
-        resolution = self.to_resolution()
-        try:
-            existing_resolution = _handler.get_resolution(path=self.resolution_path)
-            logger.info("Found existing resolution", prefix=log_prefix)
-        except MatchboxResolutionNotFoundError:
-            existing_resolution = None
-
-        if existing_resolution:
-            if (existing_resolution.fingerprint == resolution.fingerprint) and (
-                existing_resolution.config.parents == resolution.config.parents
-            ):
-                logger.info("Updating existing resolution", prefix=log_prefix)
-                # Assumes that resolution hasn't been deleted or made incompatible
-                # Else, server will error
-                _handler.update_resolution(
-                    resolution=resolution, path=self.resolution_path
-                )
-            else:
-                logger.info(
-                    "Update not possible. Deleting existing resolution",
-                    prefix=log_prefix,
-                )
-                # Assumes that resolution hasn't been deleted, else server will error
-                _handler.delete_resolution(path=self.resolution_path, certain=True)
-                existing_resolution = None
-
-        if not existing_resolution:
-            logger.info("Creating new resolution", prefix=log_prefix)
-            # Assumes that resolution hasn't since been re-created.
-            # Else, server will error
-            _handler.create_resolution(resolution=resolution, path=self.resolution_path)
-            # Assumes resolution has not been deleted or made incompatible
-            logger.info("Setting data for new resolution", prefix=log_prefix)
-            _handler.set_data(path=self.resolution_path, data=self.hashes)
 
     def query(self, **kwargs: Any) -> Query:
         """Generate a query for this source."""
         return Query(self, **kwargs, dag=self.dag)
-
-    def clear_data(self) -> None:
-        """Deletes data computed for node."""
-        self.hashes = None

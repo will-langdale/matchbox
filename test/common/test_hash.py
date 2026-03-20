@@ -4,57 +4,10 @@ import pytest
 
 from matchbox.common.hash import (
     HashMethod,
-    IntMap,
     hash_arrow_table,
+    hash_clusters,
     hash_rows,
 )
-
-
-def test_intmap_basic() -> None:
-    im1 = IntMap(salt=10)
-    a = im1.index(1, 2)
-    b = im1.index(3, 4)
-    c = im1.index(a, b)
-
-    assert len({a, b, c}) == 3
-    assert max(a, b, c) < 0
-
-
-def test_intmap_same() -> None:
-    im1 = IntMap(salt=10)
-    a = im1.index(1, 2)
-    b = im1.index(3, 4)
-    c = im1.index(a, b)
-
-    im2 = IntMap(salt=10)
-    x = im2.index(1, 2)
-    y = im2.index(3, 4)
-    z = im2.index(a, b)
-
-    assert (a, b, c) == (x, y, z)
-
-
-def test_intmap_different() -> None:
-    im1 = IntMap(salt=10)
-    a = im1.index(1, 2)
-    b = im1.index(3, 4)
-    c = im1.index(a, b)
-
-    im2 = IntMap(salt=11)
-    x = im2.index(1, 2)
-    y = im2.index(3, 4)
-    z = im2.index(a, b)
-
-    for v1, v2 in zip([a, b, c], [x, y, z], strict=True):
-        assert v1 != v2
-
-
-def test_intmap_unordered() -> None:
-    im1 = IntMap(salt=10)
-    a = im1.index(1, 2, 3)
-    b = im1.index(3, 1, 2)
-
-    assert a == b
 
 
 @pytest.mark.parametrize(
@@ -306,56 +259,56 @@ class TestNormalisation:
                 {
                     "left_id": [1, 2, 3],
                     "right_id": [4, 5, 6],
-                    "probability": [0.8, 0.9, 0.7],
+                    "score": [0.8, 0.9, 0.7],
                 }
             ),
             "ids_swapped": pa.Table.from_pydict(
                 {
                     "left_id": [4, 5, 6],
                     "right_id": [1, 2, 3],
-                    "probability": [0.8, 0.9, 0.7],
+                    "score": [0.8, 0.9, 0.7],
                 }
             ),
             "data_changed": pa.Table.from_pydict(
                 {
                     "left_id": [1, 2, 3],
                     "right_id": [4, 5, 6],
-                    "probability": [0.8, 0.9, 0.8],  # Changed last probability
+                    "score": [0.8, 0.9, 0.8],  # Changed last score
                 }
             ),
             "rows_reordered": pa.Table.from_pydict(
                 {
                     "left_id": [2, 1, 3],
                     "right_id": [5, 4, 6],
-                    "probability": [0.9, 0.8, 0.7],
+                    "score": [0.9, 0.8, 0.7],
                 }
             ),
             "with_nulls_a": pa.Table.from_pydict(
                 {
                     "left_id": [1, None, 3],
                     "right_id": [None, 5, 6],
-                    "probability": [0.8, 0.9, 0.7],
+                    "score": [0.8, 0.9, 0.7],
                 }
             ),
             "with_nulls_b": pa.Table.from_pydict(
                 {
                     "left_id": [None, 5, 6],
                     "right_id": [1, None, 3],
-                    "probability": [0.8, 0.9, 0.7],
+                    "score": [0.8, 0.9, 0.7],
                 }
             ),
             "with_duplicates": pa.Table.from_pydict(
                 {
                     "left_id": [1, 1, 2],
                     "right_id": [1, 2, 1],
-                    "probability": [0.8, 0.9, 0.7],
+                    "score": [0.8, 0.9, 0.7],
                 }
             ),
             "empty": pa.Table.from_pydict(
                 {
                     "left_id": [],
                     "right_id": [],
-                    "probability": [],
+                    "score": [],
                 }
             ),
         }
@@ -472,3 +425,37 @@ class TestNormalisation:
         assert hash_empty == b"empty_table_hash", (
             "Empty tables should return consistent special hash value"
         )
+
+
+def test_hash_clusters_ignores_parent_labels_and_row_order() -> None:
+    table_a = pa.Table.from_pydict(
+        {
+            "parent_id": [1, 1, 2, 2],
+            "child_id": [10, 11, 20, 21],
+        }
+    )
+    table_b = pa.Table.from_pydict(
+        {
+            "parent_id": [99, 42, 42, 99],
+            "child_id": [11, 20, 21, 10],
+        }
+    )
+
+    assert hash_clusters(table_a) == hash_clusters(table_b)
+
+
+def test_hash_clusters_changes_when_membership_changes() -> None:
+    baseline = pa.Table.from_pydict(
+        {
+            "parent_id": [1, 1, 2, 2],
+            "child_id": [10, 11, 20, 21],
+        }
+    )
+    changed = pa.Table.from_pydict(
+        {
+            "parent_id": [1, 1, 2, 2],
+            "child_id": [10, 11, 20, 22],
+        }
+    )
+
+    assert hash_clusters(baseline) != hash_clusters(changed)

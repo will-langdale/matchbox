@@ -12,9 +12,10 @@ from matchbox.client.dags import DAG
 from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
+from matchbox.client.resolvers import Components
 from matchbox.client.sources import Source, SourceField
 from matchbox.common.datatypes import DataTypes
-from matchbox.common.exceptions import MatchboxResolutionNotFoundError
+from matchbox.common.exceptions import MatchboxStepNotFoundError
 from matchbox.common.factories.sources import (
     FeatureConfig,
     SourceTestkitParameters,
@@ -197,15 +198,22 @@ class TestE2EPipelineBuilder:
             model_settings={"unique_fields": ["registration_id"]},
         )
 
+        dedupe_a_resolver = dedupe_a.resolver(
+            name="resolver_dedupe_source_a", resolver_class=Components
+        )
+        dedupe_b_resolver = dedupe_b.resolver(
+            name="resolver_dedupe_source_b", resolver_class=Components
+        )
+
         # Link deduplicated sources A and B
-        link_a_b = dedupe_a.query(
+        link_a_b = dedupe_a_resolver.query(
             source_a,
             cleaning={
                 "company_name": self._clean_company_name(source_a.f("company_name")),
                 "registration_id": source_a.f("registration_id"),
             },
         ).linker(
-            dedupe_b.query(
+            dedupe_b_resolver.query(
                 source_b,
                 cleaning={
                     "company_name": self._clean_company_name(
@@ -219,6 +227,9 @@ class TestE2EPipelineBuilder:
             model_class=DeterministicLinker,
             model_settings={"comparisons": ["l.registration_id = r.registration_id"]},
         )
+        final_resolver = link_a_b.resolver(
+            name="resolver_final", resolver_class=Components
+        )
 
         # === FIRST RUN ===
         logging.info("Running DAG for the first time")
@@ -231,7 +242,7 @@ class TestE2EPipelineBuilder:
         link_a_b.sync()
 
         # Basic verification - we have some linked results and can retrieve them
-        final_df = link_a_b.query(source_a, source_b).data()
+        final_df = final_resolver.query(source_a, source_b).data()
 
         # # Should have linked results
         assert len(final_df) > 0, "Expected some results from first run"
@@ -257,7 +268,7 @@ class TestE2EPipelineBuilder:
         assert len(matches[source_a.name]) >= 1
 
         # Can retrieve whole lookup
-        dag1_lookup = dag.resolve().as_lookup()
+        dag1_lookup = dag.get_matches().as_lookup()
 
         # Set as new default
         dag.set_default()
@@ -294,7 +305,7 @@ class TestE2EPipelineBuilder:
 
         # The lookup is identical
         assert_frame_equal(
-            rerun_dag.resolve().as_lookup(),
+            rerun_dag.get_matches().as_lookup(),
             dag1_lookup,
             check_column_order=False,
             check_row_order=False,
@@ -329,5 +340,5 @@ class TestE2EPipelineBuilder:
         # Possible to overwrite one node on server
         source_a.sync()
         # This will cause downstream queries to fail
-        with pytest.raises(MatchboxResolutionNotFoundError):
-            pending_dag.get_model("final").query(source_a).data()
+        with pytest.raises(MatchboxStepNotFoundError):
+            pending_dag.get_resolver("resolver_final").query(source_a).data()

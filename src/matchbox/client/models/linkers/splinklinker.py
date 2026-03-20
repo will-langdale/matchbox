@@ -122,7 +122,7 @@ class SplinkSettings(LinkerSettings):
     threshold: float | None = Field(
         default=None,
         description="""
-            The probability above which matches will be kept.
+            The score above which matches will be kept.
 
             None is used to indicate no threshold.
             
@@ -246,12 +246,12 @@ class SplinkLinker(Linker):
                     pl.col(f"{self.settings.right_id}_r")
                     .cast(self._id_dtype_r)
                     .alias("right_id"),
-                    pl.col("match_probability").cast(pl.Float32).alias("probability"),
+                    pl.col("match_probability").cast(pl.Float32).alias("score"),
                 ]
             )
-            .select(["left_id", "right_id", "probability"])
+            .select(["left_id", "right_id", "score"])
             # Mutiple blocking rules can lead to multiple matches
             .group_by(["left_id", "right_id"])
-            .agg(pl.col("probability").max())
+            .agg(pl.col("score").max())
             .collect()
         )

@@ -26,19 +26,19 @@ class TestMatchboxQueryBackend:
         self.scenario = partial(setup_scenario, warehouse=sqla_sqlite_warehouse)
 
     def test_query_only_source(self) -> None:
-        """Test querying data from a link point of truth."""
+        """Test querying data from a single source and no resolver."""
         with self.scenario(self.backend, "index") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
 
             df_crn_sample = self.backend.query(
-                source=crn_testkit.resolution_path,
+                source=crn_testkit.path,
                 limit=10,
             )
 
             assert isinstance(df_crn_sample, pa.Table)
             assert df_crn_sample.num_rows == 10
 
-            df_crn_full = self.backend.query(source=crn_testkit.resolution_path)
+            df_crn_full = self.backend.query(source=crn_testkit.path)
 
             assert df_crn_full.num_rows == crn_testkit.data.num_rows
             assert df_crn_full.schema.equals(SCHEMA_QUERY)
@@ -49,21 +49,23 @@ class TestMatchboxQueryBackend:
             crn_testkit = dag_testkit.sources.get("crn")
 
             df_crn_full = self.backend.query(
-                source=crn_testkit.resolution_path, return_leaf_id=True
+                source=crn_testkit.path, return_leaf_id=True
             )
 
             assert df_crn_full.num_rows == crn_testkit.data.num_rows
             assert df_crn_full.schema.equals(SCHEMA_QUERY_WITH_LEAVES)
 
-    def test_query_with_dedupe_model(self) -> None:
-        """Test querying data from a deduplication point of truth."""
+    def test_query_with_dedupe_resolver(self) -> None:
+        """Test querying data from a single source and a resolver."""
         with self.scenario(self.backend, "dedupe") as dag_testkit:
             crn_testkit = dag_testkit.sources.get("crn")
-            naive_crn_testkit = dag_testkit.models.get("naive_test_crn")
+            dedupe_resolver_path = dag_testkit.resolvers[
+                "resolver_naive_test_crn"
+            ].resolver.path
 
             df_crn = self.backend.query(
-                source=crn_testkit.resolution_path,
-                point_of_truth=naive_crn_testkit.resolution_path,
+                source=crn_testkit.path,
+                resolver=dedupe_resolver_path,
             )
 
             assert isinstance(df_crn, pa.Table)
@@ -76,17 +78,19 @@ class TestMatchboxQueryBackend:
                 linked.true_entity_subset("crn")
             )
 
-    def test_query_with_link_model(self) -> None:
-        """Test querying data from a link point of truth."""
+    def test_query_with_link_resolver(self) -> None:
+        """Test querying data from several sources and a shared resolver."""
         with self.scenario(self.backend, "link") as dag_testkit:
             linker_name = "deterministic_naive_test_crn_naive_test_dh"
             crn_testkit = dag_testkit.sources.get("crn")
             dh_testkit = dag_testkit.sources.get("dh")
-            linker_testkit = dag_testkit.models.get(linker_name)
+            linker_resolver_path = dag_testkit.resolvers[
+                f"resolver_{linker_name}"
+            ].resolver.path
 
             df_crn = self.backend.query(
-                source=crn_testkit.resolution_path,
-                point_of_truth=linker_testkit.resolution_path,
+                source=crn_testkit.path,
+                resolver=linker_resolver_path,
             )
 
             assert isinstance(df_crn, pa.Table)
@@ -94,8 +98,8 @@ class TestMatchboxQueryBackend:
             assert df_crn.schema.equals(SCHEMA_QUERY)
 
             df_dh = self.backend.query(
-                source=dh_testkit.resolution_path,
-                point_of_truth=linker_testkit.resolution_path,
+                source=dh_testkit.path,
+                resolver=linker_resolver_path,
             )
 
             assert isinstance(df_dh, pa.Table)
@@ -113,66 +117,15 @@ class TestMatchboxQueryBackend:
                 linked.true_entity_subset("crn", "dh")
             )
 
-    def test_threshold_query_with_link_model(self) -> None:
-        """Test querying data from a link point of truth."""
-        with self.scenario(self.backend, "link") as dag_testkit:
-            linker_name = "probabilistic_naive_test_crn_naive_test_cdms"
-            crn_testkit = dag_testkit.sources.get("crn")
-            cdms_testkit = dag_testkit.sources.get("cdms")
-            linker_testkit = dag_testkit.models.get(linker_name)
-
-            df_crn = self.backend.query(
-                source=crn_testkit.resolution_path,
-                point_of_truth=linker_testkit.resolution_path,
-            )
-
-            assert isinstance(df_crn, pa.Table)
-            assert df_crn.num_rows == crn_testkit.data.num_rows
-            assert df_crn.schema.equals(SCHEMA_QUERY)
-
-            df_cdms = self.backend.query(
-                source=cdms_testkit.resolution_path,
-                point_of_truth=linker_testkit.resolution_path,
-            )
-
-            assert isinstance(df_cdms, pa.Table)
-            assert df_cdms.num_rows == cdms_testkit.data.num_rows
-            assert df_cdms.schema.equals(SCHEMA_QUERY)
-
-            # Assumes CRN and DH come from same LinkedSourcesTestkit
-            linked = dag_testkit.source_to_linked["crn"]
-
-            # Test query with threshold
-            df_crn_threshold = self.backend.query(
-                source=crn_testkit.resolution_path,
-                point_of_truth=linker_testkit.resolution_path,
-                threshold=100,
-            )
-            df_cdms_threshold = self.backend.query(
-                source=cdms_testkit.resolution_path,
-                point_of_truth=linker_testkit.resolution_path,
-                threshold=100,
-            )
-            threshold_ids = pa.concat_arrays(
-                [
-                    df_crn_threshold["id"].combine_chunks(),
-                    df_cdms_threshold["id"].combine_chunks(),
-                ]
-            )
-
-            # Query returns more clusters when threshold exceeds
-            # true entity match probabilities
-            assert pc.count_distinct(threshold_ids).as_py() > len(
-                linked.true_entity_subset("crn", "cdms")
-            )
-
     def test_match_one_to_many(self) -> None:
         """Test that matching data works when the target has many IDs."""
         with self.scenario(self.backend, "link") as dag_testkit:
             linker_name = "deterministic_naive_test_crn_naive_test_dh"
             crn_testkit = dag_testkit.sources.get("crn")
             dh_testkit = dag_testkit.sources.get("dh")
-            linker_testkit = dag_testkit.models.get(linker_name)
+            linker_resolver_path = dag_testkit.resolvers[
+                f"resolver_{linker_name}"
+            ].resolver.path
 
             # Assumes CRN and DH come from same LinkedSourcesTestkit
             linked = dag_testkit.source_to_linked["crn"]
@@ -185,15 +138,15 @@ class TestMatchboxQueryBackend:
 
             res = self.backend.match(
                 key=next(iter(source_entity.keys["dh"])),
-                source=dh_testkit.resolution_path,
-                targets=[crn_testkit.resolution_path],
-                point_of_truth=linker_testkit.resolution_path,
+                source=dh_testkit.path,
+                targets=[crn_testkit.path],
+                resolver=linker_resolver_path,
             )
 
             assert len(res) == 1
             assert isinstance(res[0], Match)
-            assert res[0].source == dh_testkit.source.resolution_path
-            assert res[0].target == crn_testkit.source.resolution_path
+            assert res[0].source == dh_testkit.source.path
+            assert res[0].target == crn_testkit.source.path
             assert res[0].cluster is not None
             assert res[0].source_id == source_entity.keys["dh"]
             assert res[0].target_id == source_entity.keys["crn"]
@@ -204,7 +157,9 @@ class TestMatchboxQueryBackend:
             linker_name = "deterministic_naive_test_crn_naive_test_dh"
             crn_testkit = dag_testkit.sources.get("crn")
             dh_testkit = dag_testkit.sources.get("dh")
-            linker_testkit = dag_testkit.models.get(linker_name)
+            linker_resolver_path = dag_testkit.resolvers[
+                f"resolver_{linker_name}"
+            ].resolver.path
 
             # Assumes CRN and DH come from same LinkedSourcesTestkit
             linked = dag_testkit.source_to_linked["crn"]
@@ -217,15 +172,15 @@ class TestMatchboxQueryBackend:
 
             res = self.backend.match(
                 key=next(iter(source_entity.keys["crn"])),
-                source=crn_testkit.resolution_path,
-                targets=[dh_testkit.resolution_path],
-                point_of_truth=linker_testkit.resolution_path,
+                source=crn_testkit.path,
+                targets=[dh_testkit.path],
+                resolver=linker_resolver_path,
             )
 
             assert len(res) == 1
             assert isinstance(res[0], Match)
-            assert res[0].source == crn_testkit.source.resolution_path
-            assert res[0].target == dh_testkit.source.resolution_path
+            assert res[0].source == crn_testkit.source.path
+            assert res[0].target == dh_testkit.source.path
             assert res[0].cluster is not None
             assert res[0].source_id == source_entity.keys["crn"]
             assert res[0].target_id == source_entity.keys["dh"]
@@ -236,7 +191,9 @@ class TestMatchboxQueryBackend:
             linker_name = "deterministic_naive_test_crn_naive_test_dh"
             crn_testkit = dag_testkit.sources.get("crn")
             dh_testkit = dag_testkit.sources.get("dh")
-            linker_testkit = dag_testkit.models.get(linker_name)
+            linker_resolver_path = dag_testkit.resolvers[
+                f"resolver_{linker_name}"
+            ].resolver.path
 
             # Assumes CRN and DH come from same LinkedSourcesTestkit
             linked = dag_testkit.source_to_linked["crn"]
@@ -249,15 +206,15 @@ class TestMatchboxQueryBackend:
 
             res = self.backend.match(
                 key=next(iter(source_entity.keys["crn"])),
-                source=crn_testkit.resolution_path,
-                targets=[dh_testkit.resolution_path],
-                point_of_truth=linker_testkit.resolution_path,
+                source=crn_testkit.path,
+                targets=[dh_testkit.path],
+                resolver=linker_resolver_path,
             )
 
             assert len(res) == 1
             assert isinstance(res[0], Match)
-            assert res[0].source == crn_testkit.source.resolution_path
-            assert res[0].target == dh_testkit.source.resolution_path
+            assert res[0].source == crn_testkit.source.path
+            assert res[0].target == dh_testkit.source.path
             assert res[0].cluster is not None
             assert res[0].source_id == source_entity.keys["crn"]
             assert res[0].target_id == source_entity.keys.get("dh", set())
@@ -268,56 +225,24 @@ class TestMatchboxQueryBackend:
             linker_name = "deterministic_naive_test_crn_naive_test_dh"
             crn_testkit = dag_testkit.sources.get("crn")
             dh_testkit = dag_testkit.sources.get("dh")
-            linker_testkit = dag_testkit.models.get(linker_name)
+            linker_resolver_path = dag_testkit.resolvers[
+                f"resolver_{linker_name}"
+            ].resolver.path
 
             # Use a non-existent source key
             non_existent_key = "foo"
 
             res = self.backend.match(
                 key=non_existent_key,
-                source=crn_testkit.resolution_path,
-                targets=[dh_testkit.resolution_path],
-                point_of_truth=linker_testkit.resolution_path,
+                source=crn_testkit.path,
+                targets=[dh_testkit.path],
+                resolver=linker_resolver_path,
             )
 
             assert len(res) == 1
             assert isinstance(res[0], Match)
-            assert res[0].source == crn_testkit.source.resolution_path
-            assert res[0].target == dh_testkit.source.resolution_path
+            assert res[0].source == crn_testkit.source.path
+            assert res[0].target == dh_testkit.source.path
             assert res[0].cluster is None
             assert res[0].source_id == set()
             assert res[0].target_id == set()
-
-    def test_threshold_match_many_to_one(self) -> None:
-        """Test that matching data works when the target has many IDs."""
-        with self.scenario(self.backend, "link") as dag_testkit:
-            linker_name = "probabilistic_naive_test_crn_naive_test_cdms"
-            crn_testkit = dag_testkit.sources.get("crn")
-            dh_testkit = dag_testkit.sources.get("dh")
-            linker_testkit = dag_testkit.models.get(linker_name)
-
-            # Assumes CRN and DH come from same LinkedSourcesTestkit
-            linked = dag_testkit.source_to_linked["crn"]
-
-            # A random one:many entity
-            source_entity: SourceEntity = linked.find_entities(
-                min_appearances={"crn": 2, "dh": 1},
-                max_appearances={"dh": 1},
-            )[0]
-
-            res = self.backend.match(
-                key=next(iter(source_entity.keys["crn"])),
-                source=crn_testkit.resolution_path,
-                targets=[dh_testkit.resolution_path],
-                point_of_truth=linker_testkit.resolution_path,
-                threshold=100,
-            )
-
-            assert len(res) == 1
-            assert isinstance(res[0], Match)
-            assert res[0].source == crn_testkit.source.resolution_path
-            assert res[0].target == dh_testkit.source.resolution_path
-            assert res[0].source_id == source_entity.keys["crn"]
-            # Match does not return true target ids when threshold
-            # exceeds match probability
-            assert len(res[0].target_id) < len(source_entity.keys["dh"])

@@ -1,20 +1,18 @@
 """Factory functions for generating model testkits and data for testing."""
 
-import json
 import warnings
 from collections import Counter
 from collections.abc import Hashable
 from functools import cache
 from textwrap import dedent
-from typing import Any, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Self, TypeVar
 
 import numpy as np
 import polars as pl
 import pyarrow as pa
-import rustworkx as rx
 from faker import Faker
 from pyarrow import compute as pc
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import create_engine
 
 from matchbox.client.dags import DAG
@@ -23,28 +21,33 @@ from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.models.models import Model
 from matchbox.client.queries import Query
-from matchbox.client.results import ModelResults
-from matchbox.common.arrow import SCHEMA_RESULTS
+from matchbox.client.results import normalise_model_scores
+from matchbox.common.arrow import SCHEMA_MODEL_EDGES
 from matchbox.common.dtos import (
-    ModelResolutionName,
-    ModelResolutionPath,
+    ModelStepName,
+    ModelStepPath,
     ModelType,
-    SourceResolutionName,
+    SourceStepName,
 )
 from matchbox.common.factories.entities import (
     ClusterEntity,
     FeatureConfig,
     SourceEntity,
     SuffixRule,
-    probabilities_to_results_entities,
     query_to_cluster_entities,
+    scores_to_results_entities,
 )
 from matchbox.common.factories.sources import (
     SourceTestkit,
     SourceTestkitParameters,
     linked_sources_factory,
 )
-from matchbox.common.transform import DisjointSet, graph_results
+from matchbox.common.transform import DisjointSet
+
+if TYPE_CHECKING:
+    from matchbox.common.factories.resolvers import ResolverTestkit
+else:
+    ResolverTestkit = Any
 
 T = TypeVar("T", bound=Hashable)
 
@@ -58,7 +61,7 @@ class MockDeduper(Deduper):
 
     def dedupe(self, data: pl.DataFrame) -> pl.DataFrame:
         """Mock dedupe method."""
-        return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_RESULTS))
+        return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_MODEL_EDGES))
 
 
 class MockLinker(Linker):
@@ -70,34 +73,40 @@ class MockLinker(Linker):
 
     def link(self, left: pl.DataFrame, right: pl.DataFrame) -> pl.DataFrame:
         """Mock link method."""
-        return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_RESULTS))
+        return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_MODEL_EDGES))
 
 
 add_model_class(MockDeduper)
 add_model_class(MockLinker)
 
 
-def component_report(all_nodes: list[Any], table: pl.DataFrame) -> dict:
-    """Fast reporting on connected components using rustworkx.
+def component_report(all_nodes: list[int], table: pl.DataFrame) -> dict:
+    """Fast reporting on connected components.
 
     Args:
         all_nodes: list of identities of inputs being matched
-        table: Polars dataframe with 'left', 'right' columns
+        table: Polars dataframe matching SCHEMA_MODEL_EDGES
 
     Returns:
         dictionary containing basic component statistics
     """
-    graph, _, _ = graph_results(table, all_nodes)
-    components = rx.connected_components(graph)
+    ds = DisjointSet[int]()
+    for node in all_nodes:
+        ds.add(node)
+    for left_id, right_id in table.select(["left_id", "right_id"]).rows():
+        ds.union(left_id, right_id)
+
+    components = ds.get_components()
     component_sizes = Counter(len(component) for component in components)
+    total_nodes = sum(component_sizes.values())
 
     return {
         "num_components": len(components),
-        "total_nodes": graph.num_nodes(),
-        "total_edges": graph.num_edges(),
+        "total_nodes": total_nodes,
+        "total_edges": len(table),
         "component_sizes": component_sizes,
-        "min_component_size": min(component_sizes.keys()),
-        "max_component_size": max(component_sizes.keys()),
+        "min_component_size": min(component_sizes.keys()) if component_sizes else 0,
+        "max_component_size": max(component_sizes.keys()) if component_sizes else 0,
     }
 
 
@@ -106,7 +115,7 @@ def validate_components(
     entities: set[ClusterEntity],
     source_entities: set[SourceEntity],
 ) -> bool:
-    """Validate that probability edges create valid components.
+    """Validate that score edges create valid components.
 
     Each component should be a subset of exactly one source entity.
 
@@ -121,7 +130,7 @@ def validate_components(
     # Map IDs to ClusterEntity objects for lookup
     id_to_entity = {entity.id: entity for entity in entities}
 
-    # Union entities based on probability edges
+    # Union entities based on score edges
     for left_id, right_id in edges:
         left = id_to_entity[left_id]
         right = id_to_entity[right_id]
@@ -246,31 +255,31 @@ def calculate_min_max_edges(
 
 
 @cache
-def generate_dummy_probabilities(
+def generate_dummy_scores(
     left_values: tuple[int],
     right_values: tuple[int] | None,
-    prob_range: tuple[float, float],
+    score_range: tuple[float, float],
     num_components: int,
     total_rows: int | None = None,
     seed: int = 42,
 ) -> pl.DataFrame:
-    """Generate dummy Arrow probabilities data with guaranteed isolated components.
+    """Generate dummy Arrow scores data with guaranteed isolated components.
 
-    While much of the factory system uses generate_entity_probabilities, this function
+    While much of the factory system uses generate_entity_scores, this function
     is still in use in PostgreSQL benchmarking, and has been designed to be performant
     at scale.
 
     Args:
         left_values: Tuple of integers to use for left column
         right_values: Tuple of integers to use for right column. If None, assume we
-            are generating probabilities for deduplication
-        prob_range: Tuple of (min_prob, max_prob) to constrain probabilities
+            are generating scores for deduplication
+        score_range: Tuple of (min_score, max_score) to constrain scores
         num_components: Number of distinct connected components to generate
         total_rows: Total number of rows to generate
         seed: Random seed for reproducibility
 
     Returns:
-        Polars dataframe with 'left_id', 'right_id', and 'probability' columns
+        Polars dataframe with 'left_id', 'right_id', and 'score' columns
     """
     # Validate inputs
     deduplicate = False
@@ -323,10 +332,6 @@ def generate_dummy_probabilities(
 
     # Create seeded random number generator
     rng = np.random.default_rng(seed=seed)
-
-    # Convert probability range to integers (60-80 for 0.60-0.80)
-    prob_min = int(prob_range[0] * 100)
-    prob_max = int(prob_range[1] * 100)
 
     # Split values into completely separate groups for each component
     left_components = np.array_split(np.array(left_values), num_components)
@@ -408,52 +413,58 @@ def generate_dummy_probabilities(
                 e for i, e in enumerate(all_possible_edges) if i in extra_edges_idx
             ]
             component_edges += extra_edges
-        random_probs = rng.integers(prob_min, prob_max + 1, size=len(component_edges))
+        random_scores = rng.uniform(
+            score_range[0], score_range[1], size=len(component_edges)
+        ).astype(np.float32)
 
         component_edges = [
             (le, ri, pr)
-            for (le, ri), pr in zip(component_edges, random_probs, strict=True)
+            for (le, ri), pr in zip(component_edges, random_scores, strict=True)
         ]
 
         all_edges.extend(component_edges)
 
     # Convert to arrays
-    lefts, rights, probs = zip(*all_edges, strict=True)
+    lefts, rights, score_values = zip(*all_edges, strict=True)
 
     return pl.DataFrame(
-        {"left_id": lefts, "right_id": rights, "probability": probs},
-        schema={"left_id": pl.UInt64, "right_id": pl.UInt64, "probability": pl.UInt8},
+        {"left_id": lefts, "right_id": rights, "score": score_values},
+        schema={
+            "left_id": pl.UInt64,
+            "right_id": pl.UInt64,
+            "score": pl.Float32,
+        },
     )
 
 
-def generate_entity_probabilities(
+def generate_entity_scores(
     left_entities: frozenset[ClusterEntity],
     right_entities: frozenset[ClusterEntity] | None,
     source_entities: frozenset[SourceEntity],
-    prob_range: tuple[float, float] = (0.8, 1.0),
+    score_range: tuple[float, float] = (0.8, 1.0),
     seed: int = 42,
 ) -> pl.DataFrame:
-    """Generate probabilities that will recover entity relationships.
+    """Generate scores that will recover entity relationships.
 
     Compares ClusterEntity objects against ground truth SourceEntities by checking
     whether their EntityReferences are subsets of the source entities. Initially
-    focused on generating fully connected, correct probabilities only.
+    focused on generating fully connected, correct scores only.
 
     Args:
         left_entities: Set of ClusterEntity objects from left input
         right_entities: Set of ClusterEntity objects from right input. If None, assume
             we are deduplicating left_entities.
         source_entities: Ground truth set of SourceEntities
-        prob_range: Range of probabilities to assign to matches. All matches will
-            be assigned a random probability in this range.
+        score_range: Range of scores to assign to matches. All matches will
+            be assigned a random score in this range.
         seed: Random seed for reproducibility
 
     Returns:
-        PyArrow Table with 'left_id', 'right_id', and 'probability' columns
+        PyArrow Table with 'left_id', 'right_id', and 'score' columns
     """
     # Validate inputs
-    if not (0 <= prob_range[0] <= prob_range[1] <= 1):
-        raise ValueError("Probabilities must be increasing values between 0 and 1")
+    if not (0 <= score_range[0] <= score_range[1] <= 1):
+        raise ValueError("Scores must be increasing values between 0 and 1")
 
     # Handle deduplication case
     if right_entities is None:
@@ -496,13 +507,9 @@ def generate_entity_probabilities(
         if entity in right_entities:  # Note: could be in both for deduplication
             source_groups[source][1].add(entity)
 
-    # Generate probability edges for each group
+    # Generate score edges for each group
     edges = []
     rng = np.random.default_rng(seed=seed)
-
-    # Convert probability range to integers (80-100 for 0.80-1.00)
-    prob_min = int(prob_range[0] * 100)
-    prob_max = int(prob_range[1] * 100)
 
     for left_group, right_group in source_groups.values():
         # Skip empty groups
@@ -520,21 +527,21 @@ def generate_entity_probabilities(
                 ):
                     continue
 
-                # Generate random probability in range
-                prob = rng.integers(prob_min, prob_max + 1)
-                edges.append((left_entity.id, right_entity.id, prob))
+                # Generate random score in range
+                score = np.float32(rng.uniform(score_range[0], score_range[1]))
+                edges.append((left_entity.id, right_entity.id, score))
 
     # If no edges were generated, return empty table with correct schema
     if not edges:
-        return pl.DataFrame(schema=pl.Schema(SCHEMA_RESULTS))
+        return pl.DataFrame(schema=pl.Schema(SCHEMA_MODEL_EDGES))
 
-    return pl.DataFrame(edges, orient="row", schema=pl.Schema(SCHEMA_RESULTS))
+    return pl.DataFrame(edges, orient="row", schema=pl.Schema(SCHEMA_MODEL_EDGES))
 
 
 class ModelTestkit(BaseModel):
     """A testkit of data and metadata for a Model."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True)
 
     model: Model
     left_data: pa.Table
@@ -543,7 +550,7 @@ class ModelTestkit(BaseModel):
     right_data: pa.Table | None
     right_query: Query | None
     right_clusters: dict[int, ClusterEntity] | None
-    probabilities: pl.DataFrame
+    scores: pl.DataFrame = Field(frozen=True)
 
     _entities: tuple[ClusterEntity, ...]
     _query_lookup: pa.Table
@@ -554,9 +561,9 @@ class ModelTestkit(BaseModel):
         return self.model.name
 
     @property
-    def resolution_path(self) -> ModelResolutionPath:
-        """Returns the model resolution path."""
-        return self.model.resolution_path
+    def path(self) -> ModelStepPath:
+        """Returns the model step path."""
+        return self.model.path
 
     @property
     def data(self) -> pa.Table:
@@ -586,29 +593,19 @@ class ModelTestkit(BaseModel):
         """ClusterEntities that were generated by the model."""
         return self._entities
 
-    @entities.setter
-    def entities(self, value: tuple[ClusterEntity, ...]) -> None:
-        self._entities = value
-
-    @property
-    def threshold(self) -> int:
-        """Threshold for the model."""
-        return self.model._truth
-
-    @threshold.setter
-    def threshold(self, value: int) -> None:
-        """Set the threshold for the model."""
-        self.model._truth = value
+    @model_validator(mode="after")
+    def init_query_lookup(self) -> "ModelTestkit":
+        """Initialise query lookup and derived entities using all model edges."""
         right_clusters = self.right_clusters.values() if self.right_clusters else []
         input_results = set(self.left_clusters.values()) | set(right_clusters)
 
-        entities: tuple[ClusterEntity] = probabilities_to_results_entities(
-            probabilities=self.probabilities,
+        entities: tuple[ClusterEntity, ...] = scores_to_results_entities(
+            scores=self.scores,
             left_clusters=tuple(self.left_clusters.values()),
             right_clusters=tuple(right_clusters)
             if self.right_clusters is not None
             else None,
-            threshold=value,
+            threshold=0,
         )
 
         id_mapping = {
@@ -628,9 +625,11 @@ class ModelTestkit(BaseModel):
         )
         self._entities = entities
 
+        return self
+
     def fake_run(self) -> Self:
         """Set model results without running model."""
-        self.model.results = ModelResults(probabilities=self.probabilities)
+        self.model.results = normalise_model_scores(self.scores)
 
         return self
 
@@ -639,44 +638,23 @@ class ModelTestkit(BaseModel):
         return {
             "name": self.model.name,
             "model_class": self.model.config.model_class,
-            "model_settings": json.loads(self.model.config.model_settings),
+            "model_settings": self.model.config.model_settings,
             "left_query": self.model.left_query,
             "right_query": self.model.right_query,
-            "truth": self.model.truth,
             "description": self.model.description,
         }
 
-    @model_validator(mode="after")
-    def init_query_lookup(self) -> "ModelTestkit":
-        """Initialize the query lookup table."""
-        self.threshold = 0
-        return self
-
-
-def _testkit_to_query(testkit: SourceTestkit | ModelTestkit) -> Query:
-    if isinstance(testkit, SourceTestkit):
-        return Query(testkit.source, dag=testkit.source.dag)
-    else:
-        all_sources = list(testkit.model.left_query.sources)
-        if testkit.model.right_query is not None:
-            all_sources += list(testkit.model.right_query.sources)
-        return Query(
-            *all_sources,
-            model=testkit.model,
-            dag=testkit.model.dag,
-        )
-
 
 def model_factory(
-    name: ModelResolutionName | None = None,
+    name: ModelStepName | None = None,
     dag: DAG | None = None,
     description: str | None = None,
-    left_testkit: SourceTestkit | ModelTestkit | None = None,
-    right_testkit: SourceTestkit | ModelTestkit | None = None,
+    left_testkit: SourceTestkit | ResolverTestkit | None = None,
+    right_testkit: SourceTestkit | ResolverTestkit | None = None,
     true_entities: tuple[SourceEntity, ...] | None = None,
     model_type: ModelType | None = None,
     n_true_entities: int | None = None,
-    prob_range: tuple[float, float] = (0.8, 1.0),
+    score_range: tuple[float, float] = (0.8, 1.0),
     seed: int = 42,
 ) -> ModelTestkit:
     """Generate a complete model testkit.
@@ -684,24 +662,24 @@ def model_factory(
     Allows autoconfiguration with minimal settings, or more nuanced control.
 
     Can either be used to generate a model in a pipeline, interconnected with existing
-    SourceTestkit or ModelTestkit objects, or generate a standalone model with
-    random data.
+    testkit objects, or generate a standalone model with random data.
 
     Args:
-        name: Name of the model
+        name: Name of the model. Defaults to a randomly generated word suffixed
+            with '_model'.
         dag: DAG containing this model.
             Overridden by dag of left testkit if present.
         description: Description of the model
-        left_testkit: A SourceTestkit or ModelTestkit for the left source
-        right_testkit: If creating a linker, a SourceTestkit or ModelTestkit for the
+        left_testkit: A SourceTestkit or ResolverTestkit for the left source
+        right_testkit: If creating a linker, a SourceTestkit or ResolverTestkit for the
             right source
         true_entities: Ground truth SourceEntity objects to use for
-            generating probabilities. Must be supplied if sources are given
+            generating scores. Must be supplied if sources are given
         model_type: Type of the model, one of 'deduper' or 'linker'
             Defaults to deduper. Ignored if left_testkit or right_testkit are provided.
         n_true_entities: Base number of entities to generate when using default configs.
             Defaults to 10. Ignored if left_testkit or right_testkit are provided.
-        prob_range: Range of probabilities to generate
+        score_range: Range of scores to generate
         seed: Random seed for reproducibility
 
     Returns:
@@ -709,13 +687,13 @@ def model_factory(
 
     Raises:
         ValueError:
-            * If probabilities are not in increasing order and between 0 and 1
+            * If scores are not in increasing order and between 0 and 1
             * If sources are provided without true entities
         UserWarning: If some arguments are ignored due to sources or true entities
     """
     # ==== Input validation ====
-    if not (0 <= prob_range[0] <= prob_range[1] <= 1):
-        raise ValueError("Probabilities must be increasing values between 0 and 1")
+    if not (0 <= score_range[0] <= score_range[1] <= 1):
+        raise ValueError("Scores must be increasing values between 0 and 1")
 
     if left_testkit is not None and true_entities is None:
         raise ValueError("Must provide true entities when sources are given")
@@ -739,12 +717,12 @@ def model_factory(
     if left_testkit is not None:
         # Using provided sources
         left_data = left_testkit.data
-        left_query = _testkit_to_query(left_testkit)
+        left_query = left_testkit.query()
         left_entities = left_testkit.entities
         if isinstance(left_testkit, SourceTestkit):
             dag = left_testkit.source.dag
         else:
-            dag = left_testkit.model.dag
+            dag = left_testkit.resolver.dag
 
         right_data = None
         right_query = None
@@ -753,7 +731,7 @@ def model_factory(
         if right_testkit is not None:
             model_type = ModelType.LINKER
             right_data = right_testkit.data
-            right_query = _testkit_to_query(right_testkit)
+            right_query = right_testkit.query()
             right_entities = right_testkit.entities
         else:
             model_type = ModelType.DEDUPER
@@ -842,16 +820,15 @@ def model_factory(
     )
     model = Model(
         dag=dag,
-        name=name or generator.unique.word(),
+        name=name or f"{generator.unique.word()}_model",
         description=description or generator.sentence(),
         model_class=model_class,
         model_settings=model_settings,
         left_query=left_query,
         right_query=right_query,
-        truth=min(prob_range),
     )
 
-    # ==== Entity and probability generation ====
+    # ==== Entity and score generation ====
     # We need to generate true entities when either:
     # * No true entities are provided (true_entities is None)
     # * We're using default sources (left_testkit is None)
@@ -864,11 +841,11 @@ def model_factory(
     else:
         final_true_entities = true_entities
 
-    probabilities = generate_entity_probabilities(
+    scores = generate_entity_scores(
         left_entities=frozenset(left_entities),
         right_entities=frozenset(right_entities) if right_entities else None,
         source_entities=frozenset(final_true_entities),
-        prob_range=prob_range,
+        score_range=score_range,
         seed=seed,
     )
 
@@ -883,22 +860,21 @@ def model_factory(
         right_clusters={entity.id: entity for entity in right_entities}
         if right_entities
         else None,
-        probabilities=probabilities,
-        _threshold=model._truth,
+        scores=scores,
     )
 
 
 def query_to_model_factory(
     left_query: Query,
     left_data: pa.Table,
-    left_keys: dict[SourceResolutionName, str],
+    left_keys: dict[SourceStepName, str],
     true_entities: tuple[SourceEntity, ...],
-    name: ModelResolutionName | None = None,
+    name: ModelStepName | None = None,
     description: str | None = None,
     right_query: Query | None = None,
     right_data: pa.Table | None = None,
-    right_keys: dict[SourceResolutionName, str] | None = None,
-    prob_range: tuple[float, float] = (0.8, 1.0),
+    right_keys: dict[SourceStepName, str] | None = None,
+    score_range: tuple[float, float] = (0.8, 1.0),
     seed: int = 42,
 ) -> ModelTestkit:
     """Turns raw queries from Matchbox into ModelTestkits.
@@ -906,25 +882,26 @@ def query_to_model_factory(
     Args:
         left_query: Query generating left data
         left_data: PyArrow table with left query data
-        left_keys: Dictionary mapping source resolution names to key field names
+        left_keys: Dictionary mapping source step names to key field names
             in left query
         true_entities: Ground truth SourceEntity objects to use for generating
-            probabilities
-        name: Name of the model
+            scores
+        name: Name of the model. Defaults to a randomly generated word suffixed
+            with '_model'.
         description: Description of the model
         right_query: Query generating right data
         right_data: PyArrow table with right query data, if creating a linker
-        right_keys: Dictionary mapping source resolution names to key field names
+        right_keys: Dictionary mapping source step names to key field names
             in right query
-        prob_range: Range of probabilities to generate
+        score_range: Range of scores to generate
         seed: Random seed for reproducibility
 
     Returns:
         ModelTestkit with the processed data
     """
     # Validate inputs
-    if not (0 <= prob_range[0] <= prob_range[1] <= 1):
-        raise ValueError("Probabilities must be increasing values between 0 and 1")
+    if not (0 <= score_range[0] <= score_range[1] <= 1):
+        raise ValueError("Scores must be increasing values between 0 and 1")
 
     dag = left_query.dag
     if right_query and right_query.dag != dag:
@@ -958,21 +935,20 @@ def query_to_model_factory(
 
     model = Model(
         dag=dag,
-        name=name or generator.unique.word(),
+        name=name or f"{generator.unique.word()}_model",
         description=description or generator.sentence(),
         model_class=model_class,
         model_settings=model_settings,
         left_query=left_query,
         right_query=right_query,
-        truth=min(prob_range),
     )
 
-    # Generate probabilities
-    probabilities = generate_entity_probabilities(
+    # Generate scores
+    scores = generate_entity_scores(
         left_entities=frozenset(left_clusters),
         right_entities=frozenset(right_clusters) if right_clusters else None,
         source_entities=frozenset(true_entities) if true_entities else frozenset(),
-        prob_range=prob_range,
+        score_range=score_range,
         seed=seed,
     )
 
@@ -987,6 +963,5 @@ def query_to_model_factory(
         right_clusters={entity.id: entity for entity in right_clusters}
         if right_clusters
         else None,
-        probabilities=probabilities,
-        _threshold=model._truth,
+        scores=scores,
     )

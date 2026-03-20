@@ -19,7 +19,7 @@ from matchbox.common.arrow import (
 )
 from matchbox.common.datatypes import require
 from matchbox.common.db import QueryReturnType, sql_to_df
-from matchbox.common.dtos import ModelResolutionPath
+from matchbox.common.dtos import ResolverStepPath
 from matchbox.common.eval import Judgement as CommonJudgement
 from matchbox.common.exceptions import (
     MatchboxTooManySamplesRequested,
@@ -32,9 +32,9 @@ from matchbox.server.postgresql.orm import (
     ClusterSourceKey,
     Contains,
     EvalJudgements,
-    Probabilities,
-    Resolutions,
+    ResolverClusters,
     SourceConfigs,
+    Steps,
     Users,
 )
 from matchbox.server.postgresql.utils.db import (
@@ -192,9 +192,9 @@ class MatchboxPostgresEvaluationMixin(_MixinBase):
         return _cast_tables(judgements, cluster_expansion)
 
     def sample_for_eval(  # noqa: D102
-        self, n: int, path: ModelResolutionPath, user_name: str
+        self, n: int, path: ResolverStepPath, user_name: str
     ) -> ArrowTable:
-        """Sample some clusters from a resolution."""
+        """Sample some clusters from a resolver step."""
         # Not currently checking validity of the user_name
         # If the user ID does not exist, the exclusion by previous judgements breaks
         if n > 100:
@@ -209,12 +209,11 @@ class MatchboxPostgresEvaluationMixin(_MixinBase):
             if not user:
                 raise MatchboxUserNotFoundError(f"User '{user_name}' not found")
 
-            # Use ORM to get resolution metadata
-            resolution_orm = Resolutions.from_path(path=path, session=session)
-            resolution_id = resolution_orm.resolution_id
-            truth = resolution_orm.truth
+            # Use ORM to get step metadata
+            resolver_step = Steps.from_path(path=path, session=session)
+            step_id = resolver_step.step_id
 
-        # Get a list of cluster IDs and features for this resolution and user
+        # Get cluster IDs and features for this resolver and user.
         user_judgements = (
             select(EvalJudgements)
             .where(EvalJudgements.user_id == user.user_id)
@@ -222,20 +221,22 @@ class MatchboxPostgresEvaluationMixin(_MixinBase):
         )
         cluster_features_stmt = (
             select(
-                Probabilities.cluster_id,
-                # We expect only one probability per cluster within one resolution
-                func.max(Probabilities.probability).label("probability"),
+                ResolverClusters.cluster_id,
+                # Practically our client explicitly avoids showing the same cluster to
+                # a user more than oce, so conflicting decisions over time shouldn't be
+                # possible. However, the ORM doesn't enforce this, so we take only the
+                # latest decision here
                 func.max(user_judgements.c.timestamp).label("latest_ts"),
             )
             .join(
                 user_judgements,
-                Probabilities.cluster_id == user_judgements.c.shown_cluster_id,
+                ResolverClusters.cluster_id == user_judgements.c.shown_cluster_id,
                 isouter=True,
             )
             .where(
-                Probabilities.resolution_id == resolution_id,
+                ResolverClusters.step_id == step_id,
             )
-            .group_by(Probabilities.cluster_id)
+            .group_by(ResolverClusters.cluster_id)
         )
 
         with MBDB.get_adbc_connection() as conn:
@@ -255,25 +256,17 @@ class MatchboxPostgresEvaluationMixin(_MixinBase):
         if not len(to_sample):
             return pl.DataFrame(schema=pl.Schema(SCHEMA_EVAL_SAMPLES)).to_arrow()
 
-        # Sample proportionally to distance from the truth, and get 1D array
-        distances = np.abs(to_sample.select("probability").to_numpy() - truth)[:, 0]
-        # Add small noise to avoid division by 0 if all distances are 0
-        unnormalised_probs = distances + 0.001
-        probs = unnormalised_probs / unnormalised_probs.sum()
-
         # With fewer clusters than requested, return all
         if to_sample.shape[0] <= n:
             sampled_cluster_ids = to_sample.select("cluster_id").to_series().to_list()
         else:
-            indices = np.random.choice(
-                to_sample.shape[0], size=n, p=probs, replace=False
-            )
+            indices = np.random.choice(to_sample.shape[0], size=n, replace=False)
             sampled_cluster_ids = (
                 to_sample[indices].select("cluster_id").to_series().to_list()
             )
 
         # Get all info we need for the cluster IDs we've sampled, i.e.:
-        # source cluster IDs, keys and source resolutions
+        # source cluster IDs, keys and source steps
         with MBDB.get_adbc_connection() as conn:
             source_clusters = (
                 select(Contains.root, Contains.leaf)
@@ -281,16 +274,14 @@ class MatchboxPostgresEvaluationMixin(_MixinBase):
                 .subquery()
             )
 
-            # The same leaf can be reused to represent rows across different sources
-            # We only want to retrieve info for sources upstream of resolution
-            source_resolution_ids = [
-                res.resolution_id
-                for res in resolution_orm.ancestors
-                if res.type == "source"
+            # The same leaf can be reused to represent rows across different sources.
+            # Only retrieve info for sources upstream of this resolver step.
+            source_step_ids = [
+                res.step_id for res in resolver_step.ancestors if res.type == "source"
             ]
-            source_resolutions = (
-                select(Resolutions.name, Resolutions.resolution_id)
-                .where(Resolutions.resolution_id.in_(source_resolution_ids))
+            source_steps = (
+                select(Steps.name, Steps.step_id)
+                .where(Steps.step_id.in_(source_step_ids))
                 .subquery()
             )
 
@@ -299,7 +290,7 @@ class MatchboxPostgresEvaluationMixin(_MixinBase):
                     source_clusters.c.root,
                     source_clusters.c.leaf,
                     ClusterSourceKey.key,
-                    source_resolutions.c.name.label("source"),
+                    source_steps.c.name.label("source"),
                 )
                 .select_from(source_clusters)
                 .join(
@@ -311,8 +302,8 @@ class MatchboxPostgresEvaluationMixin(_MixinBase):
                     SourceConfigs.source_config_id == ClusterSourceKey.source_config_id,
                 )
                 .join(
-                    source_resolutions,
-                    source_resolutions.c.resolution_id == SourceConfigs.resolution_id,
+                    source_steps,
+                    source_steps.c.step_id == SourceConfigs.step_id,
                 )
             )
 

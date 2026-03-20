@@ -61,27 +61,27 @@ def scenario_setup(scenario_name: str) -> Generator[dict[str, object], None, Non
         ) as dag:
             logger.info("Scenario ready! Starting Textual evaluate app via CLI...")
 
-            # Select the appropriate resolution for each scenario
+            # Select the appropriate step for each scenario
             match scenario_name:
                 case "bare" | "index" | "convergent":
                     raise RuntimeError("Scenario has nothing to evaluate.")
                 case "dedupe":
-                    resolution = dag.dag.nodes["naive_test_crn"]
-                case "probabilistic_dedupe":
-                    resolution = dag.dag.nodes["probabilistic_test_crn"]
+                    step = dag.dag.nodes["resolver_naive_test_crn"]
+                case "scored_dedupe":
+                    step = dag.dag.nodes["resolver_scored_test_crn"]
                 case "link":
-                    resolution = dag.dag.nodes["final_join"]
+                    step = dag.dag.nodes["resolver_final_join"]
                 case "alt_dedupe":
-                    resolution = dag.dag.nodes["dedupe_foo_a"]
+                    step = dag.dag.nodes["resolver_dedupe_foo_a"]
                 case "mega":
-                    resolution = dag.dag.nodes["mega_product_linker"]
+                    step = dag.dag.nodes["resolver_mega_product_linker"]
                 case _:
                     raise ValueError(f"Unknown scenario: {scenario_name}")
 
             # Yield CLI parameters instead of app instance
             yield {
-                "collection": resolution.resolution_path.collection,
-                "resolution": resolution.resolution_path.name,
+                "collection": step.path.collection,
+                "resolver": step.path.name,
                 "pending": True,
                 "warehouse": str(warehouse_engine.url),
             }
@@ -136,7 +136,7 @@ def main(
             try:
                 run.evaluate(
                     collection=cli_params["collection"],
-                    resolution=cli_params["resolution"],
+                    resolver=cli_params["resolver"],
                     pending=cli_params["pending"],
                     warehouse=cli_params["warehouse"],
                     log_file=log_file if log_file and log_file.strip() else None,

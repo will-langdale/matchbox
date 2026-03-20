@@ -9,7 +9,7 @@ from botocore.exceptions import ClientError
 from fastapi import UploadFile
 
 from matchbox.common.arrow import table_to_buffer
-from matchbox.common.dtos import ResolutionPath, ResolutionType
+from matchbox.common.dtos import StepPath, StepType
 from matchbox.common.exceptions import (
     MatchboxServerFileError,
 )
@@ -108,28 +108,28 @@ class TestUploadTracker:
 
 
 @pytest.mark.parametrize(
-    "resolution_type",
+    "step_type",
     [
-        pytest.param(ResolutionType.SOURCE, id="source"),
-        pytest.param(ResolutionType.MODEL, id="model"),
+        pytest.param(StepType.SOURCE, id="source"),
+        pytest.param(StepType.MODEL, id="model"),
     ],
 )
-def test_process_upload_success(s3: S3Client, resolution_type: ResolutionType) -> None:
+def test_process_upload_success(s3: S3Client, step_type: StepType) -> None:
     """Test that upload process hands data to backend."""
     # Prepare data
-    if resolution_type == ResolutionType.SOURCE:
+    if step_type == StepType.SOURCE:
         testkit = source_factory().fake_run()
-        resolution = testkit.source.to_resolution()
+        step = testkit.source.to_dto()
         data = testkit.data_hashes
     else:
         testkit = model_factory().fake_run()
-        resolution = testkit.model.to_resolution()
-        data = testkit.probabilities.to_arrow()
+        step = testkit.model.to_dto()
+        data = testkit.scores.to_arrow()
 
     # Setup mock backend and tracker
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
-    mock_backend.get_resolution = Mock(return_value=resolution)
+    mock_backend.get_step = Mock(return_value=step)
 
     # Create bucket
     bucket = "test-bucket"
@@ -152,9 +152,7 @@ def test_process_upload_success(s3: S3Client, resolution_type: ResolutionType) -
         upload_id="upload_id",
         bucket=bucket,
         filename=test_key,
-        resolution_path=ResolutionPath(
-            collection="collection", run=1, name="resolution"
-        ),
+        step_path=StepPath(collection="collection", run=1, name="step"),
     )
 
     # Verify file was deleted
@@ -165,7 +163,7 @@ def test_process_upload_success(s3: S3Client, resolution_type: ResolutionType) -
     )
 
     # Ensure data was inserted
-    if resolution_type == ResolutionType.SOURCE:
+    if step_type == StepType.SOURCE:
         assert mock_backend.insert_source_data.called
     else:
         assert mock_backend.insert_model_data.called
@@ -174,8 +172,10 @@ def test_process_upload_success(s3: S3Client, resolution_type: ResolutionType) -
 def test_process_upload_empty_table(s3: S3Client) -> None:
     """Test that files representing empty table can be handled."""
     # Setup mock backend
+    source_testkit = source_factory().fake_run()
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
+    mock_backend.get_step = Mock(return_value=source_testkit.source.to_dto())
 
     # Create bucket
     bucket = "test-bucket"
@@ -199,9 +199,7 @@ def test_process_upload_empty_table(s3: S3Client) -> None:
         upload_id="upload_id",
         bucket=bucket,
         filename=test_key,
-        resolution_path=ResolutionPath(
-            collection="collection", run=1, name="resolution"
-        ),
+        step_path=StepPath(collection="collection", run=1, name="step"),
     )
 
     # Verify file was deleted
@@ -210,6 +208,8 @@ def test_process_upload_empty_table(s3: S3Client) -> None:
     assert "404" in str(excinfo.value) or "NoSuchKey" in str(excinfo.value), (
         f"File was not deleted: {str(excinfo.value)}"
     )
+
+    assert mock_backend.insert_source_data.called
 
 
 def test_process_upload_deletes_file_on_failure(s3: S3Client) -> None:
@@ -225,9 +225,7 @@ def test_process_upload_deletes_file_on_failure(s3: S3Client) -> None:
     tracker = InMemoryUploadTracker()
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
-    mock_backend.get_resolution = Mock(
-        return_value=source_testkit.source.to_resolution()
-    )
+    mock_backend.get_step = Mock(return_value=source_testkit.source.to_dto())
     mock_backend.insert_source_data = Mock(
         side_effect=ValueError("Simulated processing failure")
     )
@@ -256,9 +254,7 @@ def test_process_upload_deletes_file_on_failure(s3: S3Client) -> None:
             upload_id="upload_id",
             bucket=bucket,
             filename=test_key,
-            resolution_path=ResolutionPath(
-                collection="collection", run=1, name="resolution"
-            ),
+            step_path=StepPath(collection="collection", run=1, name="step"),
         )
 
     assert "Simulated processing failure" in str(excinfo.value)
@@ -274,5 +270,5 @@ def test_process_upload_deletes_file_on_failure(s3: S3Client) -> None:
         f"File was not deleted: {str(excinfo.value)}"
     )
 
-    # Ensure resolution is marked as ready again
-    assert mock_backend.unlock_resolution_data.called
+    # Ensure step is marked as ready again
+    assert mock_backend.unlock_step_data.called

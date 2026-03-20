@@ -1,3 +1,5 @@
+"""Tests for client query construction, retrieval, and cleaning behaviour."""
+
 import polars as pl
 import pyarrow as pa
 import pytest
@@ -9,45 +11,23 @@ from sqlalchemy import Engine
 from sqlglot.errors import ParseError
 
 from matchbox.client.queries import Query, QueryCombineType, _clean
+from matchbox.client.resolvers import Components
 from matchbox.common.arrow import (
     SCHEMA_QUERY,
     SCHEMA_QUERY_WITH_LEAVES,
     table_to_buffer,
 )
-from matchbox.common.dtos import ErrorResponse, QueryConfig
+from matchbox.common.dtos import ErrorResponse
 from matchbox.common.exceptions import (
     MatchboxEmptyServerResponse,
-    MatchboxResolutionNotFoundError,
+    MatchboxStepNotFoundError,
 )
 from matchbox.common.factories.dags import TestkitDAG
-from matchbox.common.factories.models import model_factory
 from matchbox.common.factories.sources import (
     linked_sources_factory,
     source_factory,
     source_from_tuple,
 )
-
-
-def test_init_query() -> None:
-    """Test that query is initialised correctly"""
-    source = source_factory().source
-    model = model_factory(dag=source.dag).model
-    query = Query(
-        source,
-        dag=source.dag,
-        model=model,
-        combine_type="explode",
-        threshold=0.32,
-        cleaning={"hello": "hello"},
-    )
-
-    assert query.config == QueryConfig(
-        source_resolutions=[source.name],
-        model_resolution=model.name,
-        combine_type="explode",
-        threshold=32,
-        cleaning={"hello": "hello"},
-    )
 
 
 def test_query_single_source(
@@ -91,17 +71,18 @@ def test_query_single_source(
     }
 
     # Tests with optional params
-    results = testkit.source.query(threshold=0.5).data(return_type="pandas")
+    results = testkit.source.query(cleaning={"foo_a": "foo_a"}).data(
+        return_type="pandas"
+    )
 
     assert isinstance(results, PandasDataFrame)
     assert len(results) == 2
-    assert {"foo_a", "foo_b", "id"} == set(results.columns)
+    assert {"foo_a", "id"} == set(results.columns)
 
     assert dict(query_route.calls.last.request.url.params) == {
         "collection": testkit.source.dag.name,
         "run_id": str(testkit.source.dag.run),
         "source": testkit.source.name,
-        "threshold": "50",
         "return_leaf_id": "False",
     }
 
@@ -159,9 +140,23 @@ def test_query_multiple_sources(
         * 2  # 2 calls to `query()` in this test, each querying server twice
     )
 
-    model = model_factory(dag=testkit1.source.dag).model
+    foo_source = testkit1.source.dag.source(**testkit1.into_dag())
+    bar_source = testkit2.source.dag.source(**testkit2.into_dag())
+
+    model_foo = foo_source.query().deduper(
+        name="foo_dedupe",
+        model_class="NaiveDeduper",
+        model_settings={"unique_fields": []},
+    )
+    model_bar = bar_source.query().deduper(
+        name="bar_dedupe",
+        model_class="NaiveDeduper",
+        model_settings={"unique_fields": []},
+    )
+    resolver = model_foo.resolver(model_bar, name="resolver", resolver_class=Components)
+
     # Validate results (no cleaning, so all columns passed through)
-    results = model.query(testkit1.source, testkit2.source).data()
+    results = resolver.query(foo_source, bar_source).data()
     assert len(results) == 4
     assert {"foo_a", "foo_b", "foo2_c", "id"} == set(results.columns)
 
@@ -169,14 +164,14 @@ def test_query_multiple_sources(
         "collection": testkit1.source.dag.name,
         "run_id": str(testkit1.source.dag.run),
         "source": testkit1.source.name,
-        "resolution": model.name,
+        "resolver": resolver.name,
         "return_leaf_id": "False",
     }
     assert dict(query_route.calls[-1].request.url.params) == {
         "collection": testkit2.source.dag.name,
         "run_id": str(testkit2.source.dag.run),
         "source": testkit2.source.name,
-        "resolution": model.name,
+        "resolver": resolver.name,
         "return_leaf_id": "False",
     }
 
@@ -346,12 +341,23 @@ def test_query_combine_type(
         ]  # two sources to query
     )
 
-    model = model_factory(dag=testkit1.source.dag).model
+    foo_source = testkit1.source.dag.source(**testkit1.into_dag())
+    bar_source = testkit2.source.dag.source(**testkit2.into_dag())
+
+    foo_model = foo_source.query().deduper(
+        name="foo_dedupe",
+        model_class="NaiveDeduper",
+        model_settings={"unique_fields": []},
+    )
+    bar_model = bar_source.query().deduper(
+        name="bar_dedupe",
+        model_class="NaiveDeduper",
+        model_settings={"unique_fields": []},
+    )
+    resolver = foo_model.resolver(bar_model, name="resolver", resolver_class=Components)
 
     # Validate results
-    results = model.query(
-        testkit1.source, testkit2.source, combine_type=combine_type
-    ).data()
+    results = resolver.query(foo_source, bar_source, combine_type=combine_type).data()
 
     if combine_type == "set_agg":
         expected_len = 3
@@ -428,10 +434,23 @@ def test_query_leaf_ids(
         ]  # two sources to query
     )
 
-    model = model_factory(dag=testkit1.source.dag).model
+    foo_source = testkit1.source.dag.source(**testkit1.into_dag())
+    bar_source = testkit2.source.dag.source(**testkit2.into_dag())
 
-    query = model.query(testkit1.source, testkit2.source, combine_type=combine_type)
-    data: pl.DataFrame = query.data(return_leaf_id=True)
+    foo_model = foo_source.query().deduper(
+        name="foo_dedupe",
+        model_class="NaiveDeduper",
+        model_settings={"unique_fields": []},
+    )
+    bar_model = bar_source.query().deduper(
+        name="bar_dedupe",
+        model_class="NaiveDeduper",
+        model_settings={"unique_fields": []},
+    )
+    resolver = foo_model.resolver(bar_model, name="resolver", resolver_class=Components)
+
+    query = resolver.query(foo_source, bar_source, combine_type=combine_type)
+    data: pl.DataFrame = query.data(cache_leaf_ids=True)
     assert set(data.columns) == {"foo_col", "bar_col", "id"}
 
     assert_frame_equal(
@@ -451,7 +470,7 @@ def test_query_leaf_ids(
     )
 
 
-def test_query_404_resolution(
+def test_query_404_step(
     matchbox_api: MockRouter, sqla_sqlite_warehouse: Engine
 ) -> None:
     testkit = source_factory(
@@ -463,14 +482,14 @@ def test_query_404_resolution(
         return_value=Response(
             404,
             json=ErrorResponse(
-                exception_type="MatchboxResolutionNotFoundError",
-                message="Resolution 42 not found",
+                exception_type="MatchboxStepNotFoundError",
+                message="Step 42 not found",
             ).model_dump(),
         )
     )
 
     # Test with no optional params
-    with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
+    with pytest.raises(MatchboxStepNotFoundError, match="42"):
         testkit.source.query().data()
 
 
@@ -508,25 +527,39 @@ def test_query_from_config() -> None:
     crn_testkit = linked_testkit.sources["crn"]
     dh_testkit = linked_testkit.sources["dh"]
 
-    model_testkit = model_factory(
-        left_testkit=crn_testkit,
-        right_testkit=dh_testkit,
-        true_entities=linked_testkit.true_entities,
-        dag=dag,
-    )
-
-    # Add to DAG
     dag.source(**crn_testkit.into_dag())
     dag.source(**dh_testkit.into_dag())
-    dag.model(**model_testkit.into_dag())
+
+    linker_model = (
+        dag.get_source(crn_testkit.name)
+        .query()
+        .linker(
+            dag.get_source(dh_testkit.name).query(),
+            name="link",
+            model_class="DeterministicLinker",
+            model_settings={"comparisons": "l.key=r.key"},
+        )
+    )
+    dedupe_model = (
+        dag.get_source(crn_testkit.name)
+        .query()
+        .deduper(
+            name="dedupe",
+            model_class="NaiveDeduper",
+            model_settings={"unique_fields": []},
+        )
+    )
+
+    resolver = linker_model.resolver(
+        dedupe_model, name="resolver", resolver_class=Components
+    )
 
     # Create original query
-    original_query = model_testkit.model.query(
-        crn_testkit.source,
-        dh_testkit.source,
+    original_query = resolver.query(
+        dag.get_source(crn_testkit.name),
+        dag.get_source(dh_testkit.name),
         combine_type="explode",
-        threshold=0.75,
-        cleaning={"new_col": "foo_a * 2"},
+        cleaning={"new_col": "crn_a * 2"},
     )
 
     # Get config and reconstruct
@@ -536,14 +569,13 @@ def test_query_from_config() -> None:
     # Verify reconstruction matches original
     assert reconstructed_query.config == original_query.config
     assert reconstructed_query.sources == original_query.sources
-    assert reconstructed_query.model.config == original_query.model.config
+    assert reconstructed_query.resolver.name == original_query.resolver.name
     assert reconstructed_query.combine_type == original_query.combine_type
-    assert reconstructed_query.threshold == original_query.threshold
     assert reconstructed_query.cleaning == original_query.cleaning
 
 
 def test_query_from_config_no_model() -> None:
-    """Test reconstructing a Query without a model."""
+    """Test reconstructing a Query without a resolver."""
     dag = TestkitDAG().dag
 
     # Create test source
@@ -552,8 +584,8 @@ def test_query_from_config_no_model() -> None:
     # Add to DAG
     dag.source(**testkit.into_dag())
 
-    # Create query without model
-    original_query = testkit.source.query(threshold=0.5)
+    # Create query without resolver
+    original_query = testkit.source.query()
 
     # Reconstruct from config
     config = original_query.config
@@ -561,8 +593,54 @@ def test_query_from_config_no_model() -> None:
 
     # Verify
     assert reconstructed_query.config == original_query.config
-    assert reconstructed_query.model is None
-    assert reconstructed_query.threshold == 0.5
+    assert reconstructed_query.resolver is None
+
+
+def test_query_from_config_resolver_roundtrip() -> None:
+    """Round-trip a resolver-backed query via QueryConfig."""
+    dag = TestkitDAG().dag
+
+    linked_testkit = linked_sources_factory(dag=dag)
+    crn_testkit = linked_testkit.sources["crn"]
+    dh_testkit = linked_testkit.sources["dh"]
+
+    dag.source(**crn_testkit.into_dag())
+    dag.source(**dh_testkit.into_dag())
+
+    linker = (
+        dag.get_source(crn_testkit.name)
+        .query()
+        .linker(
+            dag.get_source(dh_testkit.name).query(),
+            name="link",
+            model_class="DeterministicLinker",
+            model_settings={"comparisons": "l.key=r.key"},
+        )
+    )
+    dedupe = (
+        dag.get_source(crn_testkit.name)
+        .query()
+        .deduper(
+            name="dedupe",
+            model_class="NaiveDeduper",
+            model_settings={"unique_fields": []},
+        )
+    )
+
+    resolver = linker.resolver(dedupe, name="resolver", resolver_class=Components)
+
+    original_query = resolver.query(
+        dag.get_source(crn_testkit.name),
+        dag.get_source(dh_testkit.name),
+        combine_type="explode",
+        cleaning={"new_col": "crn_a * 2"},
+    )
+
+    config = original_query.config
+    reconstructed_query = Query.from_config(config, dag=dag)
+    assert reconstructed_query.config == original_query.config
+    assert reconstructed_query.resolver is not None
+    assert reconstructed_query.resolver.name == resolver.name
 
 
 @pytest.mark.parametrize(

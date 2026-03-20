@@ -5,15 +5,15 @@ import pytest
 from faker import Faker
 
 from matchbox.common.datatypes import DataTypes
-from matchbox.common.dtos import SourceResolutionName
+from matchbox.common.dtos import SourceStepName
 from matchbox.common.factories.entities import (
     ClusterEntity,
     EntityReference,
     FeatureConfig,
     SourceEntity,
-    diff_results,
+    diff_entities,
     generate_entities,
-    probabilities_to_results_entities,
+    scores_to_results_entities,
 )
 
 
@@ -45,7 +45,7 @@ def make_cluster_entity(id: int, *args: Any) -> ClusterEntity:
 
 
 def make_source_entity(
-    source: SourceResolutionName, keys: list[str], base_val: str
+    source: SourceStepName, keys: list[str], base_val: str
 ) -> SourceEntity:
     """Helper to create a SourceEntity."""
     entity = SourceEntity(base_values={"name": base_val})
@@ -60,9 +60,7 @@ def make_source_entity(
         ("source2", frozenset({"A", "B"})),
     ),
 )
-def test_entity_reference_creation(
-    name: SourceResolutionName, keys: frozenset[str]
-) -> None:
+def test_entity_reference_creation(name: SourceStepName, keys: frozenset[str]) -> None:
     """Test basic EntityReference creation and access."""
     ref = EntityReference({name: keys})
     assert ref[name] == keys
@@ -151,7 +149,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
 
 @pytest.mark.parametrize(
     (
-        "probabilities",
+        "scores",
         "left_clusters",
         "right_clusters",
         "threshold",
@@ -163,7 +161,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 {
                     "left_id": [1, 2],
                     "right_id": [2, 3],
-                    "probability": [90, 85],
+                    "score": [0.9, 0.85],
                 }
             ),
             (
@@ -172,7 +170,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 make_cluster_entity(3, "test", ["a3"]),
             ),
             None,
-            80,
+            0.8,
             1,  # One merged entity containing all three records
             id="basic_dedupe_chain",
         ),
@@ -181,7 +179,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 {
                     "left_id": [1],
                     "right_id": [4],
-                    "probability": [95],
+                    "score": [0.95],
                 }
             ),
             (make_cluster_entity(1, "left", ["a1"]),),
@@ -195,7 +193,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 {
                     "left_id": [1, 2],
                     "right_id": [2, 3],
-                    "probability": [75, 70],
+                    "score": [0.75, 0.7],
                 }
             ),
             (
@@ -204,7 +202,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 make_cluster_entity(3, "test", ["a3"]),
             ),
             None,
-            80,
+            0.8,
             3,  # No merging due to threshold
             id="threshold_prevents_merge",
         ),
@@ -213,7 +211,7 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 {
                     "left_id": [],
                     "right_id": [],
-                    "probability": [],
+                    "score": [],
                 }
             ),
             (
@@ -221,22 +219,22 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int) -> None:
                 make_cluster_entity(2, "test", ["a2"]),
             ),
             None,
-            80,
-            2,  # No merging with empty probabilities
-            id="empty_probabilities",
+            0.8,
+            2,  # No merging with empty scores
+            id="empty_scores",
         ),
     ],
 )
-def test_probabilities_to_results_entities(
-    probabilities: pl.DataFrame,
+def test_scores_to_results_entities(
+    scores: pl.DataFrame,
     left_clusters: tuple[ClusterEntity, ...],
     right_clusters: tuple[ClusterEntity, ...] | None,
     threshold: float,
     expected_count: int,
 ) -> None:
-    """Test probabilities_to_results_entities with various scenarios."""
-    result = probabilities_to_results_entities(
-        probabilities=probabilities,
+    """Test scores_to_results_entities with various scenarios."""
+    result = scores_to_results_entities(
+        scores=scores,
         left_clusters=left_clusters,
         right_clusters=right_clusters,
         threshold=threshold,
@@ -384,14 +382,14 @@ def assert_deep_approx_equal(
         ),
     ],
 )
-def test_diff_results(
+def test_diff_entities(
     expected: list[ClusterEntity],
     actual: list[ClusterEntity],
     want_identical: bool,
     want_result: dict[str, Any],
 ) -> None:
-    """Test diff_results function handles various scenarios correctly."""
-    got_identical, got_result = diff_results(expected, actual)
+    """Test diff_entities function handles various scenarios correctly."""
+    got_identical, got_result = diff_entities(expected, actual)
 
     assert got_identical == want_identical
     assert dict(got_result) == want_result
@@ -413,17 +411,17 @@ def test_source_to_results_conversion() -> None:
     results3 = source.to_cluster_entity("source2")
 
     # Test different comparison scenarios
-    identical, report = diff_results([results1], [results1])
+    identical, report = diff_entities([results1], [results1])
     assert identical
     assert report == {}
 
     # Compare partial overlap
-    identical, report = diff_results([results1], [results2])
+    identical, report = diff_entities([results1], [results2])
     assert not identical
     assert "source2" in str(results2 - results1)
 
     # Compare disjoint sets
-    identical, report = diff_results([results1], [results3])
+    identical, report = diff_entities([results1], [results3])
     assert not identical
     assert results1.similarity_ratio(results3) == 0.0
 

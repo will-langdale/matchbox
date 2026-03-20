@@ -27,7 +27,7 @@ def test_linked_sources_factory_default() -> None:
         source_references = list(entity.keys.items())
         assert len(source_references) > 0
 
-        # Each reference should have source resolution name and keys
+        # Each reference should have source step name and keys
         for source_name, keys in source_references:
             assert source_name in linked.sources
             assert len(keys) > 0

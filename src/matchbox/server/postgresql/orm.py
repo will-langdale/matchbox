@@ -1,13 +1,13 @@
 """ORM classes for the Matchbox PostgreSQL database."""
 
-import json
+import textwrap
 from typing import Any, Optional
 
 from sqlalchemy import (
     BIGINT,
     BOOLEAN,
     INTEGER,
-    SMALLINT,
+    REAL,
     CheckConstraint,
     DateTime,
     Enum,
@@ -26,23 +26,25 @@ from matchbox.common.dtos import (
     CollectionName,
     LocationConfig,
     ModelType,
-    ResolutionName,
-    ResolutionPath,
-    ResolutionType,
     RunID,
+    StepName,
+    StepPath,
+    StepType,
     UploadStage,
 )
 from matchbox.common.dtos import Collection as CommonCollection
 from matchbox.common.dtos import ModelConfig as CommonModelConfig
-from matchbox.common.dtos import Resolution as CommonResolution
+from matchbox.common.dtos import ResolverConfig as CommonResolverConfig
 from matchbox.common.dtos import Run as CommonRun
 from matchbox.common.dtos import SourceConfig as CommonSourceConfig
 from matchbox.common.dtos import SourceField as CommonSourceField
+from matchbox.common.dtos import Step as CommonStep
 from matchbox.common.exceptions import (
     MatchboxCollectionNotFoundError,
-    MatchboxResolutionAlreadyExists,
-    MatchboxResolutionNotFoundError,
     MatchboxRunNotFoundError,
+    MatchboxStepAlreadyExists,
+    MatchboxStepNotFoundError,
+    MatchboxStepTypeError,
 )
 from matchbox.server.base import (
     DEFAULT_GROUPS,
@@ -53,7 +55,7 @@ from matchbox.server.postgresql.mixin import CountMixin
 
 
 class Collections(CountMixin, MBDB.MatchboxBase):
-    """Named collections of resolutions and runs."""
+    """Named collections of steps and runs."""
 
     __tablename__ = "collections"
 
@@ -114,7 +116,7 @@ class Collections(CountMixin, MBDB.MatchboxBase):
 
 
 class Runs(CountMixin, MBDB.MatchboxBase):
-    """Runs of collections of resolutions."""
+    """Runs of collections of steps."""
 
     __tablename__ = "runs"
 
@@ -129,7 +131,7 @@ class Runs(CountMixin, MBDB.MatchboxBase):
 
     # Relationships
     collection: Mapped["Collections"] = relationship(back_populates="runs")
-    resolutions: Mapped[list["Resolutions"]] = relationship(back_populates="run")
+    steps: Mapped[list["Steps"]] = relationship(back_populates="run")
 
     # Constraints
     __table_args__ = (
@@ -163,10 +165,11 @@ class Runs(CountMixin, MBDB.MatchboxBase):
             select(cls)
             .where(cls.run_id == run_id)
             .options(
-                selectinload(cls.resolutions)
-                .selectinload(Resolutions.source_config)
+                selectinload(cls.steps)
+                .selectinload(Steps.source_config)
                 .selectinload(SourceConfigs.fields),
-                selectinload(cls.resolutions).selectinload(Resolutions.model_config),
+                selectinload(cls.steps).selectinload(Steps.model_config),
+                selectinload(cls.steps).selectinload(Steps.resolver_config),
                 selectinload(cls.collection),
             )
         )
@@ -190,38 +193,35 @@ class Runs(CountMixin, MBDB.MatchboxBase):
 
     def to_dto(self) -> CommonRun:
         """Convert ORM run to a matchbox.common Run object."""
-        resolutions: dict[ResolutionName, CommonResolution] = {}
-        if self.resolutions:
-            resolutions = {
-                resolution.name: resolution.to_dto() for resolution in self.resolutions
-            }
+        steps: dict[StepName, CommonStep] = {}
+        if self.steps:
+            steps = {step.name: step.to_dto() for step in self.steps}
 
         return CommonRun(
             run_id=self.run_id,
             is_default=self.is_default,
             is_mutable=self.is_mutable,
-            resolutions=resolutions,
+            steps=steps,
         )
 
 
-class ResolutionFrom(CountMixin, MBDB.MatchboxBase):
-    """Resolution lineage closure table with cached truth values."""
+class StepFrom(CountMixin, MBDB.MatchboxBase):
+    """Step lineage closure table."""
 
-    __tablename__ = "resolution_from"
+    __tablename__ = "step_from"
 
     # Columns
     parent: Mapped[int] = mapped_column(
         BIGINT,
-        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        ForeignKey("steps.step_id", ondelete="CASCADE"),
         primary_key=True,
     )
     child: Mapped[int] = mapped_column(
         BIGINT,
-        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        ForeignKey("steps.step_id", ondelete="CASCADE"),
         primary_key=True,
     )
     level: Mapped[int] = mapped_column(INTEGER, nullable=False)
-    truth_cache: Mapped[int | None] = mapped_column(SMALLINT, nullable=True)
 
     # Constraints
     __table_args__ = (
@@ -230,18 +230,16 @@ class ResolutionFrom(CountMixin, MBDB.MatchboxBase):
     )
 
 
-class Resolutions(CountMixin, MBDB.MatchboxBase):
-    """Table of resolution points corresponding to models, and sources.
+class Steps(CountMixin, MBDB.MatchboxBase):
+    """Table of steps corresponding to models, resolvers, and sources.
 
-    Resolutions produce probabilities or own data in the clusters table.
+    Models produce edges and resolvers produce cluster assignments.
     """
 
-    __tablename__ = "resolutions"
+    __tablename__ = "steps"
 
     # Columns
-    resolution_id: Mapped[int] = mapped_column(
-        BIGINT, primary_key=True, autoincrement=True
-    )
+    step_id: Mapped[int] = mapped_column(BIGINT, primary_key=True, autoincrement=True)
     run_id: Mapped[int] = mapped_column(
         BIGINT, ForeignKey("runs.run_id", ondelete="CASCADE"), nullable=False
     )
@@ -254,104 +252,124 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     description: Mapped[str | None] = mapped_column(TEXT, nullable=True)
     type: Mapped[str] = mapped_column(TEXT, nullable=False)
     fingerprint: Mapped[bytes] = mapped_column(BYTEA, nullable=False)
-    truth: Mapped[int | None] = mapped_column(SMALLINT, nullable=True)
 
     # Relationships
     source_config: Mapped[Optional["SourceConfigs"]] = relationship(
-        back_populates="source_resolution", uselist=False
+        back_populates="source_step", uselist=False
     )
     model_config: Mapped[Optional["ModelConfigs"]] = relationship(
-        back_populates="model_resolution", uselist=False
+        back_populates="model_step", uselist=False
     )
-    probabilities: Mapped[list["Probabilities"]] = relationship(
+    resolver_config: Mapped[Optional["ResolverConfigs"]] = relationship(
+        back_populates="resolver_step", uselist=False
+    )
+    model_edges: Mapped[list["ModelEdges"]] = relationship(
         back_populates="proposed_by",
         passive_deletes=True,
     )
-    results: Mapped[list["Results"]] = relationship(
+    resolver_clusters: Mapped[list["ResolverClusters"]] = relationship(
         back_populates="proposed_by",
         passive_deletes=True,
     )
-    children: Mapped[list["Resolutions"]] = relationship(
-        secondary=ResolutionFrom.__table__,
-        primaryjoin="Resolutions.resolution_id == ResolutionFrom.parent",
-        secondaryjoin="Resolutions.resolution_id == ResolutionFrom.child",
-        backref="parents",
+    parents: Mapped[list["Steps"]] = relationship(
+        secondary=StepFrom.__table__,
+        primaryjoin=textwrap.dedent("""\
+            and_(
+                Steps.step_id == StepFrom.child,
+                StepFrom.level == 1
+            )
+        """),
+        secondaryjoin="Steps.step_id == StepFrom.parent",
+        viewonly=True,
+        order_by="StepFrom.parent",
     )
-    run: Mapped["Runs"] = relationship(back_populates="resolutions")
+    run: Mapped["Runs"] = relationship(back_populates="steps")
 
     # Constraints
     __table_args__ = (
         CheckConstraint(
-            "type IN ('model', 'source')",
-            name="resolution_type_constraints",
+            "type IN ('model', 'source', 'resolver')",
+            name="step_type_constraints",
         ),
-        UniqueConstraint("run_id", "name", name="resolutions_name_key"),
+        UniqueConstraint("run_id", "name", name="steps_name_key"),
     )
 
     @property
-    def ancestors(self) -> set["Resolutions"]:
-        """Returns all ancestors (parents, grandparents, etc.) of this resolution."""
+    def ancestors(self) -> set["Steps"]:
+        """Return all ancestors (parents, grandparents, etc.) of this step."""
         with MBDB.get_session() as session:
             ancestor_query = (
-                select(Resolutions)
-                .select_from(Resolutions)
-                .join(
-                    ResolutionFrom, Resolutions.resolution_id == ResolutionFrom.parent
-                )
-                .where(ResolutionFrom.child == self.resolution_id)
+                select(Steps)
+                .select_from(Steps)
+                .join(StepFrom, Steps.step_id == StepFrom.parent)
+                .where(StepFrom.child == self.step_id)
             )
             return set(session.execute(ancestor_query).scalars().all())
 
     @property
-    def descendants(self) -> set["Resolutions"]:
-        """Returns descendants (children, grandchildren, etc.) of this resolution."""
+    def descendants(self) -> set["Steps"]:
+        """Return descendants (children, grandchildren, etc.) of this step."""
         with MBDB.get_session() as session:
             descendant_query = (
-                select(Resolutions)
-                .select_from(Resolutions)
-                .join(ResolutionFrom, Resolutions.resolution_id == ResolutionFrom.child)
-                .where(ResolutionFrom.parent == self.resolution_id)
+                select(Steps)
+                .select_from(Steps)
+                .join(StepFrom, Steps.step_id == StepFrom.child)
+                .where(StepFrom.parent == self.step_id)
             )
             return set(session.execute(descendant_query).scalars().all())
 
     def get_lineage(
-        self, sources: list["SourceConfigs"] | None = None, threshold: int | None = None
-    ) -> list[tuple[int, int, float | None]]:
+        self,
+        sources: list["SourceConfigs"] | None = None,
+        queryable_only: bool = False,
+    ) -> list[tuple[int, int | None]]:
         """Returns lineage ordered by priority.
 
-        Highest priority (lowest level) first, then by resolution_id for stability.
+        Highest priority (lowest level) first, then by step_id for stability.
 
         Args:
             sources: If provided, only return lineage paths that lead to these sources
-            threshold: If provided, override this resolution's threshold
+            queryable_only: If true, only include queryable step types
 
         Returns:
-            List of tuples (resolution_id, source_config_id, threshold) ordered by
-                priority.
+            List of tuples (step_id, source_config_id) ordered by priority.
         """
         with MBDB.get_session() as session:
             query = (
                 select(
-                    ResolutionFrom.parent,
+                    StepFrom.parent,
                     SourceConfigs.source_config_id,
-                    ResolutionFrom.truth_cache,
+                )
+                .join(
+                    Steps,
+                    StepFrom.parent == Steps.step_id,
                 )
                 .join(
                     SourceConfigs,
-                    ResolutionFrom.parent == SourceConfigs.resolution_id,
+                    StepFrom.parent == SourceConfigs.step_id,
                     isouter=True,
                 )
-                .where(ResolutionFrom.child == self.resolution_id)
+                .where(StepFrom.child == self.step_id)
             )
+
+            if queryable_only:
+                query = query.where(
+                    Steps.type.in_(
+                        [
+                            StepType.SOURCE.value,
+                            StepType.RESOLVER.value,
+                        ]
+                    )
+                )
 
             if sources:
                 # Filter by source configs
-                source_resolution_ids = [sc.resolution_id for sc in sources]
+                source_step_ids = [sc.step_id for sc in sources]
 
                 descendant_ids = (
                     session.execute(
-                        select(ResolutionFrom.child).where(
-                            ResolutionFrom.parent.in_(source_resolution_ids)
+                        select(StepFrom.child).where(
+                            StepFrom.parent.in_(source_step_ids)
                         )
                     )
                     .scalars()
@@ -359,11 +377,11 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
                 )
 
                 query = query.where(
-                    ResolutionFrom.parent.in_(source_resolution_ids + descendant_ids)
+                    StepFrom.parent.in_(source_step_ids + descendant_ids)
                 )
 
             results = session.execute(
-                query.order_by(ResolutionFrom.level.asc(), ResolutionFrom.parent.asc())
+                query.order_by(StepFrom.level.asc(), StepFrom.parent.asc())
             ).all()
 
             # Get self's source config ID
@@ -371,32 +389,34 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
                 self.source_config.source_config_id if self.source_config else None
             )
 
-            # Threshold handling
-            self_threshold = threshold if threshold is not None else self.truth
-
             # Add self at beginning (highest priority - level 0)
-            return [(self.resolution_id, self_source_config_id, self_threshold)] + list(
-                results
-            )
+            lineage_self = []
+            if not queryable_only or self.type in {
+                StepType.SOURCE.value,
+                StepType.RESOLVER.value,
+            }:
+                lineage_self = [(self.step_id, self_source_config_id)]
+
+            return lineage_self + list(results)
 
     @classmethod
     def from_path(
         cls,
-        path: ResolutionPath,
-        res_type: ResolutionType | None = None,
+        path: StepPath,
+        res_type: StepType | None = None,
         session: Session | None = None,
         for_update: bool = False,
-    ) -> "Resolutions":
-        """Resolves a resolution name to a Resolution object.
+    ) -> "Steps":
+        """Resolve a step path to a Step ORM object.
 
         Args:
-            path: The path of the resolution to resolve.
-            res_type: A resolution type to use as filter.
-            session: A session to get the resolution for updates.
+            path: The path of the step to resolve.
+            res_type: A step type to use as filter.
+            session: A session to get the step for updates.
             for_update: Locks the row until updated.
 
         Raises:
-            MatchboxResolutionNotFoundError: If the resolution doesn't exist.
+            MatchboxStepNotFoundError: If the step doesn't exist.
         """
         query = (
             select(cls)
@@ -416,35 +436,33 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             query = query.with_for_update(nowait=True)
 
         if session:
-            resolution = session.execute(query).scalar()
+            step = session.execute(query).scalar()
         else:
             with MBDB.get_session() as session:
-                resolution = session.execute(query).scalar()
+                step = session.execute(query).scalar()
 
-        if resolution:
-            return resolution
+        if step:
+            return step
 
-        raise MatchboxResolutionNotFoundError(
-            message=f"No resolution {path} of type {res_type or 'any'}."
+        raise MatchboxStepNotFoundError(
+            message=f"No step {path} of type {res_type or 'any'}."
         )
 
     @classmethod
-    def from_dto(
-        cls, resolution: CommonResolution, path: ResolutionPath, session: Session
-    ) -> "Resolutions":
-        """Create a Resolutions instance from a Resolution DTO object.
+    def from_dto(cls, step: CommonStep, path: StepPath, session: Session) -> "Steps":
+        """Create a Steps instance from a Step DTO object.
 
-        The resolution will be added to the session and flushed (but not committed).
+        The step will be added to the session and flushed (but not committed).
 
-        For model resolutions, lineage entries will be created automatically.
+        For model steps, lineage entries will be created automatically.
 
         Args:
-            resolution: The Resolution DTO to convert
-            path: The full resolution path
+            step: The Step DTO to convert
+            path: The full step path
             session: Database session (caller must commit)
 
         Returns:
-            A Resolutions ORM instance with ID and relationships established
+            A Steps ORM instance with ID and relationships established
         """
         # Find the run ID for the given collection and run ID
         run_obj = session.execute(
@@ -456,107 +474,152 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         if not run_obj:
             raise MatchboxRunNotFoundError(run_id=path.run)
 
-        # Attempt to insert new resolution
+        # Attempt to insert new step
         result = session.execute(
             insert(cls)
             .values(
                 run_id=run_obj.run_id,
                 name=path.name,
-                description=resolution.description,
-                type=resolution.resolution_type.value,
-                truth=resolution.truth,
-                fingerprint=resolution.fingerprint,
+                description=step.description,
+                type=step.step_type.value,
+                fingerprint=step.fingerprint,
             )
-            .on_conflict_do_nothing(constraint="resolutions_name_key")
-            .returning(cls.resolution_id)
+            .on_conflict_do_nothing(constraint="steps_name_key")
+            .returning(cls.step_id)
         )
 
-        resolution_id = result.scalar_one_or_none()
-        if resolution_id is None:
-            raise MatchboxResolutionAlreadyExists(
-                f"Resolution {path.name} already exists"
-            )
+        step_id = result.scalar_one_or_none()
+        if step_id is None:
+            raise MatchboxStepAlreadyExists(f"Step {path.name} already exists")
 
-        # Fetch the newly created resolution
-        resolution_orm = session.get(cls, resolution_id)
+        # Fetch the newly created step
+        step_orm = session.get(cls, step_id)
 
-        if resolution.resolution_type == ResolutionType.SOURCE:
-            resolution_orm.source_config = SourceConfigs.from_dto(resolution.config)
+        if step.step_type == StepType.SOURCE:
+            step_orm.source_config = SourceConfigs.from_dto(step.config)
 
-        elif resolution.resolution_type == ResolutionType.MODEL:
-            resolution_orm.model_config = ModelConfigs.from_dto(resolution.config)
+        elif step.step_type == StepType.MODEL:
+            step_orm.model_config = ModelConfigs.from_dto(step.config)
             # Create lineage
+            left_parent_path = StepPath(
+                collection=path.collection,
+                run=path.run,
+                name=step.config.left_query.resolves_from,
+            )
             left_parent = cls.from_path(
-                path=ResolutionPath(
-                    collection=path.collection,
-                    run=path.run,
-                    name=resolution.config.left_query.point_of_truth,
-                ),
+                path=left_parent_path,
                 session=session,
             )
-            cls._create_closure_entries(session, resolution_orm, left_parent)
+            if left_parent.type not in {
+                StepType.SOURCE.value,
+                StepType.RESOLVER.value,
+            }:
+                raise MatchboxStepTypeError(
+                    step_name=str(left_parent_path),
+                    step_type=StepType(left_parent.type),
+                    expected_step_types=[
+                        StepType.SOURCE,
+                        StepType.RESOLVER,
+                    ],
+                )
+            cls._create_closure_entries(session, step_orm, left_parent)
 
-            if resolution.config.type == ModelType.LINKER:
+            if step.config.type == ModelType.LINKER:
+                right_parent_path = StepPath(
+                    collection=path.collection,
+                    run=path.run,
+                    name=step.config.right_query.resolves_from,
+                )
                 right_parent = cls.from_path(
-                    path=ResolutionPath(
-                        collection=path.collection,
-                        run=path.run,
-                        name=resolution.config.right_query.point_of_truth,
-                    ),
+                    path=right_parent_path,
                     session=session,
                 )
-                cls._create_closure_entries(session, resolution_orm, right_parent)
+                if right_parent.type not in {
+                    StepType.SOURCE.value,
+                    StepType.RESOLVER.value,
+                }:
+                    raise MatchboxStepTypeError(
+                        step_name=str(right_parent_path),
+                        step_type=StepType(right_parent.type),
+                        expected_step_types=[
+                            StepType.SOURCE,
+                            StepType.RESOLVER,
+                        ],
+                    )
+                cls._create_closure_entries(session, step_orm, right_parent)
 
-        return resolution_orm
+        elif step.step_type == StepType.RESOLVER:
+            step_orm.resolver_config = ResolverConfigs.from_dto(step.config)
+            for parent_name in dict.fromkeys(step.config.inputs):
+                parent_path = StepPath(
+                    collection=path.collection,
+                    run=path.run,
+                    name=parent_name,
+                )
+                parent = cls.from_path(
+                    path=parent_path,
+                    session=session,
+                )
+                if parent.type != StepType.MODEL.value:
+                    raise MatchboxStepTypeError(
+                        message=("Resolver steps must only depend on model steps."),
+                        step_name=str(parent_path),
+                        step_type=StepType(parent.type),
+                        expected_step_types=[
+                            StepType.MODEL,
+                        ],
+                    )
+                cls._create_closure_entries(
+                    session,
+                    step_orm,
+                    parent,
+                )
 
-    def to_dto(self) -> CommonResolution:
-        """Convert ORM resolution to a matchbox.common Resolution object."""
-        if self.type == ResolutionType.SOURCE:
+        return step_orm
+
+    def to_dto(self) -> CommonStep:
+        """Convert ORM step to a matchbox.common Step object."""
+        if self.type == StepType.SOURCE:
             config = self.source_config.to_dto()
-        else:
+        elif self.type == StepType.MODEL:
             config = self.model_config.to_dto()
+        else:
+            config = self.resolver_config.to_dto()
 
-        return CommonResolution(
+        return CommonStep(
             description=self.description,
-            truth=self.truth,
-            resolution_type=ResolutionType(self.type),
+            step_type=StepType(self.type),
             config=config,
             fingerprint=self.fingerprint,
         )
 
     @staticmethod
     def _create_closure_entries(
-        session: Session, child: "Resolutions", parent: "Resolutions"
+        session: Session, child: "Steps", parent: "Steps"
     ) -> None:
         """Create closure table entries for a parent-child relationship."""
         # Direct relationship
         session.add(
-            ResolutionFrom(
-                parent=parent.resolution_id,
-                child=child.resolution_id,
+            StepFrom(
+                parent=parent.step_id,
+                child=child.step_id,
                 level=1,
-                truth_cache=parent.truth,
             )
         )
 
         # Transitive closure
         ancestors = (
-            session.execute(
-                select(ResolutionFrom).where(
-                    ResolutionFrom.child == parent.resolution_id
-                )
-            )
+            session.execute(select(StepFrom).where(StepFrom.child == parent.step_id))
             .scalars()
             .all()
         )
 
         for ancestor in ancestors:
             session.add(
-                ResolutionFrom(
+                StepFrom(
                     parent=ancestor.parent,
-                    child=child.resolution_id,
+                    child=child.step_id,
                     level=ancestor.level + 1,
-                    truth_cache=ancestor.truth_cache,
                 )
             )
 
@@ -636,9 +699,9 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
     source_config_id: Mapped[int] = mapped_column(
         BIGINT, Identity(start=1), primary_key=True
     )
-    resolution_id: Mapped[int] = mapped_column(
+    step_id: Mapped[int] = mapped_column(
         BIGINT,
-        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        ForeignKey("steps.step_id", ondelete="CASCADE"),
         nullable=False,
     )
     location_type: Mapped[str] = mapped_column(TEXT, nullable=False)
@@ -647,13 +710,11 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
 
     @property
     def name(self) -> str:
-        """Get the name of the related resolution."""
-        return self.source_resolution.name
+        """Get the name of the related step."""
+        return self.source_step.name
 
     # Relationships
-    source_resolution: Mapped["Resolutions"] = relationship(
-        back_populates="source_config"
-    )
+    source_step: Mapped["Steps"] = relationship(back_populates="source_config")
     fields: Mapped[list["SourceFields"]] = relationship(
         back_populates="source_config",
         passive_deletes=True,
@@ -722,7 +783,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         cls,
         config: CommonSourceConfig,
     ) -> "SourceConfigs":
-        """Create a SourceConfigs instance from a Resolution DTO object."""
+        """Create a SourceConfigs instance from a Step DTO object."""
         # Create the SourceConfigs object
         return cls(
             location_type=str(config.location_config.type),
@@ -772,25 +833,23 @@ class ModelConfigs(CountMixin, MBDB.MatchboxBase):
     model_config_id: Mapped[int] = mapped_column(
         BIGINT, Identity(start=1), primary_key=True
     )
-    resolution_id: Mapped[int] = mapped_column(
+    step_id: Mapped[int] = mapped_column(
         BIGINT,
-        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        ForeignKey("steps.step_id", ondelete="CASCADE"),
         nullable=False,
     )
     model_class: Mapped[str] = mapped_column(TEXT, nullable=False)
-    model_settings: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    left_query: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    right_query: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    model_settings: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    left_query: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    right_query: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     @property
     def name(self) -> str:
-        """Get the name of the related resolution."""
-        return self.model_resolution.name
+        """Get the name of the related step."""
+        return self.model_step.name
 
     # Relationships
-    model_resolution: Mapped["Resolutions"] = relationship(
-        back_populates="model_config"
-    )
+    model_step: Mapped["Steps"] = relationship(back_populates="model_config")
 
     @classmethod
     def list_all(cls) -> list["SourceConfigs"]:
@@ -803,14 +862,16 @@ class ModelConfigs(CountMixin, MBDB.MatchboxBase):
         cls,
         config: CommonModelConfig,
     ) -> "ModelConfigs":
-        """Create a SourceConfigs instance from a Resolution DTO object."""
+        """Create a SourceConfigs instance from a Step DTO object."""
         # Create the SourceConfigs object
         return cls(
             model_class=config.model_class,
             model_settings=config.model_settings,
-            left_query=config.left_query.model_dump_json(),
+            left_query=config.left_query.model_dump(mode="json"),
             right_query=(
-                None if not config.right_query else config.right_query.model_dump_json()
+                None
+                if not config.right_query
+                else config.right_query.model_dump(mode="json")
             ),
         )
 
@@ -820,8 +881,48 @@ class ModelConfigs(CountMixin, MBDB.MatchboxBase):
             type=ModelType.LINKER if self.right_query else ModelType.DEDUPER,
             model_class=self.model_class,
             model_settings=self.model_settings,
-            left_query=json.loads(self.left_query),
-            right_query=json.loads(self.right_query) if self.right_query else None,
+            left_query=self.left_query,
+            right_query=self.right_query,
+        )
+
+
+class ResolverConfigs(CountMixin, MBDB.MatchboxBase):
+    """Table of resolver configs for Matchbox."""
+
+    __tablename__ = "resolver_configs"
+
+    resolver_config_id: Mapped[int] = mapped_column(
+        BIGINT, Identity(start=1), primary_key=True
+    )
+    step_id: Mapped[int] = mapped_column(
+        BIGINT,
+        ForeignKey("steps.step_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    resolver_class: Mapped[str] = mapped_column(TEXT, nullable=False)
+    resolver_settings: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+    resolver_step: Mapped["Steps"] = relationship(back_populates="resolver_config")
+
+    __table_args__ = (UniqueConstraint("step_id", name="resolver_configs_step_key"),)
+
+    @classmethod
+    def from_dto(
+        cls,
+        config: CommonResolverConfig,
+    ) -> "ResolverConfigs":
+        """Create a ResolverConfigs instance from a Step DTO object."""
+        return cls(
+            resolver_class=config.resolver_class,
+            resolver_settings=config.resolver_settings,
+        )
+
+    def to_dto(self) -> CommonResolverConfig:
+        """Convert ORM resolver config to a matchbox.common ResolverConfig object."""
+        return CommonResolverConfig(
+            resolver_class=self.resolver_class,
+            resolver_settings=self.resolver_settings,
+            inputs=tuple(r.name for r in self.resolver_step.parents),
         )
 
 
@@ -859,10 +960,6 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     # Relationships
     keys: Mapped[list["ClusterSourceKey"]] = relationship(
         back_populates="cluster",
-        passive_deletes=True,
-    )
-    probabilities: Mapped[list["Probabilities"]] = relationship(
-        back_populates="proposes",
         passive_deletes=True,
     )
     leaves: Mapped[list["Clusters"]] = relationship(
@@ -1102,46 +1199,19 @@ class EvalJudgements(CountMixin, MBDB.MatchboxBase):
     user: Mapped["Users"] = relationship(back_populates="judgements")
 
 
-class Probabilities(CountMixin, MBDB.MatchboxBase):
-    """Table of probabilities that a cluster is correct, according to a resolution."""
+class ModelEdges(CountMixin, MBDB.MatchboxBase):
+    """Table of results for a model step.
 
-    __tablename__ = "probabilities"
-
-    # Columns
-    resolution_id: Mapped[int] = mapped_column(
-        BIGINT,
-        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    cluster_id: Mapped[int] = mapped_column(
-        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
-    )
-    probability: Mapped[int] = mapped_column(SMALLINT, nullable=False)
-
-    # Relationships
-    proposed_by: Mapped["Resolutions"] = relationship(back_populates="probabilities")
-    proposes: Mapped["Clusters"] = relationship(back_populates="probabilities")
-
-    # Constraints
-    __table_args__ = (
-        CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
-        Index("ix_probabilities_resolution", "resolution_id"),
-    )
-
-
-class Results(CountMixin, MBDB.MatchboxBase):
-    """Table of results for a resolution.
-
-    Stores the raw left/right probabilities created by a model.
+    Stores the raw left/right scores created by a model.
     """
 
-    __tablename__ = "results"
+    __tablename__ = "model_edges"
 
     # Columns
     result_id: Mapped[int] = mapped_column(BIGINT, primary_key=True, autoincrement=True)
-    resolution_id: Mapped[int] = mapped_column(
+    step_id: Mapped[int] = mapped_column(
         BIGINT,
-        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        ForeignKey("steps.step_id", ondelete="CASCADE"),
         nullable=False,
     )
     left_id: Mapped[int] = mapped_column(
@@ -1150,14 +1220,36 @@ class Results(CountMixin, MBDB.MatchboxBase):
     right_id: Mapped[int] = mapped_column(
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
     )
-    probability: Mapped[int] = mapped_column(SMALLINT, nullable=False)
+    score: Mapped[float] = mapped_column(REAL, nullable=False)
 
     # Relationships
-    proposed_by: Mapped["Resolutions"] = relationship(back_populates="results")
+    proposed_by: Mapped["Steps"] = relationship(back_populates="model_edges")
 
     # Constraints
     __table_args__ = (
-        Index("ix_results_resolution", "resolution_id"),
-        CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
-        UniqueConstraint("resolution_id", "left_id", "right_id"),
+        Index("ix_model_edges_step", "step_id"),
+        CheckConstraint(
+            "score >= 0.0 AND score <= 1.0",
+            name="valid_score",
+        ),
+        UniqueConstraint("step_id", "left_id", "right_id"),
     )
+
+
+class ResolverClusters(CountMixin, MBDB.MatchboxBase):
+    """Association table linking resolver steps to cluster IDs."""
+
+    __tablename__ = "resolver_clusters"
+
+    step_id: Mapped[int] = mapped_column(
+        BIGINT,
+        ForeignKey("steps.step_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    cluster_id: Mapped[int] = mapped_column(
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
+    )
+
+    proposed_by: Mapped["Steps"] = relationship(back_populates="resolver_clusters")
+
+    __table_args__ = (Index("ix_resolver_clusters_step", "step_id"),)

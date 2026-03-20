@@ -4,26 +4,26 @@ from polars.testing import assert_frame_equal
 from sqlalchemy import Engine
 
 from matchbox.client.dags import DAG
-from matchbox.client.results import ModelResults, ResolvedMatches
+from matchbox.client.results import ResolverMatches, normalise_model_scores
 from matchbox.client.sources import Source
 from matchbox.common.arrow import SCHEMA_QUERY_WITH_LEAVES
 from matchbox.common.factories.sources import source_factory, source_from_tuple
 
 
-class TestModelResults:
-    """Test ModelResult objects."""
+class TestModelProbabilities:
+    """Test model score normalisation."""
 
     def test_duplicate_removal(self) -> None:
-        """Removes redundant pairs, keeping lowest probability."""
+        """Removes redundant pairs, keeping highest score."""
         simple_duplicate = pl.DataFrame(
             [
-                {"left_id": 4, "right_id": 5, "probability": 50},
-                {"left_id": 4, "right_id": 5, "probability": 100},
+                {"left_id": 4, "right_id": 5, "score": 0.5},
+                {"left_id": 4, "right_id": 5, "score": 1.0},
             ]
         )
 
         assert_frame_equal(
-            ModelResults(probabilities=simple_duplicate).probabilities,
+            normalise_model_scores(simple_duplicate),
             simple_duplicate.tail(1),
             check_row_order=False,
             check_column_order=False,
@@ -32,13 +32,13 @@ class TestModelResults:
 
         symmetric_duplicate = pl.DataFrame(
             [
-                {"left_id": 5, "right_id": 4, "probability": 50},
-                {"left_id": 4, "right_id": 5, "probability": 100},
+                {"left_id": 5, "right_id": 4, "score": 0.5},
+                {"left_id": 4, "right_id": 5, "score": 1.0},
             ]
         )
 
         assert_frame_equal(
-            ModelResults(probabilities=symmetric_duplicate).probabilities,
+            normalise_model_scores(symmetric_duplicate),
             symmetric_duplicate.tail(1),
             check_row_order=False,
             check_column_order=False,
@@ -47,110 +47,22 @@ class TestModelResults:
 
         no_duplicates = pl.DataFrame(
             [
-                {"left_id": 4, "right_id": 6, "probability": 50},
-                {"left_id": 4, "right_id": 5, "probability": 100},
+                {"left_id": 4, "right_id": 6, "score": 0.5},
+                {"left_id": 4, "right_id": 5, "score": 1.0},
             ]
         )
 
         assert_frame_equal(
-            ModelResults(probabilities=no_duplicates).probabilities,
+            normalise_model_scores(no_duplicates),
             no_duplicates,
             check_row_order=False,
             check_column_order=False,
             check_dtypes=False,
         )
 
-    def test_clusters_and_root_leaf(self) -> None:
-        """From a results object, we can derive clusters at various levels."""
-        # Prepare dummy data and model
-        left_root_leaf = pl.DataFrame(
-            [
-                # Two keys per root
-                {"id": 10, "leaf_id": 1},
-                {"id": 10, "leaf_id": 1},
-                # Two leaves per root (same representation)
-                {"id": 20, "leaf_id": 2},
-                {"id": 20, "leaf_id": 3},
-                # Singleton cluster with two keys
-                {"id": 4, "leaf_id": 4},
-                {"id": 4, "leaf_id": 4},
-            ]
-        )
 
-        right_root_leaf = pl.DataFrame(
-            # For simplicity, all these are singleton clusters
-            [
-                {"id": 5, "leaf_id": 5},
-                {"id": 6, "leaf_id": 6},
-                {"id": 7, "leaf_id": 7},
-                {"id": 8, "leaf_id": 8},
-            ]
-        )
-
-        probabilities = pl.DataFrame(
-            [
-                # Simple left-right merge
-                {"left_id": 4, "right_id": 5, "probability": 100},
-                # Dedupe through linking
-                {"left_id": 10, "right_id": 6, "probability": 100},
-                {"left_id": 10, "right_id": 7, "probability": 100},
-            ]
-        )
-
-        results = ModelResults(
-            probabilities=probabilities,
-            left_root_leaf=left_root_leaf,
-            right_root_leaf=right_root_leaf,
-        )
-
-        # Check two ways of representing clusters
-        clusters = results.clusters
-        grouped_children = {
-            tuple(sorted(group))
-            for group in clusters.group_by("parent").agg("child")["child"]
-        }
-        # Only input IDs referenced in probabilities are present, in the right groups
-        assert grouped_children == {(4, 5), (6, 7, 10)}
-
-        root_leaf = results.root_leaf()
-        grouped_leaves = {
-            tuple(sorted(group))
-            for group in root_leaf.group_by("root_id").agg("leaf_id")["leaf_id"]
-        }
-        # Only single-digits are present, and all of them, in the right groups
-        assert grouped_leaves == {(1, 6, 7), (2, 3), (4, 5), (8,)}
-
-        # To check edge cases, look at no probabilities returned
-        empty_results = ModelResults(
-            probabilities=pl.DataFrame(
-                {"left_id": [], "right_id": [], "probability": []}
-            ),
-            left_root_leaf=left_root_leaf,
-            right_root_leaf=right_root_leaf,
-        )
-
-        assert len(empty_results.clusters) == 0
-        expected_empty_root_leaf = pl.concat(
-            [
-                left_root_leaf.rename({"id": "root_id"}),
-                right_root_leaf.rename({"id": "root_id"}),
-            ]
-        ).unique()
-        assert_frame_equal(
-            empty_results.root_leaf(),
-            expected_empty_root_leaf,
-            check_column_order=False,
-            check_row_order=False,
-        )
-
-        # The above was only possible because leaf IDs were present in the inputs
-        only_prob_results = ModelResults(probabilities=probabilities)
-        with pytest.raises(RuntimeError, match="instantiated for validation"):
-            only_prob_results.root_leaf()
-
-
-class TestResolvedMatches:
-    """Test ResolvedMatches objects."""
+class TestResolverMatches:
+    """Test ResolverMatches objects."""
 
     @pytest.fixture(scope="function")  # warehouse is function-scoped
     def dummy_data(
@@ -216,7 +128,7 @@ class TestResolvedMatches:
     def test_from_dump(
         self, dummy_data: tuple[Source, Source, pl.DataFrame, pl.DataFrame]
     ) -> None:
-        """Can initialise ResolvedMatches from concatenated dataframe representation."""
+        """Can initialise ResolverMatches from concatenated dataframe representation."""
         foo, bar, foo_query_data, bar_query_data = dummy_data
         # These won't be the same sources as above, but we only need them them
         # to have the same name
@@ -224,11 +136,11 @@ class TestResolvedMatches:
         dag.source(**source_factory(name="foo").into_dag())
         dag.source(**source_factory(name="bar").into_dag())
 
-        original = ResolvedMatches(
+        original = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         )
 
-        new = ResolvedMatches.from_dump(cluster_key_map=original.as_dump(), dag=dag)
+        new = ResolverMatches.from_dump(cluster_key_map=original.as_dump(), dag=dag)
 
         assert new.sources[0] == dag.get_source("foo")
         assert new.sources[1] == dag.get_source("bar")
@@ -276,7 +188,7 @@ class TestResolvedMatches:
         )
 
         # Retrieve single table
-        foo_mapping = ResolvedMatches(
+        foo_mapping = ResolverMatches(
             sources=[foo], query_results=[foo_query_data]
         ).as_lookup()
 
@@ -288,7 +200,7 @@ class TestResolvedMatches:
         )
 
         # Retrieve multiple tables
-        foo_bar_mapping = ResolvedMatches(
+        foo_bar_mapping = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         ).as_lookup()
 
@@ -305,7 +217,7 @@ class TestResolvedMatches:
         """Mapping across root, leaf, source and key can be generated."""
         foo, bar, foo_query_data, bar_query_data = dummy_data
 
-        mapping = ResolvedMatches(
+        mapping = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         ).as_dump()
 
@@ -331,7 +243,7 @@ class TestResolvedMatches:
     ) -> None:
         """Can generate grouping of lead IDs."""
         foo, bar, foo_query_data, bar_query_data = dummy_data
-        leaf_sets = ResolvedMatches(
+        leaf_sets = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         ).as_leaf_sets()
 
@@ -343,7 +255,7 @@ class TestResolvedMatches:
         """Single cluster can be viewed with source data."""
         foo, bar, foo_query_data, bar_query_data = dummy_data
 
-        cluster = ResolvedMatches(
+        cluster = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         ).view_cluster(356)
 
@@ -363,7 +275,7 @@ class TestResolvedMatches:
         )
 
         # Compact representation
-        cluster_merged = ResolvedMatches(
+        cluster_merged = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         ).view_cluster(356, merge_fields=True)
 
@@ -384,7 +296,7 @@ class TestResolvedMatches:
         )
 
         # View cluster with multiple keys per leaf, but only one source
-        cluster_convergent = ResolvedMatches(
+        cluster_convergent = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         ).view_cluster(2)
         expected_cluster_convergent = pl.DataFrame(
@@ -409,7 +321,7 @@ class TestResolvedMatches:
         # Define first resolved matches
         foo, bar, foo_query_data, bar_query_data = dummy_data
 
-        resolved_one = ResolvedMatches(
+        resolved_one = ResolverMatches(
             sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
         )
 
@@ -433,7 +345,7 @@ class TestResolvedMatches:
             schema=pl.Schema(SCHEMA_QUERY_WITH_LEAVES),
         )
 
-        resolved_two = ResolvedMatches(
+        resolved_two = ResolverMatches(
             sources=[foo, bar], query_results=[alt_foo_query_data, alt_bar_query_data]
         )
 

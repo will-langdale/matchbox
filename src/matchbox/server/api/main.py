@@ -6,14 +6,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import (
-    Depends,
-    FastAPI,
-    HTTPException,
-    Query,
-    Request,
-    Response,
-)
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.openapi.docs import (
     get_swagger_ui_html,
@@ -31,17 +24,15 @@ from matchbox.common.dtos import (
     CRUDOperation,
     ErrorResponse,
     Match,
-    ModelResolutionName,
     OKMessage,
-    ResolutionPath,
+    ResolverStepName,
+    ResolverStepPath,
     ResourceOperationStatus,
     RunID,
-    SourceResolutionName,
-    SourceResolutionPath,
+    SourceStepName,
+    SourceStepPath,
 )
-from matchbox.common.exceptions import (
-    MatchboxHttpException,
-)
+from matchbox.common.exceptions import MatchboxHttpException
 from matchbox.common.logging import logger
 from matchbox.server.api.dependencies import (
     BackendDependency,
@@ -146,29 +137,22 @@ def query(
     backend: BackendDependency,
     collection: CollectionName,
     run_id: RunID,
-    source: SourceResolutionName,
+    source: SourceStepName,
     return_leaf_id: bool,
-    resolution: ModelResolutionName | None = None,
-    threshold: int | None = None,
+    resolver: ResolverStepName | None = None,
     limit: int | None = None,
 ) -> ParquetResponse:
-    """Query Matchbox for matches based on a source resolution name."""
+    """Query Matchbox for matches based on a source step name."""
     res = backend.query(
-        source=SourceResolutionPath(
-            collection=collection,
-            run=run_id,
-            name=source,
+        source=SourceStepPath(collection=collection, run=run_id, name=source),
+        resolver=(
+            ResolverStepPath(collection=collection, run=run_id, name=resolver)
+            if resolver
+            else None
         ),
-        point_of_truth=ResolutionPath(
-            collection=collection, run=run_id, name=resolution
-        )
-        if resolution
-        else None,
-        threshold=threshold,
         return_leaf_id=return_leaf_id,
         limit=limit,
     )
-
     buffer = table_to_buffer(res)
     return ParquetResponse(buffer.getvalue())
 
@@ -186,30 +170,24 @@ def match(
     backend: BackendDependency,
     collection: CollectionName,
     run_id: RunID,
-    targets: Annotated[list[SourceResolutionName], Query()],
-    source: SourceResolutionName,
+    targets: Annotated[list[SourceStepName], Query()],
+    source: SourceStepName,
     key: str,
-    resolution: ModelResolutionName,
-    threshold: int | None = None,
+    resolver: ResolverStepName,
 ) -> list[Match]:
-    """Match a source key against a list of target source resolutions."""
-    targets = [
-        SourceResolutionPath(collection=collection, run=run_id, name=t) for t in targets
-    ]
+    """Match a source key against a list of target source steps."""
     return backend.match(
         key=key,
-        source=SourceResolutionPath(
+        source=SourceStepPath(collection=collection, run=run_id, name=source),
+        targets=[
+            SourceStepPath(collection=collection, run=run_id, name=target)
+            for target in targets
+        ],
+        resolver=ResolverStepPath(
             collection=collection,
             run=run_id,
-            name=source,
+            name=resolver,
         ),
-        targets=targets,
-        point_of_truth=ResolutionPath(
-            collection=collection,
-            run=run_id,
-            name=resolution,
-        ),
-        threshold=threshold,
     )
 
 
@@ -231,9 +209,9 @@ def count_backend_items(
 
     if entity is not None:
         return CountResult(entities={str(entity): get_count(entity)})
-    else:
-        res = {str(e): get_count(e) for e in BackendCountableType}
-        return CountResult(entities=res)
+
+    res = {str(e): get_count(e) for e in BackendCountableType}
+    return CountResult(entities=res)
 
 
 @app.delete(

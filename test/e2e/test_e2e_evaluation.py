@@ -13,6 +13,7 @@ from matchbox.client.dags import DAG
 from matchbox.client.eval import EvalData
 from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.models.dedupers import NaiveDeduper
+from matchbox.client.resolvers import Components
 from matchbox.common.factories.sources import (
     FeatureConfig,
     SourceTestkitParameters,
@@ -47,8 +48,8 @@ class TestE2EModelEvaluation:
         """Set up warehouse and database using fixtures."""
         # Persist shared setup for use in the test body
         n_true_entities = 10
-        final_resolution_1_name = "final_1"
-        final_resolution_2_name = "final_2"
+        final_step_1_name = "final_1"
+        final_step_2_name = "final_2"
         self.warehouse_engine = sqla_postgres_warehouse
         self.client = matchbox_client
 
@@ -107,14 +108,17 @@ class TestE2EModelEvaluation:
             index_fields=["company_name", "registration_id"],
         )
 
-        source_a_dag1.query().deduper(
-            name=final_resolution_1_name,
+        final_model_1 = source_a_dag1.query().deduper(
+            name=final_step_1_name,
             description="Deduplicate by registration ID",
             model_class=NaiveDeduper,
             model_settings={
                 "id": "id",
                 "unique_fields": [source_a_dag1.f("registration_id")],
             },
+        )
+        self.resolver = final_model_1.resolver(
+            name=f"resolver_{final_step_1_name}", resolver_class=Components
         )
 
         dag1.run_and_sync()
@@ -141,17 +145,20 @@ class TestE2EModelEvaluation:
             index_fields=["company_name", "registration_id"],
         )
 
-        source_a_dag2.query(
+        final_model_2 = source_a_dag2.query(
             cleaning={
                 "company_name": self._clean_company_name(
                     source_a_dag2.f("company_name")
                 )
             }
         ).deduper(
-            name=final_resolution_2_name,
+            name=final_step_2_name,
             description="Deduplicate by company name",
             model_class=NaiveDeduper,
             model_settings={"id": "id", "unique_fields": ["company_name"]},
+        )
+        final_model_2.resolver(
+            name=f"resolver_{final_step_2_name}", resolver_class=Components
         )
 
         dag2.run_and_sync()
@@ -205,7 +212,7 @@ class TestE2EModelEvaluation:
 
         # Create app and verify it can load samples from real data
         app = EntityResolutionApp(
-            resolution=dag.final_step.resolution_path,
+            resolver=dag.default_resolver.path,
             num_samples=2,
             session_tag="eval_session1",
             dag=dag,
@@ -216,6 +223,9 @@ class TestE2EModelEvaluation:
         # Can filter judgements by tag
         assert len(EvalData("eval_session1").judgements)
         assert not len(EvalData("mispelled").judgements)
+
+        p, r = EvalData().precision_recall(self.resolver.results_eval)
+        assert p == r == 1.0  # Only one cluster evaluated, and as in DAG
 
     @pytest.mark.asyncio
     async def test_evaluation_workflow_local(self) -> None:
@@ -231,7 +241,7 @@ class TestE2EModelEvaluation:
         dag: DAG = (
             DAG(str(self.dag1.name)).load_pending().set_client(self.warehouse_engine)
         )
-        rm = dag.resolve()
+        rm = dag.get_matches()
 
         with tempfile.NamedTemporaryFile(suffix=".pq") as tmp_file:
             # Write the parquet data to the temporary file
@@ -250,3 +260,6 @@ class TestE2EModelEvaluation:
         # Can filter judgements by tag
         assert len(EvalData("eval_session1").judgements)
         assert not len(EvalData("mispelled").judgements)
+
+        p, r = EvalData().precision_recall(self.resolver.results_eval)
+        assert p == r == 1.0  # Only one cluster evaluated, and as in DAG

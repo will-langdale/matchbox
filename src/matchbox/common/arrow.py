@@ -24,14 +24,22 @@ SCHEMA_INDEX: Final[pa.Schema] = pa.schema(
 )
 """Data transfer schema for data to be indexed in Matchbox."""
 
-SCHEMA_RESULTS: Final[pa.Schema] = pa.schema(
+SCHEMA_MODEL_EDGES: Final[pa.Schema] = pa.schema(
     [
         ("left_id", pa.uint64()),
         ("right_id", pa.uint64()),
-        ("probability", pa.uint8()),
+        ("score", pa.float32()),
     ]
 )
 """Data transfer schema for the results of a deduplication or linking process."""
+
+SCHEMA_CLUSTERS: Final[pa.Schema] = pa.schema(
+    [
+        ("parent_id", pa.uint64()),
+        ("child_id", pa.uint64()),
+    ]
+)
+"""Data transfer schema for resolver cluster assignments."""
 
 
 SCHEMA_JUDGEMENTS: Final[pa.Schema] = pa.schema(
@@ -77,14 +85,13 @@ def table_to_buffer(table: pa.Table) -> BytesIO:
     return sink
 
 
-def check_schema(expected: Schema, actual: Schema) -> None:
-    """Validate equality of Arrow schemas, ignoring field order and metadata.
+def check_schema_subset(expected: Schema, actual: Schema) -> None:
+    """Check presence of Arrow fields, ignoring field order, extras and metadata.
 
     Args:
-        expected: Schema to check against
+        expected: Schema with fields that must be present
         actual: Schema to check
     """
-    # Make comparison invariant to order
     actual = pa.schema(
         [
             (name, actual.field(name).type)

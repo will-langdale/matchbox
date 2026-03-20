@@ -12,26 +12,24 @@ from matchbox.common.arrow import (
     SCHEMA_CLUSTER_EXPANSION,
     SCHEMA_JUDGEMENTS,
     JudgementsZipFilenames,
-    check_schema,
+    check_schema_subset,
 )
-from matchbox.common.dtos import (
-    ModelResolutionPath,
-)
+from matchbox.common.dtos import ResolverStepPath
 from matchbox.common.eval import Judgement
 from matchbox.common.logging import logger
 
 
 @http_retry
-def sample_for_eval(n: int, resolution: ModelResolutionPath) -> Table:
-    """Sample model results for evaluation."""
+def sample_for_eval(n: int, resolver: ResolverStepPath) -> Table:
+    """Sample resolver clusters for evaluation."""
     res = CLIENT.get(
         "/eval/samples",
         params=url_params(
             {
                 "n": n,
-                "collection": resolution.collection,
-                "run_id": resolution.run,
-                "resolution": resolution.name,
+                "collection": resolver.collection,
+                "run_id": resolver.run,
+                "resolver": resolver.name,
             }
         ),
     )
@@ -62,7 +60,7 @@ def download_eval_data(tag: str | None = None) -> tuple[Table, Table]:
 
     logger.debug("Finished retrieving judgements.")
 
-    check_schema(SCHEMA_JUDGEMENTS, judgements.schema)
-    check_schema(SCHEMA_CLUSTER_EXPANSION, expansion.schema)
+    check_schema_subset(SCHEMA_JUDGEMENTS, judgements.schema)
+    check_schema_subset(SCHEMA_CLUSTER_EXPANSION, expansion.schema)
 
     return pl.from_arrow(judgements), pl.from_arrow(expansion)

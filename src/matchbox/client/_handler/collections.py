@@ -1,4 +1,4 @@
-"""Collection, run and resolution management functions for the client handler."""
+"""Collection, run and step management functions for the client handler."""
 
 import time
 from io import BytesIO
@@ -17,14 +17,15 @@ from matchbox.common.dtos import (
     CollectionName,
     DefaultGroup,
     GroupName,
-    ModelResolutionPath,
+    ModelStepPath,
     PermissionGrant,
     PermissionType,
-    Resolution,
-    ResolutionPath,
+    ResolverStepPath,
     ResourceOperationStatus,
     Run,
     RunID,
+    Step,
+    StepPath,
     UploadInfo,
     UploadStage,
 )
@@ -47,7 +48,7 @@ def list_collections() -> list[CollectionName]:
 
 @http_retry
 def get_collection(name: CollectionName) -> Collection:
-    """Get all runs and resolutions in a collection."""
+    """Get all runs and steps in a collection."""
     log_prefix = f"Collection {name}"
     logger.debug("Retrieving", prefix=log_prefix)
 
@@ -145,7 +146,7 @@ def revoke_collection_permission(
 
 @http_retry
 def get_run(collection: CollectionName, run_id: RunID) -> Run:
-    """Get all resolutions in a run."""
+    """Get all steps in a run."""
     log_prefix = f"Collection {collection}, run {run_id}"
     logger.debug("Retrieving", prefix=log_prefix)
 
@@ -203,38 +204,38 @@ def set_run_default(
     return ResourceOperationStatus.model_validate(res.json())
 
 
-# Resolution management
+# Step management
 
 
 @http_retry
-def create_resolution(
-    resolution: Resolution,
-    path: ResolutionPath,
+def create_step(
+    step: Step,
+    path: StepPath,
 ) -> ResourceOperationStatus:
-    """Create a resolution (model or source)."""
-    log_prefix = f"Resolution {path}"
+    """Create a step (source, model, or resolver)."""
+    log_prefix = f"Step {path}"
     logger.debug("Creating", prefix=log_prefix)
 
     res = CLIENT.post(
-        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}",
-        json=resolution.model_dump(),
+        f"/collections/{path.collection}/runs/{path.run}/steps/{path.name}",
+        json=step.model_dump(),
     )
 
     return ResourceOperationStatus.model_validate(res.json())
 
 
 @http_retry
-def update_resolution(
-    resolution: Resolution,
-    path: ResolutionPath,
+def update_step(
+    step: Step,
+    path: StepPath,
 ) -> ResourceOperationStatus:
-    """Update a resolution (model or source)."""
-    log_prefix = f"Resolution {path}"
+    """Update a step."""
+    log_prefix = f"Step {path}"
     logger.debug("Updating", prefix=log_prefix)
 
     res = CLIENT.put(
-        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}",
-        json=resolution.model_dump(),
+        f"/collections/{path.collection}/runs/{path.run}/steps/{path.name}",
+        json=step.model_dump(),
     )
 
     return ResourceOperationStatus.model_validate(res.json())
@@ -242,22 +243,22 @@ def update_resolution(
 
 @profile_time(kwarg="path")
 @http_retry
-def get_resolution(path: ResolutionPath) -> Resolution | None:
-    """Get a resolution from Matchbox."""
-    log_prefix = f"Resolution {path}"
+def get_step(path: StepPath) -> Step | None:
+    """Get a step from Matchbox."""
+    log_prefix = f"Step {path}"
     logger.debug("Retrieving metadata", prefix=log_prefix)
 
     res = CLIENT.get(
-        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}"
+        f"/collections/{path.collection}/runs/{path.run}/steps/{path.name}"
     )
-    return Resolution.model_validate(res.json())
+    return Step.model_validate(res.json())
 
 
 @profile_time(kwarg="path")
 @http_retry
-def set_data(path: ResolutionPath, data: pl.DataFrame | Table) -> None:
-    """Upload source hashes or model results to server."""
-    log_prefix = f"Resolution {path}"
+def set_data(path: StepPath, data: pl.DataFrame | Table) -> str:
+    """Upload any step data to server."""
+    log_prefix = f"Step {path}"
     logger.debug("Uploading results", prefix=log_prefix)
 
     data_arrow = data.to_arrow() if isinstance(data, pl.DataFrame) else data
@@ -266,7 +267,7 @@ def set_data(path: ResolutionPath, data: pl.DataFrame | Table) -> None:
     # Initialise upload
     logger.debug("Uploading data", prefix=log_prefix)
     metadata_res = CLIENT.post(
-        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data",
+        f"/collections/{path.collection}/runs/{path.run}/steps/{path.name}/data",
         files={"file": ("data.parquet", buffer, "application/octet-stream")},
     )
 
@@ -276,7 +277,7 @@ def set_data(path: ResolutionPath, data: pl.DataFrame | Table) -> None:
     stage = UploadStage.PROCESSING
     while stage == UploadStage.PROCESSING:
         status_res = CLIENT.get(
-            f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data/status",
+            f"/collections/{path.collection}/runs/{path.run}/steps/{path.name}/data/status",
             params=url_params({"upload_id": upload_id}),
         )
         info = UploadInfo.model_validate(status_res.json())
@@ -289,41 +290,39 @@ def set_data(path: ResolutionPath, data: pl.DataFrame | Table) -> None:
         time.sleep(settings.retry_delay)
 
     logger.debug("Finished", prefix=log_prefix)
-
-
-@http_retry
-def get_resolution_stage(path: ResolutionPath) -> UploadStage:
-    status_res = CLIENT.get(
-        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data/status"
-    )
-    upload_info = UploadInfo.model_validate(status_res.json())
-    return upload_info.stage
+    return upload_id
 
 
 @profile_time(kwarg="path")
 @http_retry
-def get_results(path: ModelResolutionPath) -> Table:
-    """Get model results from Matchbox."""
-    log_prefix = f"Model {path}"
-    logger.debug("Retrieving results", prefix=log_prefix)
+def get_data(path: ModelStepPath | ResolverStepPath) -> Table:
+    """Download step data from Matchbox."""
+    logger.debug("Retrieving data", prefix=f"{path}")
 
     res = CLIENT.get(
-        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}/data"
+        f"/collections/{path.collection}/runs/{path.run}/steps/{path.name}/data"
     )
     buffer = BytesIO(res.content)
     return read_table(buffer)
 
 
 @http_retry
-def delete_resolution(
-    path: ModelResolutionPath, certain: bool = False
-) -> ResourceOperationStatus:
-    """Delete a resolution in Matchbox."""
-    log_prefix = f"Model {path}"
+def get_step_stage(path: StepPath) -> UploadStage:
+    status_res = CLIENT.get(
+        f"/collections/{path.collection}/runs/{path.run}/steps/{path.name}/data/status"
+    )
+    upload_info = UploadInfo.model_validate(status_res.json())
+    return upload_info.stage
+
+
+@http_retry
+def delete_step(path: StepPath, certain: bool = False) -> ResourceOperationStatus:
+    """Delete a step in Matchbox."""
+    log_prefix = f"Step {path}"
     logger.debug("Deleting", prefix=log_prefix)
 
     res = CLIENT.delete(
-        f"/collections/{path.collection}/runs/{path.run}/resolutions/{path.name}",
+        f"/collections/{path.collection}/runs/{path.run}/steps/{path.name}",
         params={"certain": certain},
     )
     return ResourceOperationStatus.model_validate(res.json())

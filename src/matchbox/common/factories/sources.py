@@ -1,7 +1,7 @@
 """Factories for generating sources and linked source testkits for testing."""
 
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import cache, wraps
 from itertools import product
 from math import prod
@@ -19,14 +19,16 @@ from sqlglot.expressions import column
 
 from matchbox.client.dags import DAG
 from matchbox.client.locations import RelationalDBLocation
+from matchbox.client.queries import Query
 from matchbox.client.sources import Source
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_QUERY
 from matchbox.common.datatypes import DataTypes
 from matchbox.common.dtos import (
+    ModelStepName,
     SourceConfig,
     SourceField,
-    SourceResolutionName,
-    SourceResolutionPath,
+    SourceStepName,
+    SourceStepPath,
 )
 from matchbox.common.factories.entities import (
     ClusterEntity,
@@ -34,9 +36,9 @@ from matchbox.common.factories.entities import (
     FeatureConfig,
     SourceEntity,
     SuffixRule,
-    diff_results,
+    diff_entities,
     generate_entities,
-    probabilities_to_results_entities,
+    scores_to_results_entities,
 )
 from matchbox.common.hash import hash_values
 
@@ -102,7 +104,7 @@ class SourceTestkit(BaseModel):
         default=None,
     )
     data: pa.Table = Field(
-        description="The generated data, corresponding to the output of queries."
+        description="Data corresponding to the output of queries, without leaf data."
     )
     data_hashes: pa.Table = Field(description="A PyArrow table of hashes for the data.")
     entities: tuple[ClusterEntity, ...] = Field(
@@ -125,18 +127,22 @@ class SourceTestkit(BaseModel):
         return self.source.name
 
     @property
-    def resolution_path(self) -> SourceResolutionPath:
-        """Returns the source resolution path."""
-        return self.source.resolution_path
+    def path(self) -> SourceStepPath:
+        """Returns the source step path."""
+        return self.source.path
 
     @property
     def source_config(self) -> SourceConfig:
         """Return the SourceConfig from the source."""
         return self.source.config
 
+    def query(self) -> Query:
+        """Thin wrapper to Query this testkit's Source."""
+        return self.source.query()
+
     def fake_run(self) -> Self:
         """Set source hashes before source is run."""
-        self.source.hashes = self.data_hashes
+        self.source.hashes = pl.from_arrow(self.data_hashes)
 
         return self
 
@@ -176,7 +182,7 @@ class LinkedSourcesTestkit(BaseModel):
 
     dag: DAG
     true_entities: set[SourceEntity] = Field(default_factory=set)
-    sources: dict[SourceResolutionName, SourceTestkit]
+    sources: dict[SourceStepName, SourceTestkit]
 
     def find_entities(
         self,
@@ -210,48 +216,83 @@ class LinkedSourcesTestkit(BaseModel):
 
         return result
 
-    def true_entity_subset(self, *sources: SourceResolutionName) -> list[ClusterEntity]:
+    def true_entity_subset(self, *sources: SourceStepName) -> list[ClusterEntity]:
         """Return a subset of true entities that appear in the given sources."""
         cluster_entities = [
             entity.to_cluster_entity(*sources) for entity in self.true_entities
         ]
         return [entity for entity in cluster_entities if entity is not None]
 
-    def diff_results(
+    def diff_model_edges(
         self,
-        probabilities: pl.DataFrame,
-        sources: list[SourceResolutionName],
+        scores: pl.DataFrame,
+        sources: list[SourceStepName],
         left_clusters: tuple[ClusterEntity, ...],
         right_clusters: tuple[ClusterEntity, ...] | None = None,
-        threshold: int | float = 0,
+        threshold: float = 0.0,
     ) -> tuple[bool, dict]:
-        """Diff a results of probabilities with the true SourceEntities.
+        """Diff model edge outputs with the true SourceEntities.
 
         Args:
-            probabilities: Probabilities table to diff
+            scores: Model edge table to diff
             sources: Subset of the LinkedSourcesTestkit.sources that represents
                 the true sources to compare against
             left_clusters: ClusterEntity objects from the object used as an input
-                to the process that produced the probabilities table. Should
-                be a SourceTestkit.entities or ModelTestkit.entities.
+                to the process that produced the model edge table. Should
+                be a SourceTestkit.entities or ResolverTestkit.entities
             right_clusters: ClusterEntity objects from the object used as an input
-                to the process that produced the probabilities table. Should
-                be a SourceTestkit.entities or ModelTestkit.entities.
+                to the process that produced the model edge table. Should
+                be a SourceTestkit.entities or ResolverTestkit.entities
             threshold: Threshold for considering a match true
 
         Returns:
-            A tuple of whether the results are identical, and a report dictionary.
-                See [`diff_results()`][matchbox.common.factories.entities.diff_results]
+            A tuple of whether the results are identical, and a report dictionary. See
+                [`diff_entities()`][matchbox.common.factories.entities.diff_entities]
                 for the report format.
         """
-        return diff_results(
+        return diff_entities(
             expected=self.true_entity_subset(*sources),
-            actual=probabilities_to_results_entities(
-                probabilities=probabilities,
+            actual=scores_to_results_entities(
+                scores=scores,
                 left_clusters=left_clusters,
                 right_clusters=right_clusters,
                 threshold=threshold,
             ),
+        )
+
+    def diff_clusters(
+        self,
+        assignments: pl.DataFrame,
+        sources: list[SourceStepName],
+        input_clusters: Mapping[ModelStepName, tuple[ClusterEntity, ...]],
+    ) -> tuple[bool, dict]:
+        """Diff cluster assignments with the true SourceEntities.
+
+        Args:
+            assignments: Cluster assignment table to diff
+            sources: Subset of the LinkedSourcesTestkit.sources that represents
+                the true sources to compare against
+            input_clusters: raw input ClusterEntity from the
+                ModelTestkit.left/right_clusters used as inputs in to the resolver
+                that produced the assignments table
+
+        Returns:
+            A tuple of whether the results are identical, and a report dictionary. See
+                [`diff_entities()`][matchbox.common.factories.entities.diff_entities]
+                for the report format.
+        """
+        id_to_entity: dict[int, ClusterEntity] = {
+            entity.id: entity
+            for entities in input_clusters.values()
+            for entity in entities
+        }
+        actual = [
+            sum(id_to_entity[child_id] for child_id in group["child_id"].to_list())
+            for group in assignments.partition_by("parent_id")
+        ]
+        return diff_entities(
+            expected=self.true_entity_subset(*sources),
+            actual=actual,
         )
 
     def write_to_location(self) -> Self:
@@ -490,7 +531,7 @@ def generate_source(
 @cache
 def source_factory(
     features: list[FeatureConfig] | list[dict] | None = None,
-    name: SourceResolutionName | None = None,
+    name: SourceStepName | None = None,
     location_name: str = "dbname",
     dag: DAG | None = None,
     engine: Engine | None = None,
@@ -508,7 +549,7 @@ def source_factory(
             the source data. If None, defaults to a set of common features.
         name: Name of the source. If None, a unique name is generated. This will be
             used as the name of the table in the RelationalDBLocation, but also in
-            the SourceResolutionName for the source.
+            the SourceStepName for the source.
         location_name: Name of the location for the source.
         dag: DAG containing the source.
         engine: SQLAlchemy engine to use for the source's RelationalDBLocation. If

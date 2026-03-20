@@ -1,13 +1,13 @@
 # PostgreSQL
 
-A backend adapter for deploying Matchbox using PostgreSQL.
+A backend adapter for deploying Matchbox with PostgreSQL.
 
-There are two graph-like trees in place here.
+This backend stores two connected structures:
 
-* In the resolution subgraph the tree is implemented as closure table, enabling quick querying of root to leaf paths at the cost of redundancy
-* In the data subgraph the tree is implemented as a modified closure table which only stores the "root" and "leaf" relationships for each model
-    * The leaf IDs
-    * The model's proposed cluster IDs at that threshold -- the roots
+- An execution graph in `steps` and `step_from`, covering sources, models, and resolvers.
+- A data graph in `clusters`, `contains`, `model_edges`, `resolver_clusters`, and `cluster_source_key`.
+
+Source steps index source clusters. Model steps store score edges between clusters. Resolver steps point to the clusters that form a published entity view.
 
 ```mermaid
 erDiagram
@@ -21,25 +21,23 @@ erDiagram
         boolean is_mutable
         boolean is_default
     }
-    Resolutions {
-        bigint resolution_id PK
+    Steps {
+        bigint step_id PK
         bigint run_id FK
         text name
         text description
         text type
         bytea fingerprint
-        smallint truth
         enum upload_stage
     }
-    ResolutionFrom {
+    StepFrom {
         bigint parent PK,FK
         bigint child PK,FK
         integer level
-        smallint truth_cache
     }
     SourceConfigs {
         bigint source_config_id PK
-        bigint resolution_id FK
+        bigint step_id FK
         text location_type
         text location_name
         text extract_transform
@@ -54,11 +52,17 @@ erDiagram
     }
     ModelConfigs {
         bigint model_config_id PK
-        bigint resolution_id FK
+        bigint step_id FK
         text model_class
         jsonb model_settings
         jsonb left_query
         jsonb right_query
+    }
+    ResolverConfigs {
+        bigint resolver_config_id PK
+        bigint step_id FK
+        text resolver_class
+        jsonb resolver_settings
     }
     Clusters {
         bigint cluster_id PK
@@ -74,17 +78,16 @@ erDiagram
         bigint root PK,FK
         bigint leaf PK,FK
     }
-    Probabilities {
-        bigint resolution_id PK,FK
-        bigint cluster_id PK,FK
-        smallint probability
-    }
-    Results {
+    ModelEdges {
         bigint result_id PK
-        bigint resolution_id FK
+        bigint step_id FK
         bigint left_id FK
         bigint right_id FK
-        smallint probability
+        real score
+    }
+    ResolverClusters {
+        bigint step_id PK,FK
+        bigint cluster_id PK,FK
     }
     Users {
         bigint user_id PK
@@ -118,21 +121,22 @@ erDiagram
 
     Collections ||--o{ Runs : ""
     Collections ||--o{ Permissions : ""
-    Runs ||--o{ Resolutions : ""
-    Resolutions ||--o{ ResolutionFrom : "parent"
-    ResolutionFrom }o--|| Resolutions : "child"
-    Resolutions |o--|| SourceConfigs : ""
-    Resolutions |o--|| ModelConfigs : ""
-    Resolutions ||--o{ Probabilities : ""
-    Resolutions ||--o{ Results : ""
+    Runs ||--o{ Steps : ""
+    Steps ||--o{ StepFrom : "parent"
+    StepFrom }o--|| Steps : "child"
+    Steps |o--|| SourceConfigs : ""
+    Steps |o--|| ModelConfigs : ""
+    Steps |o--|| ResolverConfigs : ""
+    Steps ||--o{ ModelEdges : ""
+    Steps ||--o{ ResolverClusters : ""
     SourceConfigs ||--o{ SourceFields : ""
     SourceConfigs ||--o{ ClusterSourceKey : ""
     Clusters ||--o{ ClusterSourceKey : ""
     Clusters ||--o{ Contains : "root"
     Contains }o--|| Clusters : "leaf"
-    Clusters ||--o{ Probabilities : ""
-    Clusters ||--o{ Results : "left_id"
-    Clusters ||--o{ Results : "right_id"
+    Clusters ||--o{ ModelEdges : "left_id"
+    Clusters ||--o{ ModelEdges : "right_id"
+    Clusters ||--o{ ResolverClusters : ""
     Clusters ||--o{ EvalJudgements : "endorsed_cluster_id"
     Clusters ||--o{ EvalJudgements : "shown_cluster_id"
     Users ||--o{ UserGroups : ""
@@ -140,7 +144,6 @@ erDiagram
     Groups ||--o{ UserGroups : ""
     Groups ||--o{ Permissions : ""
 ```
-
 
 ::: matchbox.server.postgresql
     options:

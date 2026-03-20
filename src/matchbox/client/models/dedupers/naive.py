@@ -47,7 +47,7 @@ class NaiveDeduper(Deduper):
             select distinct on (list_sort([raw.left_id, raw.right_id]))
                 raw.left_id,
                 raw.right_id,
-                1.0 as probability
+                1.0 as score
             from (
                 select
                     l.{self.settings.id} as left_id,
@@ -70,7 +70,7 @@ class NaiveDeduper(Deduper):
                 [
                     pl.col("left_id").cast(self._id_dtype),
                     pl.col("right_id").cast(self._id_dtype),
-                    pl.col("probability").cast(pl.Float32),
+                    pl.col("score").cast(pl.Float32),
                 ]
             )
         )

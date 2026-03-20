@@ -1,177 +1,73 @@
 """Objects representing the results of running a model client-side."""
 
-from collections.abc import Hashable
-from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Self
 
 import polars as pl
-from pydantic import ConfigDict
 
 from matchbox.client.sources import Source
-from matchbox.common.arrow import SCHEMA_RESULTS
-from matchbox.common.hash import IntMap
+from matchbox.common.arrow import SCHEMA_MODEL_EDGES
 from matchbox.common.logging import logger
-from matchbox.common.transform import DisjointSet, to_clusters
+from matchbox.common.transform import DisjointSet
 
 if TYPE_CHECKING:
     from matchbox.client.dags import DAG
 else:
     DAG = Any
 
-T = TypeVar("T", bound=Hashable)
-P = ParamSpec("P")
-R = TypeVar("R")
 
+def normalise_model_scores(scores: pl.DataFrame) -> pl.DataFrame:
+    """Validate and normalise model output scores."""
+    if not isinstance(scores, pl.DataFrame):
+        raise ValueError(f"Expected a polars DataFrame, got {type(scores)}.")
 
-class ModelResults:
-    """Results of a model run.
-
-    Contains:
-
-    * The probabilities of each pair being a match
-    * (Optional) The clusters of connected components at each threshold
-    * (Optional) The leaf_id mapping to trace results back to source clusters
-
-    Allows users to easily interrogate the outputs of models, explore decisions on
-    choosing thresholds for clustering, and upload the results to Matchbox.
-    """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    probabilities: pl.DataFrame
-    _clusters: pl.DataFrame | None = None
-
-    def __init__(
-        self,
-        probabilities: pl.DataFrame,
-        left_root_leaf: pl.DataFrame | None = None,
-        right_root_leaf: pl.DataFrame | None = None,
-    ) -> None:
-        """Initialises and validates results.
-
-        Args:
-            probabilities: dataframe with SCHEMA_RESULTS
-            left_root_leaf: optional dataframe with columns: id, leaf_id
-            right_root_leaf: optional dataframe with columns: id, leaf_id
-        """
-        self.left_root_leaf = None
-        self.right_root_leaf = None
-
-        if left_root_leaf is not None:
-            self.left_root_leaf = left_root_leaf
-        if right_root_leaf is not None:
-            self.right_root_leaf = right_root_leaf
-
-        if not isinstance(probabilities, pl.DataFrame):
-            raise ValueError(f"Expected a polars DataFrame, got {type(probabilities)}.")
-
-        expected_fields = set(SCHEMA_RESULTS.names)
-        if set(probabilities.columns) != expected_fields:
-            raise ValueError(
-                f"Expected {expected_fields}.\nFound {set(probabilities.column_names)}."
-            )
-
-        # Handle empty tables
-        if probabilities.height == 0:
-            probabilities = pl.DataFrame(schema=pl.Schema(SCHEMA_RESULTS))
-
-        unique_probabilities = (
-            probabilities.with_columns(
-                pl.concat_list(
-                    [pl.col("left_id").cast(pl.Utf8), pl.col("right_id").cast(pl.Utf8)]
-                )
-                .list.sort()
-                .list.join("_")
-                .alias("sorted_ids")
-            )
-            .sort(
-                "probability", descending=True
-            )  # sort so largest probability comes first
-            .unique(
-                subset=["sorted_ids"], keep="first"
-            )  # keep first occurrence after sorting
-        ).drop("sorted_ids")
-        if len(probabilities) != len(unique_probabilities):
-            logger.warning(
-                "Duplicate pairs! Keeping only pairs with highest probability."
-            )
-
-        # Process probability field if it contains floating-point or decimal values
-        probability_type = unique_probabilities["probability"].dtype
-        if probability_type.is_float() or probability_type.is_decimal():
-            probability_uint8 = pl.Series(
-                unique_probabilities.select(
-                    pl.col("probability").mul(100).round(0).cast(pl.UInt8)
-                )
-            )
-
-            # Check max value only if the table is not empty
-            max_prob = probability_uint8.max()
-            if max_prob is not None and max_prob > 100:
-                p_max = max_prob
-                p_min = probability_uint8.min()
-                raise ValueError(f"Probability range misconfigured: [{p_min}, {p_max}]")
-
-            unique_probabilities = unique_probabilities.replace_column(
-                unique_probabilities.get_column_index("probability"), probability_uint8
-            )
-
-        # Need schema in format recognised by polars
-        self.probabilities = unique_probabilities.cast(pl.Schema(SCHEMA_RESULTS))
-
-    @property
-    def clusters(self) -> pl.DataFrame:
-        """Retrieve new clusters implied by these results."""
-        if self._clusters is None:
-            im = IntMap()
-            self._clusters = to_clusters(
-                results=self.probabilities, dtype=pl.Int64, hash_func=im.index
-            )
-        return self._clusters
-
-    def root_leaf(self) -> pl.DataFrame:
-        """Returns all roots and leaves implied by these results."""
-        if self.left_root_leaf is None:
-            raise RuntimeError(
-                "This Results object wasn't instantiated for validation features."
-            )
-
-        parents_root_leaf = self.left_root_leaf.select(["id", "leaf_id"])
-        if self.right_root_leaf is not None:
-            parents_root_leaf = pl.concat(
-                [
-                    parents_root_leaf,
-                    self.right_root_leaf.select(["id", "leaf_id"]),
-                ]
-            )
-
-        # Go from parent-child (where child could be the root of another model)
-        # to root-leaf, where leaf is a source cluster ID
-        root_leaf_res = (
-            self.clusters.rename({"parent": "root_id"})
-            .join(parents_root_leaf, left_on="child", right_on="id")
-            .select(["root_id", "leaf_id"])
-            .unique()
+    expected_fields = set(SCHEMA_MODEL_EDGES.names)
+    if set(scores.columns) != expected_fields:
+        raise ValueError(
+            f"Expected {expected_fields}.\nFound {set(scores.column_names)}."
         )
 
-        # Generate root-leaf for those input rows that weren't merged by this model
-        unmerged_ids_rows = (
-            parents_root_leaf.select("id", "leaf_id")
-            .join(
-                self.clusters.select("child"),
-                left_on="id",
-                right_on="child",
-                how="anti",
-            )
-            .rename({"id": "root_id"})
-            .select(["root_id", "leaf_id"])
-            .unique()
+    if scores.height == 0:
+        scores = pl.DataFrame(schema=pl.Schema(SCHEMA_MODEL_EDGES))
+
+    if not scores["score"].dtype.is_numeric():
+        raise ValueError(
+            "Score column must contain numeric values in the range [0.0, 1.0]."
         )
 
-        return pl.concat([root_leaf_res, unmerged_ids_rows])
+    normalised_scores = scores.with_columns(pl.col("score").cast(pl.Float32))
+    invalid_scores = normalised_scores.filter(
+        pl.col("score").is_null()
+        | pl.col("score").is_nan()
+        | (pl.col("score") < 0.0)
+        | (pl.col("score") > 1.0)
+    )
+    if invalid_scores.height:
+        min_score = normalised_scores["score"].min()
+        max_score = normalised_scores["score"].max()
+        raise ValueError(f"Score range misconfigured: [{min_score}, {max_score}]")
+
+    unique_scores = (
+        normalised_scores.with_columns(
+            pl.concat_list(
+                [pl.col("left_id").cast(pl.Utf8), pl.col("right_id").cast(pl.Utf8)]
+            )
+            .list.sort()
+            .list.join("_")
+            .alias("sorted_ids")
+        )
+        .sort("score", descending=True)  # sort so largest score comes first
+        .unique(
+            subset=["sorted_ids"], keep="first"
+        )  # keep first occurrence after sorting
+    ).drop("sorted_ids")
+    if len(scores) != len(unique_scores):
+        logger.warning("Duplicate pairs! Keeping only pairs with highest score.")
+
+    return unique_scores.cast(pl.Schema(SCHEMA_MODEL_EDGES))
 
 
-class ResolvedMatches:
-    """Matches according to resolution."""
+class ResolverMatches:
+    """Matches according to a resolver."""
 
     def __init__(
         self, sources: list[Source], query_results: list[pl.DataFrame]
@@ -193,12 +89,12 @@ class ResolvedMatches:
 
     @classmethod
     def from_dump(cls, cluster_key_map: pl.DataFrame, dag: DAG) -> Self:
-        """Initialise ResolvedMatches from concatenated dataframe representation."""
+        """Initialise ResolverMatches from concatenated dataframe representation."""
         partitioned = cluster_key_map.partition_by("source")
         sources = [dag.get_source(p["source"][0]) for p in partitioned]
         query_results = [p.drop("source") for p in partitioned]
 
-        return ResolvedMatches(sources=sources, query_results=query_results)
+        return ResolverMatches(sources=sources, query_results=query_results)
 
     def as_lookup(self) -> pl.DataFrame:
         """Return lookup across matchbox ID and source keys."""
@@ -338,4 +234,4 @@ class ResolvedMatches:
             )
             new_query_results.append(source_query_results)
 
-        return ResolvedMatches(sources=self.sources, query_results=new_query_results)
+        return ResolverMatches(sources=self.sources, query_results=new_query_results)

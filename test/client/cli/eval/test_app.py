@@ -11,7 +11,7 @@ from textual.widgets import Footer, Label
 from matchbox.client.cli.eval.app import EntityResolutionApp, EvaluationQueue
 from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
 from matchbox.client.dags import DAG
-from matchbox.common.dtos import ModelResolutionPath
+from matchbox.common.dtos import ResolverStepPath
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.scenarios import setup_scenario
 from matchbox.server.base import MatchboxDBAdapter
@@ -123,10 +123,10 @@ class TestScenarioIntegration:
     """Integration tests using real scenario data with backend."""
 
     @pytest.fixture
-    def test_resolution(self) -> ModelResolutionPath:
-        """Create test resolution path."""
-        return ModelResolutionPath(
-            collection="test_collection", run=1, name="test_resolution"
+    def test_resolver_path(self) -> ResolverStepPath:
+        """Create test step path."""
+        return ResolverStepPath(
+            collection="test_collection", run=1, name="test_resolver_path"
         )
 
     @pytest.fixture(autouse=True)
@@ -153,18 +153,19 @@ class TestScenarioIntegration:
         - Status updates and help modal
         """
         with self.scenario(self.backend, "mega") as dag:
-            model_name: str = "mega_product_linker"
+            mega_resolver_name = "resolver_mega_product_linker"
 
             loaded_dag: DAG = dag.dag.load_pending().set_client(self.warehouse_engine)
+            mega_resolver = loaded_dag.get_resolver(mega_resolver_name)
 
             app = EntityResolutionApp(
-                resolution=loaded_dag.get_model(model_name),
+                resolver=mega_resolver.path,
                 num_samples=3,
                 dag=loaded_dag,
                 scroll_debounce_delay=None,
             )
 
-            # Resolution carefully chosen so all columns on a page are always numbered
+            # Step carefully chosen so all columns on a page are always numbered
             async with app.run_test(size=(250, 150)) as pilot:
                 await pilot.pause()
 
@@ -294,12 +295,13 @@ class TestScenarioIntegration:
     async def test_app_widgets_are_visible(self) -> None:
         """Test that all app widgets are visible with non-zero dimensions."""
         with self.scenario(self.backend, "dedupe") as dag:
-            model_name: str = "naive_test_crn"
+            dedupe_resolver_name = "resolver_naive_test_crn"
 
             loaded_dag: DAG = dag.dag.load_pending().set_client(self.warehouse_engine)
+            dedupe_resolver = loaded_dag.get_resolver(dedupe_resolver_name)
 
             app = EntityResolutionApp(
-                resolution=loaded_dag.get_model(model_name),
+                resolver=dedupe_resolver.path,
                 num_samples=3,
                 dag=loaded_dag,
             )

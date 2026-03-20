@@ -14,13 +14,14 @@ from matchbox.client.locations import RelationalDBLocation
 from matchbox.client.sources import (
     Source,
 )
+from matchbox.common.arrow import SCHEMA_INDEX, check_schema_subset
 from matchbox.common.datatypes import DataTypes
 from matchbox.common.dtos import (
     CRUDOperation,
     ErrorResponse,
-    Resolution,
     ResourceOperationStatus,
     SourceField,
+    Step,
     UploadInfo,
     UploadStage,
 )
@@ -284,9 +285,8 @@ def test_source_run(sqla_sqlite_warehouse: Engine, batch_size: int) -> None:
     result = source.run(batch_size=batch_size) if batch_size else source.run()
 
     # Verify result
-    assert isinstance(result, pa.Table)
-    assert "hash" in result.column_names
-    assert "keys" in result.column_names
+    assert isinstance(result, pl.DataFrame)
+    check_schema_subset(expected=SCHEMA_INDEX, actual=result.to_arrow().schema)
     assert len(result) == n_true_entities
 
     source.run()
@@ -328,34 +328,34 @@ def test_source_sync(matchbox_api: MockRouter, sqla_sqlite_warehouse: Engine) ->
     ).write_to_location()
 
     # Mock the routes:
-    # Resolution doesn't yet exist
+    # Step doesn't yet exist
     matchbox_api.get(
-        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/resolutions/{testkit.source.name}"
+        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/steps/{testkit.source.name}"
     ).mock(
         return_value=Response(
             404,
             json=ErrorResponse(
-                exception_type="MatchboxResolutionNotFoundError",
+                exception_type="MatchboxStepNotFoundError",
                 message="Source not found",
             ).model_dump(),
         )
     )
-    # Resolution can be inserted
+    # Step can be inserted
     insert_config_route = matchbox_api.post(
-        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/resolutions/{testkit.source.name}"
+        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/steps/{testkit.source.name}"
     ).mock(
         return_value=Response(
             201,
             content=ResourceOperationStatus(
                 success=True,
-                target=f"Resolution {testkit.source.name}",
+                target=f"Step {testkit.source.name}",
                 operation=CRUDOperation.CREATE,
             ).model_dump_json(),
         )
     )
-    # Resolution data can be inserted
+    # Step data can be inserted
     insert_hashes_route = matchbox_api.post(
-        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/resolutions/{testkit.source.name}/data"
+        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/steps/{testkit.source.name}/data"
     ).mock(
         return_value=Response(
             202,
@@ -365,29 +365,29 @@ def test_source_sync(matchbox_api: MockRouter, sqla_sqlite_warehouse: Engine) ->
         )
     )
 
-    # Later, resolution can be updated
+    # Later, step can be updated
     update_route = matchbox_api.put(
-        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/resolutions/{testkit.source.name}"
+        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/steps/{testkit.source.name}"
     ).mock(
         return_value=Response(
             200,
             content=ResourceOperationStatus(
                 success=True,
-                target=f"Resolution {testkit.source.name}",
+                target=f"Step {testkit.source.name}",
                 operation=CRUDOperation.UPDATE,
             ).model_dump_json(),
         )
     )
 
-    # Later, resolution can be deleted and recreated
+    # Later, step can be deleted and recreated
     delete_route = matchbox_api.delete(
-        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/resolutions/{testkit.source.name}"
+        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/steps/{testkit.source.name}"
     ).mock(
         return_value=Response(
             200,
             content=ResourceOperationStatus(
                 success=True,
-                target=f"Resolution {testkit.source.name}",
+                target=f"Step {testkit.source.name}",
                 operation=CRUDOperation.DELETE,
             ).model_dump_json(),
         )
@@ -403,20 +403,20 @@ def test_source_sync(matchbox_api: MockRouter, sqla_sqlite_warehouse: Engine) ->
     testkit.fake_run()
     # If stage is not PROCESSING, job will fail
     matchbox_api.get(
-        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/resolutions/{testkit.source.name}/data/status"
+        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/steps/{testkit.source.name}/data/status"
     ).mock(
         return_value=Response(
             200, json=UploadInfo(stage=UploadStage.READY).model_dump()
         )
     )
-    with pytest.raises(MatchboxServerFileError, match="problem"):
+    with pytest.raises(MatchboxServerFileError, match="issue"):
         testkit.source.sync()
 
     # -- FIRST TIME INSERTION --
 
-    # Before upload, resolution is ready for data, after it is complete
+    # Before upload, step is ready for data, after it is complete
     matchbox_api.get(
-        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/resolutions/{testkit.source.name}/data/status"
+        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/steps/{testkit.source.name}/data/status"
     ).mock(
         return_value=Response(
             200, json=UploadInfo(stage=UploadStage.COMPLETE).model_dump()
@@ -430,12 +430,12 @@ def test_source_sync(matchbox_api: MockRouter, sqla_sqlite_warehouse: Engine) ->
     assert insert_config_route.called
     assert not update_route.called
     assert not delete_route.called
-    # Resolution metadata was correct
-    resolution_call = Resolution.model_validate_json(
+    # Step metadata was correct
+    step_call = Step.model_validate_json(
         insert_config_route.calls.last.request.content.decode("utf-8")
     )
-    assert resolution_call == testkit.source.to_resolution()
-    # Resolution data was correct
+    assert step_call == testkit.source.to_dto()
+    # Step data was correct
     assert (
         b"Content-Disposition: form-data;"
         in insert_hashes_route.calls.last.request.content
@@ -445,21 +445,21 @@ def test_source_sync(matchbox_api: MockRouter, sqla_sqlite_warehouse: Engine) ->
     # -- SOFT UPDATE --
 
     insert_hashes_route.reset()
-    # Mock endpoint now returns existing resolution
+    # Mock endpoint now returns existing step
     matchbox_api.get(
-        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/resolutions/{testkit.source.name}"
-    ).mock(return_value=Response(200, json=testkit.source.to_resolution().model_dump()))
+        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/steps/{testkit.source.name}"
+    ).mock(return_value=Response(200, json=testkit.source.to_dto().model_dump()))
 
     # Mock endpoint now declares data is present already
     matchbox_api.get(
-        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/resolutions/{testkit.source.name}/data/status"
+        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/steps/{testkit.source.name}/data/status"
     ).mock(
         return_value=Response(
             200, json=UploadInfo(stage=UploadStage.COMPLETE).model_dump()
         )
     )
     testkit.source.sync()
-    # Resolution was compatible: ensure it was updated, not deleted
+    # Step was compatible: ensure it was updated, not deleted
     assert update_route.called
     assert not delete_route.called
     # The data did not need to be updated
@@ -468,19 +468,19 @@ def test_source_sync(matchbox_api: MockRouter, sqla_sqlite_warehouse: Engine) ->
     # -- HARD UPDATE --
 
     insert_hashes_route.reset()
-    # Mock endpoint now returns existing resolution
+    # Mock endpoint now returns existing step
     matchbox_api.get(
-        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/resolutions/{testkit.source.name}"
-    ).mock(return_value=Response(200, json=testkit.source.to_resolution().model_dump()))
+        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/steps/{testkit.source.name}"
+    ).mock(return_value=Response(200, json=testkit.source.to_dto().model_dump()))
 
     # Changing data requires deletion and re-insertion
     testkit.data_hashes = testkit.data_hashes.slice(1, 3)
     testkit.fake_run()
 
-    # Resolution data is first ready to upload, and then uploaded
+    # Step data is first ready to upload, and then uploaded
     matchbox_api.get(
-        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/resolutions/{testkit.source.name}/data/status"
-    ).mock(return_value=Response(200, json=testkit.source.to_resolution().model_dump()))
+        f"/collections/{testkit.source.dag.name}/runs/{testkit.source.dag.run}/steps/{testkit.source.name}/data/status"
+    ).mock(return_value=Response(200, json=testkit.source.to_dto().model_dump()))
 
     testkit.source.sync()
 

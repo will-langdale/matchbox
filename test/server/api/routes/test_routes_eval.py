@@ -16,7 +16,7 @@ from matchbox.common.arrow import (
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
-    MatchboxResolutionNotFoundError,
+    MatchboxStepNotFoundError,
     MatchboxTooManySamplesRequested,
     MatchboxUserNotFoundError,
 )
@@ -117,7 +117,7 @@ def test_get_samples(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> Non
         params={
             "collection": "test_collection",
             "run_id": 1,
-            "resolution": "a",
+            "resolver": "a",
             "n": 10,
         },
     )
@@ -137,9 +137,9 @@ def test_get_samples(api_client_and_mocks: tuple[TestClient, Mock, Mock]) -> Non
             id="user_not_found",
         ),
         pytest.param(
-            MatchboxResolutionNotFoundError,
-            "MatchboxResolutionNotFoundError",
-            id="resolution_not_found",
+            MatchboxStepNotFoundError,
+            "MatchboxStepNotFoundError",
+            id="step_not_found",
         ),
     ],
 )
@@ -157,7 +157,7 @@ def test_get_samples_404(
         params={
             "collection": "test_collection",
             "run_id": 1,
-            "resolution": "a",
+            "resolver": "a",
             "n": 10,
             "user_name": "alice",
         },
@@ -177,7 +177,7 @@ def test_get_samples_422(api_client_and_mocks: tuple[TestClient, Mock, Mock]) ->
         params={
             "collection": "test_collection",
             "run_id": 1,
-            "resolution": "a",
+            "resolver": "a",
             "n": 10,
             "user_name": "alice",
         },

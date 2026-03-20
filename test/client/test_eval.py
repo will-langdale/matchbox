@@ -1,5 +1,8 @@
+"""Tests for client-side evaluation sampling and scoring workflows."""
+
 import tempfile
 from collections.abc import Callable
+from unittest.mock import Mock, patch
 
 import polars as pl
 import pytest
@@ -10,16 +13,19 @@ from respx import MockRouter
 from sqlalchemy import Engine
 
 from matchbox.client.dags import DAG
-from matchbox.client.eval import get_samples
+from matchbox.client.eval import EvalData, get_samples
 from matchbox.client.models.linkers import DeterministicLinker
-from matchbox.client.results import ResolvedMatches
+from matchbox.client.resolvers import Components
+from matchbox.client.results import ResolverMatches
 from matchbox.common.arrow import (
     SCHEMA_EVAL_SAMPLES,
     SCHEMA_QUERY_WITH_LEAVES,
     table_to_buffer,
 )
-from matchbox.common.dtos import Collection, Resolution, ResolutionType, Run
-from matchbox.common.exceptions import MatchboxSourceTableError
+from matchbox.common.dtos import Collection, Run, Step, StepType
+from matchbox.common.exceptions import (
+    MatchboxSourceTableError,
+)
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.sources import source_from_tuple
 
@@ -81,7 +87,7 @@ def test_get_samples_local(sqlite_in_memory_warehouse: Engine) -> None:
         schema=pl.Schema(SCHEMA_QUERY_WITH_LEAVES),
     )
 
-    rm = ResolvedMatches(
+    rm = ResolverMatches(
         sources=[foo, bar], query_results=[foo_query_data, bar_query_data]
     )
 
@@ -103,7 +109,7 @@ def test_get_samples_remote(
     sqlite_in_memory_warehouse: Engine,
     env_setter: Callable[[str, str], None],
 ) -> None:
-    """We can sample from a resolution on the server."""
+    """We can sample from a step on the server."""
     # Foo has two identical rows
     foo_testkit = source_from_tuple(
         data_tuple=({"col": 1}, {"col": 1}, {"col": 2}, {"col": 3}, {"col": 4}),
@@ -141,33 +147,37 @@ def test_get_samples_remote(
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.key=r.key"},
     )
-    foo_bar_baz = foo_bar.query(foo, bar).linker(
+    bar_baz = bar.query().linker(
         baz.query(),
         name="linker2",
         model_class=DeterministicLinker,
         model_settings={"comparisons": "l.key=r.key"},
     )
+    resolver = foo_bar.resolver(bar_baz, name="resolver", resolver_class=Components)
 
     # Mock the collection and run endpoint that load_pending() calls
     collection_data = Collection(runs=[dag.run])
     run_data = Run(
         run_id=dag.run,
         mutable=True,
-        resolutions={
-            "foo": foo_testkit.fake_run().source.to_resolution(),
-            "bar": bar_testkit.fake_run().source.to_resolution(),
-            "baz": baz_testkit.fake_run().source.to_resolution(),
-            "linker1": Resolution(
+        steps={
+            "foo": foo_testkit.fake_run().source.to_dto(),
+            "bar": bar_testkit.fake_run().source.to_dto(),
+            "baz": baz_testkit.fake_run().source.to_dto(),
+            "linker1": Step(
                 fingerprint=b"mock",
-                truth=1,
-                resolution_type=ResolutionType.MODEL,
+                step_type=StepType.MODEL,
                 config=foo_bar.config,
             ),
-            "linker2": Resolution(
+            "linker2": Step(
                 fingerprint=b"mock2",
-                truth=1,
-                resolution_type=ResolutionType.MODEL,
-                config=foo_bar_baz.config,
+                step_type=StepType.MODEL,
+                config=bar_baz.config,
+            ),
+            "resolver": Step(
+                fingerprint=b"mock3",
+                step_type=StepType.RESOLVER,
+                config=resolver.config,
             ),
         },
     )
@@ -217,7 +227,7 @@ def test_get_samples_remote(
     # All three sources (foo, bar, baz) are in loaded_dag with the warehouse location
     samples_all = get_samples(
         n=10,
-        resolution=dag.final_step.resolution_path.name,
+        resolver=dag.default_resolver.path.name,
         dag=loaded_dag,
     )
 
@@ -246,7 +256,7 @@ def test_get_samples_remote(
 
     samples = get_samples(
         n=10,
-        resolution=dag.final_step.resolution_path.name,
+        resolver=dag.default_resolver.path.name,
         dag=loaded_dag,
     )
 
@@ -296,7 +306,7 @@ def test_get_samples_remote(
 
     no_samples = get_samples(
         n=10,
-        resolution=dag.final_step.resolution_path.name,
+        resolver=dag.default_resolver.path.name,
         dag=loaded_dag,
     )
     assert no_samples == {}
@@ -314,6 +324,30 @@ def test_get_samples_remote(
     with pytest.raises(MatchboxSourceTableError, match="Could not query source"):
         get_samples(
             n=10,
-            resolution=dag.final_step.resolution_path.name,
+            resolver=dag.default_resolver.path.name,
             dag=bad_dag,
         )
+
+
+@patch("matchbox.client.eval.samples._handler.download_eval_data")
+def test_evaldata_precision_recall_from_resolver(
+    mock_download_eval_data: Mock,
+) -> None:
+    """EvalData scores resolver output from backend-resolved matches."""
+    judgements = pl.DataFrame(
+        [{"user_name": "alice", "shown": 1, "endorsed": 1}],
+        schema={"user_name": pl.String, "shown": pl.UInt64, "endorsed": pl.UInt64},
+    )
+    expansion = pl.DataFrame(
+        [{"root": 1, "leaves": [1, 2]}],
+        schema={"root": pl.UInt64, "leaves": pl.List(pl.UInt64)},
+    )
+
+    mock_download_eval_data.return_value = (judgements, expansion)
+
+    dummy_results = pl.DataFrame({"root": [1, 1], "leaf": [1, 2]})
+
+    precision, recall = EvalData().precision_recall(results_eval=dummy_results)
+
+    assert precision == 1.0
+    assert recall == 1.0
