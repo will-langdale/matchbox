@@ -1,8 +1,10 @@
 # Look up matches
 
+Use lookups when you want to inspect the entity view produced by a resolver.
+
 ## Single keys
 
-Given a key and a source, you can retrieve all keys resolving to the same entity in other sources. Useful for making ad-hoc queries for single data items.
+Given a key in one source, `lookup_key()` returns the keys that resolve with it in other sources through the DAG's default resolver.
 
 === "Example"
     ```python
@@ -24,15 +26,18 @@ Given a key and a source, you can retrieve all keys resolving to the same entity
     ["EXP123", "EXP124"]
     ```
 
-## Extract whole lookup
+## Whole lookups
 
-You can download an entire lookup as a PyArrow table.
+Use `get_matches()` to download resolved entities for a resolver and turn them into a lookup table.
 
 === "Example"
     ```python
     from matchbox.client.dags import DAG
 
-    lookup = DAG("companies").load_default().resolve().as_lookup()
+    dag = DAG("companies").load_default()
+
+    lookup = dag.get_matches().as_lookup()
+    strict_lookup = dag.get_matches(resolver="companies_resolver").as_lookup()
     ```
 
-The output of `dag.resolve()` has type [`ResolverMatches`][matchbox.client.results.ResolverMatches], which lets you explore your resolved entities in different ways.
+`dag.get_matches()` returns [`ResolverMatches`][matchbox.client.results.ResolverMatches], which also supports `as_dump()`, `view_cluster()`, and `merge()` for [evaluation and inspection workflows](evaluation.md).

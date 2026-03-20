@@ -50,7 +50,7 @@ See [permissions](permissions.md) for more information.
 
 ### Delete orphans
 
-When resolutions are modified or deleted, it is possible that the database ends up having clusters which are not related to any table containing sources, models or evaluations. These clusters are considered orphaned, and they should be deleted regularly to reduce bloat.
+When steps are modified or deleted, the database can end up with clusters that are not related to any source, model, resolver, or evaluation data. These clusters are orphaned and should be deleted regularly to reduce bloat.
 
 ```shell
 mbx admin prune
