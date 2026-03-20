@@ -1,6 +1,5 @@
 """Objects to define a DAG which indexes, deduplicates and links data."""
 
-import json
 import tempfile
 from collections import deque
 from enum import StrEnum
@@ -299,7 +298,7 @@ class DAG:
                 name=ModelStepName(name),
                 description=step.description,
                 model_class=step.config.model_class,
-                model_settings=json.loads(step.config.model_settings),
+                model_settings=step.config.model_settings,
                 left_query=Query.from_config(step.config.left_query, dag=self),
                 right_query=Query.from_config(step.config.right_query, dag=self)
                 if step.config.right_query
@@ -311,7 +310,7 @@ class DAG:
                 description=step.description,
                 inputs=(self.get_model(i) for i in step.config.inputs),
                 resolver_class=step.config.resolver_class,
-                resolver_settings=json.loads(step.config.resolver_settings),
+                resolver_settings=step.config.resolver_settings,
             )
         else:
             raise ValueError(f"Unknown step type {step.step_type}")

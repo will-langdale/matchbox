@@ -1,5 +1,3 @@
-import json
-
 import polars as pl
 import pytest
 from httpx import Response
@@ -79,7 +77,7 @@ def test_init_and_run_model(
     assert model.config == ModelConfig(
         type=ModelType.LINKER,
         model_class="MockLinker",
-        model_settings=json.dumps({"left_id": "l.field", "right_id": "r.field"}),
+        model_settings={"left_id": "l.field", "right_id": "r.field"},
         left_query=foo_query.config,
         right_query=bar_query.config,
     )

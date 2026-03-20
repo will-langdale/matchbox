@@ -674,7 +674,7 @@ class TestMatchboxCollectionsBackend:
                 config={
                     "resolver_class": "Components",
                     "inputs": ("crn",),
-                    "resolver_settings": "{}",
+                    "resolver_settings": {},
                 },
                 fingerprint=b"invalid_parent",
             )

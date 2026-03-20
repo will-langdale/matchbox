@@ -283,11 +283,11 @@ class MatchboxPostgresCollectionsMixin:
                     raise ValueError("Config for model step expected.")
                 old_config.model_class = new_config.model_class
                 old_config.model_settings = new_config.model_settings
-                old_config.left_query = new_config.left_query.model_dump_json()
+                old_config.left_query = new_config.left_query.model_dump(mode="json")
                 old_config.right_query = (
                     None
                     if not new_config.right_query
-                    else new_config.right_query.model_dump_json()
+                    else new_config.right_query.model_dump(mode="json")
                 )
             elif old_step.type == StepType.RESOLVER:
                 old_config: ResolverConfigs = old_step.resolver_config

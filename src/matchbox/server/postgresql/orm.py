@@ -1,6 +1,5 @@
 """ORM classes for the Matchbox PostgreSQL database."""
 
-import json
 import textwrap
 from typing import Any, Optional
 
@@ -840,9 +839,9 @@ class ModelConfigs(CountMixin, MBDB.MatchboxBase):
         nullable=False,
     )
     model_class: Mapped[str] = mapped_column(TEXT, nullable=False)
-    model_settings: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    left_query: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    right_query: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    model_settings: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    left_query: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    right_query: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     @property
     def name(self) -> str:
@@ -868,9 +867,11 @@ class ModelConfigs(CountMixin, MBDB.MatchboxBase):
         return cls(
             model_class=config.model_class,
             model_settings=config.model_settings,
-            left_query=config.left_query.model_dump_json(),
+            left_query=config.left_query.model_dump(mode="json"),
             right_query=(
-                None if not config.right_query else config.right_query.model_dump_json()
+                None
+                if not config.right_query
+                else config.right_query.model_dump(mode="json")
             ),
         )
 
@@ -880,8 +881,8 @@ class ModelConfigs(CountMixin, MBDB.MatchboxBase):
             type=ModelType.LINKER if self.right_query else ModelType.DEDUPER,
             model_class=self.model_class,
             model_settings=self.model_settings,
-            left_query=json.loads(self.left_query),
-            right_query=json.loads(self.right_query) if self.right_query else None,
+            left_query=self.left_query,
+            right_query=self.right_query,
         )
 
 
@@ -899,7 +900,7 @@ class ResolverConfigs(CountMixin, MBDB.MatchboxBase):
         nullable=False,
     )
     resolver_class: Mapped[str] = mapped_column(TEXT, nullable=False)
-    resolver_settings: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    resolver_settings: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
     resolver_step: Mapped["Steps"] = relationship(back_populates="resolver_config")
 

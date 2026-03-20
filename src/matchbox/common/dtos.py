@@ -1,6 +1,5 @@
 """Data transfer objects for Matchbox API."""
 
-import json
 import re
 import textwrap
 from collections.abc import Iterable
@@ -14,6 +13,7 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    JsonValue,
     PlainSerializer,
     PlainValidator,
     StringConstraints,
@@ -67,6 +67,8 @@ MatchboxName: TypeAlias = Annotated[
         },
     ),
 ]
+
+JsonObject: TypeAlias = dict[str, JsonValue]
 
 
 class OKMessage(BaseModel):
@@ -462,7 +464,7 @@ class ModelConfig(BaseModel):
 
     type: ModelType
     model_class: str
-    model_settings: str
+    model_settings: JsonObject
     left_query: QueryConfig
     right_query: QueryConfig | None = None  # Only used for linker models
 
@@ -487,16 +489,6 @@ class ModelConfig(BaseModel):
             raise ValueError("Right query must be set for linkers")
 
         return self
-
-    @field_validator("model_settings", mode="after")
-    @classmethod
-    def validate_settings_json(cls, value: str) -> str:
-        """Ensure that the model settings is valid JSON."""
-        try:
-            isinstance(json.loads(value), dict)
-        except json.JSONDecodeError as e:
-            raise ValueError("Model settings are not valid JSON") from e
-        return value
 
     @property
     def dependencies(self) -> list[StepName]:
@@ -532,7 +524,7 @@ class ResolverConfig(BaseModel):
     """Configuration for resolver that combines model and resolver outputs."""
 
     resolver_class: str
-    resolver_settings: str
+    resolver_settings: JsonObject
     inputs: tuple[ModelStepName, ...]
 
     @model_validator(mode="after")
@@ -541,16 +533,6 @@ class ResolverConfig(BaseModel):
         if len(self.inputs) < 1:
             raise ValueError("Resolver must have at least one input.")
         return self
-
-    @field_validator("resolver_settings", mode="after")
-    @classmethod
-    def validate_settings_json(cls, value: str) -> str:
-        """Ensure that resolver settings are valid JSON."""
-        try:
-            isinstance(json.loads(value), dict)
-        except json.JSONDecodeError as e:
-            raise ValueError("Resolver settings are not valid JSON") from e
-        return value
 
     @property
     def dependencies(self) -> list[ModelStepName]:
