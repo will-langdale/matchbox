@@ -53,7 +53,7 @@ from matchbox.client.dags import DAG
 source_testkit = source_factory()
 
 dag = DAG("companies")
-dag.add_step(name=source_testkit.name, step=source_testkit.source.to_dto())
+dag.source(**source_testkit.into_dag())
 ```
 
 `source_factory()` can be configured with a powerful range of [`FeatureConfig`][matchbox.common.factories.entities.FeatureConfig] objects, including a [variety of rules][matchbox.common.factories.entities.VariationRule] which distort and duplicate the data in predictable ways. These use [Faker](https://faker.readthedocs.io/) to generate data.
@@ -82,7 +82,9 @@ source_factory(
 )
 ```
 
-By default, each `SourceTestkit`, `ModelTestkit`, or `ResolverTestkit` creates a new [`DAG`][matchbox.client.dags.DAG]. If membership to the right DAG is important, you can either set it manually:
+By default, each `SourceTestkit`, `ModelTestkit`, or `ResolverTestkit` creates a new [`DAG`][matchbox.client.dags.DAG]. This DAG is only created to satisfy the step's requirements so it can be used standalone, and as such doesn't do things like adding the step _to_ that DAG.
+
+If DAG membership is important to your tests, you should either set it manually:
 
 ```python
 dag = DAG("companies")

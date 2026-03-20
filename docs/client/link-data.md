@@ -1,6 +1,6 @@
 # Building Matchbox DAGs
 
-Entity resolution usually needs more than one matching step. Matchbox uses a directed acyclic graph (DAG) to describe that workflow and keep each step explicit.
+Entity resolution usually needs more than one matching step. Matchbox uses a directed acyclic graph (DAG) to describe that workflow.
 
 In Matchbox, a complete pipeline uses three kinds of node:
 
@@ -23,32 +23,20 @@ graph TD
     LAB --> RF["Final resolver"]
 ```
 
-All nodes are lazy until you run them.
+All objects are lazy in a Matchbox DAG. You must explicitly run them after you define them.
 
 ```python
-query_data = companies_house.query().data()
+# Queries are lazy
+query_data = query.data()
+
+# Steps are lazy
 model_scores = dedupe_companies_house.run()
 resolver_clusters = companies_resolver.run()
+
+# DAGs are lazy
+dag = DAG("companies").load_default()
+dag.run_and_sync()
 ```
-
-## Setting up your environment
-
-When building a pipeline, it helps to configure logging and create the warehouse client you will attach to your sources.
-
-=== "Example"
-    ```python
-    import logging
-
-    from sqlalchemy import create_engine
-
-    logging.basicConfig(
-        format="%(asctime)s [%(name)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    logging.getLogger("matchbox").setLevel(logging.INFO)
-
-    engine = create_engine("postgresql://user:password@host:port/database")
-    ```
 
 ## 1. Defining a DAG
 
@@ -74,10 +62,15 @@ Add each dataset with [`source()`][matchbox.client.dags.DAG.source]. See
 
 === "Example"
     ```python
+    from sqlalchemy import create_engine
+    
     from matchbox.client import RelationalDBLocation
 
+    # Configure a warehouse location
+    engine = create_engine("postgresql://user:password@host:port/database")
     warehouse = RelationalDBLocation(name="warehouse").set_client(engine)
 
+    # Add sources
     companies_house = dag.source(
         name="companies_house",
         location=warehouse,
@@ -132,9 +125,6 @@ The `cleaning` dictionary controls which columns flow into the model.
 - The dictionary value is a DuckDB SQL expression.
 - Only the cleaned columns you declare are passed through, plus `id`, `leaf_id`, and key columns.
 
-!!! tip "Include every field the model needs"
-    If a field is missing from `cleaning`, it does not reach the model. Include pass-through aliases for every field referenced by `model_settings`.
-
 ### Field qualification
 
 Without cleaning, Matchbox qualifies source fields with the source name.
@@ -161,6 +151,33 @@ Use `source.f()` inside cleaning expressions when you need a qualified reference
 ```python
 companies_house.f("company_name")
 ```
+
+??? tip "Alias fields for better model settings"
+    Want to avoid writing `source.f()` in your `model_settings`?
+
+    Use the cleaning dictionary to alias the field, even if you don't clean it.
+
+    ```python
+    # Without aliasing — source.f() required in model_settings
+    companies_house
+        .query()
+        .deduper(
+            ...
+            model_settings={
+                "unique_fields": [companies_house.f("company_name")]
+            }
+        )
+
+    # With aliasing — use the simple string name instead
+    companies_house
+        .query(
+            cleaning={"name": companies_house.f("company_name")}
+        )
+        .deduper(
+            ...
+            model_settings={"unique_fields": ["name"]}
+        )
+    ```
 
 ## 4. Creating models
 
@@ -247,9 +264,8 @@ want the next model layer to work from a resolved entity view.
         name="resolve_exporters",
         description="Resolve exporter duplicates",
         resolver_class=Components,
-        resolver_settings=ComponentsSettings(
-            thresholds={dedupe_exporters.name: 1.0}
-        ),
+        # no resolver_settings defaults to {}
+        # the Components methodology with default to thresholds of 0.0
     )
 
     link_resolved = resolve_companies_house.query().linker(
@@ -306,7 +322,7 @@ when other users and services should query it.
     dag.set_default()
     ```
 
-`set_default()` marks the run as the published version that `load_default()` retrieves. It requires all steps in the DAG to be reachable from a single final resolver.
+`set_default()` marks the run as the published version that `load_default()` retrieves. It requires all steps in the DAG to be reachable from a single final resolver. Setting a run as default deletes the previous default. 
 
 ### Visualising execution
 

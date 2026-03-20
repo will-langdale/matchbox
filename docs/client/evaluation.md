@@ -20,7 +20,7 @@ Evaluation starts with a set of clusters for reviewers to inspect.
     dag.get_matches().as_dump().write_parquet("samples.pq")
     ```
 
-`dag.get_matches()` samples the default resolver. Pass `resolver="resolver_name"` if you want a specific resolver instead.
+`dag.get_matches()` samples the default resolver. Pass `resolver="resolver_name"` if you want a specific resolver from your DAG instead.
 
 ### Sampling more than one resolver
 
@@ -75,7 +75,7 @@ Use [`EvalData`][matchbox.client.eval.EvalData] to download the relevant judgeme
 `resolver.results_eval` expands resolver clusters back to server leaf IDs, which is the format the evaluation helpers expect.
 
 !!! note "results_eval is a local helper"
-    `resolver.results_eval` depends on local leaf mappings from the current Python session. Run the resolver locally, keep upstream model runs at the default `low_memory=False`, and then call it. If you load a DAG from the server, rerun the relevant steps locally first.
+    `resolver.results_eval` depends on local leaf mappings from the current Python session. Run the resolver locally, keep upstream model runs at the default `low_memory=False`, and then call it. If you load a DAG from the server, re-run the relevant steps locally first.
 
 ## Comparing resolvers
 

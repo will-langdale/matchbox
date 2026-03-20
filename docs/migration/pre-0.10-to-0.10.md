@@ -14,7 +14,7 @@ The main naming changes are:
 
 - `resolution` becomes `step`.
 - `probability` becomes `score`.
-- Model-final workflows become resolver-final workflows.
+- `final` and `apex` terms now reference resolvers, not models.
 
 ## Updating pipeline code
 
@@ -24,7 +24,8 @@ The common migration is to insert an explicit resolver after the models you alre
     ```python
     linker = left.query().linker(
         right.query(),
-        ...,
+        truth=0.8,
+        ...
     )
     ```
 
@@ -107,4 +108,4 @@ pending_dag = DAG("companies").load_pending()
 print(pending_dag.draw())
 ```
 
-Those server-side DAGs have already been migrated, so they are useful for checking step names, resolver names, and the shape of the final pipeline.
+Those server-side DAGs will automatically be migrated, so they are useful for checking step names, resolver names, and the shape of the final pipeline.

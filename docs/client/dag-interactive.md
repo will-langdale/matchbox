@@ -20,7 +20,13 @@ The rest of this guide follows that same flow: inspect the graph, work on source
 
 ## Running steps manually
 
-Sources, models, and resolvers can be run one by one. A step must be run before it can be synced, and every dependency must already be available locally.
+Sources, models, and resolvers can be run and synced one by one.
+
+Different step types have different requirements to run individually:
+
+* Sources have no dependencies
+* Models need their depdendencies to be run and synced
+* Resolvers need their depdendencies to be run
 
 === "Example"
     ```python
@@ -69,11 +75,11 @@ You can also run part of the DAG by step name.
     dag.run_and_sync(start="source_a", finish="resolve_a")
     ```
 
-This is useful when you are working on one branch of the DAG and do not want to rerun everything above it.
+This is useful when you are working on one branch of the DAG and do not want to re-run everything above it.
 
 ## Iterating on sources
 
-Start at the source when you are shaping extract-transform logic or checking what will be indexed.
+It's useful to inspect source internals when you are shaping extract-transform logic or checking what will be indexed. While `source.run()` will return a full output, `source.sample()` can be used to examine a smaller subset.
 
 === "Example"
     ```python
@@ -91,9 +97,7 @@ The default return type is Polars. Other return types are available.
     source_a.sample(return_type="pandas")
     ```
 
-Re-running a source refreshes its local cache. If you change a source definition, rerun and sync it so downstream queries and models read the updated data.
-
-Once the source looks right, inspect the query that feeds the next model.
+Re-running a source refreshes its local cache. If you change a source definition, re-run and sync it so downstream queries and models read the updated data.
 
 ## Iterating on queries
 
@@ -111,7 +115,7 @@ Once a source has run, inspect the query output that the next model layer will s
     source_a_query.data_raw()  # raw qualified columns before cleaning
     ```
 
-You can reuse cached raw data while adjusting cleaning logic.
+For speed, you can reuse cached raw data while adjusting cleaning logic.
 
 === "Example"
     ```python
@@ -121,7 +125,7 @@ You can reuse cached raw data while adjusting cleaning logic.
     source_a_query.data(raw_data=raw_query_data)
     ```
 
-When the cleaned table looks right, rerun the model with that query output.
+When the cleaned table looks right, re-run the model with that query output.
 
 ## Iterating on models
 
@@ -143,7 +147,7 @@ You can also reuse query data while adjusting model settings.
     dedupe_a.run(left_data=dedupe_data)
     ```
 
-Linkers accept prefetched left and right query dataframes.
+Linkers accept pre-fetched left and right query dataframes.
 
 === "Example"
     ```python
@@ -153,7 +157,7 @@ Linkers accept prefetched left and right query dataframes.
     link_ab.run(left_data=left_data, right_data=right_data)
     ```
 
-After you are happy with the scores, rerun the dependent resolver layer.
+After you are happy with the scores, re-run the dependent resolver layer.
 
 ## Iterating on resolvers
 
@@ -172,7 +176,7 @@ After a local resolver run, `results_eval` gives the leaf mapping used for Match
     final_resolver.results_eval
     ```
 
-If you rerun an upstream model, rerun every dependent resolver before you sync or publish the DAG.
+If you re-run an upstream model, re-run every dependent resolver before you sync or publish the DAG.
 
 ## Replacing a step wholesale
 

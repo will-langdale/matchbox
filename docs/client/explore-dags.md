@@ -2,7 +2,7 @@
 
 A Matchbox collection can store several runs of a DAG. Each run is a server-side snapshot of the sources, models, and resolvers that define one entity view for that collection.
 
-This guide shows how to list collections, download one stored run, and inspect the pipeline it contains.
+This guide shows how to list collections, download a stored run, and inspect the pipeline it contains.
 
 ## Listing collections
 
@@ -44,7 +44,7 @@ Load the default or pending run for a collection.
     dag = DAG(name="companies").load_pending()
     ```
 
-The downloaded DAG includes the serialisable definitions of every source, model, and resolver in that run. Once you have that structure locally, you can inspect it, attach warehouse clients, or create a new run from it.
+The downloaded DAG includes the serialisable definitions of every source, model, and resolver in that run. 
 
 ## Inspecting the pipeline
 
@@ -61,12 +61,7 @@ Use `draw()` to inspect the dependency graph.
     print(dag.sequence)
     ```
 
-The default resolver is the single final resolver in a complete published DAG. If a DAG has more than one final resolver, `default_resolver` is ambiguous and you need to pick a named resolver explicitly.
-
-=== "Example"
-    ```python
-    resolver = dag.default_resolver
-    ```
+The default resolver is the single final resolver in a complete published DAG. It's used in functions like `DAG.get_matches()` if no resolver is supplied. To make a DAG run the default, a `final_resolver` must be present.
 
 ## Inspecting individual steps
 
