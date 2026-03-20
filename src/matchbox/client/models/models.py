@@ -275,3 +275,8 @@ class Model(StepABC):
             resolver_settings=resolver_settings if resolver_settings else {},
             description=description,
         )
+
+    def clear_data(self) -> None:
+        """Suppress data clearing for models."""
+        # TODO make DAG smart enough to know when to call this
+        # without affecting downstream resolvers
