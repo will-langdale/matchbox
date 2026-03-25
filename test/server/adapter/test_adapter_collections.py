@@ -660,6 +660,150 @@ class TestMatchboxCollectionsBackend:
                     path=invalid_model.path,
                 )
 
+    def test_insert_resolver(self) -> None:
+        """Test that resolvers can be inserted and managed."""
+        with self.scenario(self.backend, "link") as dag_testkit:
+            # Setup
+            linked = dag_testkit.source_to_linked["crn"]
+
+            dedupe_crn_testkit = dag_testkit.models["naive_test_crn"]
+            dedupe_dh_testkit = dag_testkit.models["naive_test_dh"]
+            linker_testkit = dag_testkit.models[
+                "deterministic_naive_test_crn_naive_test_dh"
+            ]
+
+            resolvers_count = self.backend.resolvers.count()
+
+            # Insert a resolver over a single model
+            resolver_single_testkit = resolver_factory(
+                dag=dag_testkit.dag,
+                name="resolver_dedupe_crn_alt",
+                description="Test resolver for a single dedupe model",
+                inputs=[dedupe_crn_testkit],
+                true_entities=linked.true_entities,
+            ).fake_run()
+
+            self.backend.create_step(
+                step=resolver_single_testkit.resolver.to_dto(),
+                path=resolver_single_testkit.resolver.path,
+            )
+            assert self.backend.resolvers.count() == resolvers_count + 1
+
+            self.backend.insert_resolver_data(
+                path=resolver_single_testkit.resolver.path,
+                data=resolver_single_testkit.resolver.results.to_arrow(),
+            )
+            assert (
+                self.backend.get_step_stage(resolver_single_testkit.resolver.path)
+                == UploadStage.COMPLETE
+            )
+
+            # Insert a resolver over a mutliple models
+            resolver_multi_testkit = resolver_factory(
+                dag=dag_testkit.dag,
+                name="resolver_multi",
+                description="Test resolver combining two dedupe models",
+                inputs=[dedupe_crn_testkit, dedupe_dh_testkit],
+                true_entities=linked.true_entities,
+            ).fake_run()
+
+            self.backend.create_step(
+                step=resolver_multi_testkit.resolver.to_dto(),
+                path=resolver_multi_testkit.resolver.path,
+            )
+            assert self.backend.resolvers.count() == resolvers_count + 2
+
+            self.backend.insert_resolver_data(
+                path=resolver_multi_testkit.resolver.path,
+                data=resolver_multi_testkit.resolver.results.to_arrow(),
+            )
+
+            # Insert a resolver that creates diamond-shaped dependencies
+            resolver_diamond_testkit = resolver_factory(
+                dag=dag_testkit.dag,
+                name="resolver_diamond",
+                description="Test resolver with diamond dependency",
+                inputs=[dedupe_crn_testkit, linker_testkit],
+                true_entities=linked.true_entities,
+            ).fake_run()
+
+            self.backend.create_step(
+                step=resolver_diamond_testkit.resolver.to_dto(),
+                path=resolver_diamond_testkit.resolver.path,
+            )
+            assert self.backend.resolvers.count() == resolvers_count + 3
+
+            self.backend.insert_resolver_data(
+                path=resolver_diamond_testkit.resolver.path,
+                data=resolver_diamond_testkit.resolver.results.to_arrow(),
+            )
+
+            # We cannot re-create under the same path
+            with pytest.raises(MatchboxStepAlreadyExists):
+                self.backend.create_step(
+                    step=resolver_single_testkit.resolver.to_dto(),
+                    path=resolver_single_testkit.resolver.path,
+                )
+
+            assert self.backend.resolvers.count() == resolvers_count + 3
+
+            # We cannot re-insert over existing data
+            with pytest.raises(MatchboxStepExistingData):
+                self.backend.insert_resolver_data(
+                    path=resolver_single_testkit.resolver.path,
+                    data=resolver_single_testkit.resolver.results.to_arrow(),
+                )
+
+            # Can update resolver step
+            old_step = resolver_single_testkit.resolver.to_dto()
+            updated_config = old_step.config.model_copy(
+                update={"resolver_settings": {"threshold": 0.8}}
+            )
+            updated_step = Step.model_validate(
+                old_step.model_copy(
+                    update={
+                        "description": "updated resolver description",
+                        "config": updated_config,
+                    }
+                )
+            )
+
+            self.backend.update_step(
+                step=updated_step,
+                path=resolver_single_testkit.resolver.path,
+            )
+
+            # We can retrieve the updated step
+            resolver_retrieved = self.backend.get_step(
+                resolver_single_testkit.resolver.path
+            )
+            assert resolver_retrieved.description == "updated resolver description"
+            assert resolver_retrieved.config.resolver_settings == {"threshold": 0.8}
+
+            # We cannot change a resolver's inputs
+            rewired_config = old_step.config.model_copy(
+                update={"inputs": (dedupe_dh_testkit.name,)}
+            )
+            rewired_step = Step.model_validate(
+                old_step.model_copy(update={"config": rewired_config})
+            )
+
+            with pytest.raises(MatchboxStepUpdateError, match="parents"):
+                self.backend.update_step(
+                    step=rewired_step,
+                    path=resolver_single_testkit.resolver.path,
+                )
+
+            # We cannot change a resolver's fingerprint
+            with pytest.raises(MatchboxStepUpdateError, match="fingerprint"):
+                corrupt_step = Step.model_validate(
+                    updated_step.model_copy(update={"fingerprint": b"fake"})
+                )
+                self.backend.update_step(
+                    step=corrupt_step,
+                    path=resolver_single_testkit.resolver.path,
+                )
+
     def test_insert_resolver_rejects_non_model_input(self) -> None:
         """Resolver inputs must be model steps."""
         with self.scenario(self.backend, "dedupe") as dag_testkit:

@@ -19,8 +19,10 @@ from matchbox.server.postgresql.orm import (
     Contains,
     EvalJudgements,
     Groups,
+    ModelConfigs,
     ModelEdges,
     ResolverClusters,
+    ResolverConfigs,
     SourceConfigs,
     Steps,
     Users,
@@ -121,7 +123,8 @@ class MatchboxPostgres(
 
         Groups.initialise()
         self.sources = SourceConfigs
-        self.models = FilteredSteps(sources=False, models=True)
+        self.models = ModelConfigs
+        self.resolvers = ResolverConfigs
         self.source_clusters = FilteredClusters(has_source=True)
         self.model_clusters = FilteredClusters(has_source=False)
         self.all_clusters = FilteredClusters()
