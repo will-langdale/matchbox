@@ -62,7 +62,6 @@ class TestE2EPipelineBuilder:
         n_true_entities = 10  # Keep it small for simplicity
         self.warehouse_engine = adbc_postgres_warehouse
 
-        # Create simple feature configurations - just two sources
         features = {
             "company_name": FeatureConfig(
                 name="company_name",
@@ -80,10 +79,10 @@ class TestE2EPipelineBuilder:
             ),
         }
 
-        # Create two simple sources that can be linked
+        # Create three simple sources that can be linked
         source_parameters = (
             SourceTestkitParameters(
-                name="source_a",
+                name="source_1",
                 engine=self.warehouse_engine,
                 features=(
                     features["company_name"].add_variations(
@@ -96,19 +95,28 @@ class TestE2EPipelineBuilder:
                 repetition=0,  # No duplicates
             ),
             SourceTestkitParameters(
-                name="source_b",
+                name="source_2",
                 engine=self.warehouse_engine,
                 features=(
                     features["company_name"],
                     features["registration_id"],
                     features["tags"],
                 ),
-                n_true_entities=n_true_entities // 2,  # Half overlap
-                repetition=1,  # Duplicate all rows for deduplication testing
+                n_true_entities=n_true_entities // 2,
+                repetition=1,
+            ),
+            SourceTestkitParameters(
+                name="source_3",
+                engine=self.warehouse_engine,
+                features=(
+                    features["company_name"],
+                    features["registration_id"],
+                ),
+                n_true_entities=n_true_entities // 2,
+                repetition=0,
             ),
         )
 
-        # Create linked sources testkit
         self.linked_testkit = linked_sources_factory(
             source_parameters=source_parameters,
             seed=42,
@@ -124,41 +132,39 @@ class TestE2EPipelineBuilder:
 
         yield
 
-        # Teardown
         response = matchbox_client.delete("/database", params={"certain": "true"})
         assert response.status_code == 200, "Failed to clear matchbox database"
 
     def test_dag_pipeline_creation_and_rerun(self) -> None:
-        """Test DAG API with simple two-source pipeline
+        """Test DAG API with minimally complex pipeline.
 
         Rerun to test overwriting.
         """
 
         # === SETUP PHASE ===
         dw_loc = RelationalDBLocation(name="dbname").set_client(self.warehouse_engine)
-
         dag = DAG("companies").new_run()
 
         # Create source configs
-        source_a = dag.source(
+        source_1 = dag.source(
             location=dw_loc,
-            name="source_a",
+            name="source_1",
             extract_transform="""
                 select
                     key::text as id,
                     company_name,
                     registration_id
                 from
-                    source_a;
+                    source_1;
             """,
             infer_types=True,
             key_field="id",
             index_fields=["company_name", "registration_id"],
         )
 
-        source_b = dag.source(
+        source_2 = dag.source(
             location=dw_loc,
-            name="source_b",
+            name="source_2",
             extract_transform="""
                 select
                     key::text as id,
@@ -166,69 +172,111 @@ class TestE2EPipelineBuilder:
                     registration_id,
                     tags::text[] as tags
                 from
-                    source_b;
+                    source_2;
             """,
             infer_types=True,
             key_field="id",
             index_fields=["company_name", "registration_id", "tags"],
         )
 
+        source_3 = dag.source(
+            location=dw_loc,
+            name="source_3",
+            extract_transform="""
+                select
+                    key::text as id,
+                    company_name,
+                    registration_id
+                from
+                    source_3;
+            """,
+            infer_types=True,
+            key_field="id",
+            index_fields=["company_name", "registration_id"],
+        )
+
         # Dedupe steps
-        dedupe_a = source_a.query(
+        dedupe_1 = source_1.query(
             cleaning={
-                "company_name": self._clean_company_name(source_a.f("company_name")),
-                "registration_id": source_a.f("registration_id"),
+                "company_name": self._clean_company_name(source_1.f("company_name")),
+                "registration_id": source_1.f("registration_id"),
             },
         ).deduper(
-            name="dedupe_source_a",
-            description="Deduplicate source A",
+            name="dedupe_source_1",
+            description="Deduplicate source 1",
             model_class=NaiveDeduper,
             model_settings={"unique_fields": ["registration_id"]},
         )
 
-        dedupe_b = source_b.query(
+        dedupe_2 = source_2.query(
             cleaning={
-                "company_name": self._clean_company_name(source_b.f("company_name")),
-                "registration_id": source_b.f("registration_id"),
+                "company_name": self._clean_company_name(source_2.f("company_name")),
+                "registration_id": source_2.f("registration_id"),
             }
         ).deduper(
-            name="dedupe_source_b",
-            description="Deduplicate source B",
+            name="dedupe_source_2",
+            description="Deduplicate source 2",
             model_class=NaiveDeduper,
             model_settings={"unique_fields": ["registration_id"]},
         )
 
-        dedupe_a_resolver = dedupe_a.resolver(
-            name="resolver_dedupe_source_a", resolver_class=Components
+        resolver_1 = dedupe_1.resolver(
+            name="resolver_dedupe_source_1",
+            resolver_class=Components,
         )
-        dedupe_b_resolver = dedupe_b.resolver(
-            name="resolver_dedupe_source_b", resolver_class=Components
+        resolver_2 = dedupe_2.resolver(
+            name="resolver_dedupe_source_2",
+            resolver_class=Components,
         )
 
-        # Link deduplicated sources A and B
-        link_a_b = dedupe_a_resolver.query(
-            source_a,
+        # Link steps
+        link_1 = resolver_1.query(
+            source_1,
             cleaning={
-                "company_name": self._clean_company_name(source_a.f("company_name")),
-                "registration_id": source_a.f("registration_id"),
+                "company_name": self._clean_company_name(source_1.f("company_name")),
+                "registration_id": source_1.f("registration_id"),
             },
         ).linker(
-            dedupe_b_resolver.query(
-                source_b,
+            resolver_2.query(
+                source_2,
                 cleaning={
                     "company_name": self._clean_company_name(
-                        source_b.f("company_name")
+                        source_2.f("company_name")
                     ),
-                    "registration_id": source_b.f("registration_id"),
+                    "registration_id": source_2.f("registration_id"),
                 },
             ),
-            name="final",
-            description="Link sources A and B on registration ID",
+            name="link_source_1_source_2",
+            description="Link source 1 and source 2 on registration ID",
             model_class=DeterministicLinker,
             model_settings={"comparisons": ["l.registration_id = r.registration_id"]},
         )
-        final_resolver = link_a_b.resolver(
-            name="resolver_final", resolver_class=Components
+
+        link_2 = source_3.query(
+            cleaning={
+                "company_name": self._clean_company_name(source_3.f("company_name")),
+                "registration_id": source_3.f("registration_id"),
+            },
+        ).linker(
+            resolver_1.query(
+                source_1,
+                cleaning={
+                    "company_name": self._clean_company_name(
+                        source_1.f("company_name")
+                    ),
+                    "registration_id": source_1.f("registration_id"),
+                },
+            ),
+            name="link_source_3_source_1",
+            description="Link source 3 and source 1 on registration ID",
+            model_class=DeterministicLinker,
+            model_settings={"comparisons": ["l.registration_id = r.registration_id"]},
+        )
+
+        final_resolver = link_1.resolver(
+            link_2,
+            name="resolver_final",
+            resolver_class=Components,
         )
 
         # === FIRST RUN ===
@@ -238,13 +286,13 @@ class TestE2EPipelineBuilder:
         assert DAG.list_all() == [dag.name]
 
         # Update metadata of one node, will check later
-        link_a_b.description = "Updated description"
-        link_a_b.sync()
+        link_1.description = "Updated description"
+        link_1.sync()
 
         # Basic verification - we have some linked results and can retrieve them
-        final_df = final_resolver.query(source_a, source_b).data()
+        final_df = final_resolver.query(source_1, source_2, source_3).data()
 
-        # # Should have linked results
+        # Should have linked results
         assert len(final_df) > 0, "Expected some results from first run"
         assert final_df["id"].n_unique() == len(self.linked_testkit.true_entities)
 
@@ -255,17 +303,17 @@ class TestE2EPipelineBuilder:
         test_key = next(
             iter(
                 self.linked_testkit.find_entities(
-                    min_appearances={source_b.name: 1, source_a.name: 1}
-                )[0].keys[source_b.name]
+                    min_appearances={source_2.name: 1, source_1.name: 1}
+                )[0].keys[source_2.name]
             )
         )
 
         matches = dag.lookup_key(
-            from_source=source_b.name,
-            to_sources=[source_a.name],
+            from_source=source_2.name,
+            to_sources=[source_1.name],
             key=test_key,
         )
-        assert len(matches[source_a.name]) >= 1
+        assert len(matches[source_1.name]) >= 1
 
         # Can retrieve whole lookup
         dag1_lookup = dag.get_matches().as_lookup()
@@ -282,19 +330,22 @@ class TestE2EPipelineBuilder:
         assert reconstructed_dag.run == dag.run
 
         # Check complex types serialise and deserialise
-        source_b_remote: Source = reconstructed_dag.get_source("source_b")
+        source_2_remote: Source = reconstructed_dag.get_source("source_2")
         tags_field: SourceField = next(
-            f for f in source_b_remote.index_fields if f.name == "tags"
+            field for field in source_2_remote.index_fields if field.name == "tags"
         )
         assert tags_field.type == DataTypes.LIST(DataTypes.STRING)
 
         # Previous update was effective
-        assert reconstructed_dag.get_model("final").description == "Updated description"
+        assert (
+            reconstructed_dag.get_model("link_source_1_source_2").description
+            == "Updated description"
+        )
 
         # Can directly read data from default
         assert matches == reconstructed_dag.lookup_key(
-            from_source=source_b.name,
-            to_sources=[source_a.name],
+            from_source=source_2.name,
+            to_sources=[source_1.name],
             key=test_key,
         )
 
@@ -321,24 +372,32 @@ class TestE2EPipelineBuilder:
 
         # Possible to overwrite node locally
         # (following source has one fewer field)
-        source_a = pending_dag.source(
+        source_1 = pending_dag.source(
             location=dw_loc,
-            name="source_a",
+            name="source_1",
             extract_transform="""
                 select
                     key::text as id,
                     company_name
                 from
-                    source_a;
+                    source_1;
             """,
             infer_types=True,
             key_field="id",
             index_fields=["company_name"],
         )
 
-        source_a.run()
+        source_1.run()
         # Possible to overwrite one node on server
-        source_a.sync()
+        source_1.sync()
+
+        source_2 = pending_dag.get_source("source_2")
+        source_3 = pending_dag.get_source("source_3")
+
         # This will cause downstream queries to fail
         with pytest.raises(MatchboxStepNotFoundError):
-            pending_dag.get_resolver("resolver_final").query(source_a).data()
+            pending_dag.get_resolver("resolver_final").query(
+                source_1,
+                source_2,
+                source_3,
+            ).data()

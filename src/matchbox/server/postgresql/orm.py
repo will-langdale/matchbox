@@ -221,7 +221,7 @@ class StepFrom(CountMixin, MBDB.MatchboxBase):
         ForeignKey("steps.step_id", ondelete="CASCADE"),
         primary_key=True,
     )
-    level: Mapped[int] = mapped_column(INTEGER, nullable=False)
+    level: Mapped[int] = mapped_column(INTEGER, nullable=False, primary_key=True)
 
     # Constraints
     __table_args__ = (
@@ -599,12 +599,10 @@ class Steps(CountMixin, MBDB.MatchboxBase):
     ) -> None:
         """Create closure table entries for a parent-child relationship."""
         # Direct relationship
-        session.add(
-            StepFrom(
-                parent=parent.step_id,
-                child=child.step_id,
-                level=1,
-            )
+        session.execute(
+            insert(StepFrom)
+            .values(parent=parent.step_id, child=child.step_id, level=1)
+            .on_conflict_do_nothing()
         )
 
         # Transitive closure
@@ -614,13 +612,17 @@ class Steps(CountMixin, MBDB.MatchboxBase):
             .all()
         )
 
-        for ancestor in ancestors:
-            session.add(
-                StepFrom(
-                    parent=ancestor.parent,
-                    child=child.step_id,
-                    level=ancestor.level + 1,
-                )
+        if ancestors:
+            values_to_insert: list[dict[str, int]] = [
+                {
+                    "parent": ancestor.parent,
+                    "child": child.step_id,
+                    "level": ancestor.level + 1,
+                }
+                for ancestor in ancestors
+            ]
+            session.execute(
+                insert(StepFrom).values(values_to_insert).on_conflict_do_nothing()
             )
 
 

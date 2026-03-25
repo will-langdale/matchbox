@@ -337,6 +337,7 @@ class MatchboxDBAdapter(ABC):
 
     sources: ListableAndCountable
     models: Countable
+    resolvers: Countable
     source_clusters: Countable
     model_clusters: Countable
     all_clusters: Countable
