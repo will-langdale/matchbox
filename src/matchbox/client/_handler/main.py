@@ -5,7 +5,6 @@ from enum import StrEnum
 from importlib.metadata import version
 
 import httpx
-from pydantic import ValidationError
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -101,26 +100,14 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
 
     try:
         data = res.json()
-
-        if "exception_type" in data:
-            error = ErrorResponse.model_validate(data)
-            ExceptionClass = HTTP_EXCEPTION_REGISTRY.get(error.exception_type)
-
-            if ExceptionClass:
-                raise reconstruct_exception(ExceptionClass, error)
-            raise MatchboxUnhandledServerResponse(
-                http_status=res.status_code,
-                details=f"Unknown exception type: {error.exception_type}",
-            )
-
-        raise MatchboxUnhandledServerResponse(
-            http_status=res.status_code, details=str(res.content)
-        )
-
-    except ValidationError as e:
+        error = ErrorResponse.model_validate(data)
+        ExceptionClass = HTTP_EXCEPTION_REGISTRY[error.exception_type]
+    except Exception as e:
         raise MatchboxUnhandledServerResponse(
             http_status=res.status_code, details=str(res.content)
         ) from e
+
+    raise reconstruct_exception(ExceptionClass, error)
 
 
 def create_client(settings: ClientSettings) -> httpx.Client:
