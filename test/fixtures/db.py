@@ -13,10 +13,11 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from moto import mock_aws
 from pydantic import Field, SecretBytes, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import Engine, MetaData, create_engine
+from sqlalchemy import Engine, MetaData, create_engine, text
 
 from matchbox.server.base import MatchboxDatastoreSettings, MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
+from matchbox.server.postgresql.db import MBDB
 from matchbox.server.uploads import InMemoryUploadTracker, RedisUploadTracker
 
 if TYPE_CHECKING:
@@ -26,6 +27,72 @@ else:
 
 
 # Warehouse database fixtures
+
+
+POSTGRES_HOST = "localhost"
+MATCHBOX_USER = "matchbox_user"
+MATCHBOX_PASSWORD = "matchbox_password"
+WAREHOUSE_USER = "warehouse_user"
+WAREHOUSE_PASSWORD = "warehouse_password"
+
+
+def _worker_database_name(prefix: str, worker_id: str) -> str:
+    return f"{prefix}_test_{worker_id}"
+
+
+def _postgres_url(
+    user: str,
+    password: str,
+    port: int,
+    database: str,
+) -> str:
+    return f"postgresql+psycopg://{user}:{password}@{POSTGRES_HOST}:{port}/{database}"
+
+
+def _drop_database(
+    user: str,
+    password: str,
+    port: int,
+    database: str,
+) -> None:
+    maintenance_engine = create_engine(
+        _postgres_url(user, password, port, "postgres"),
+        isolation_level="AUTOCOMMIT",
+    )
+    quoted_database = f'"{database}"'
+
+    try:
+        with maintenance_engine.connect() as connection:
+            connection.execute(
+                text(
+                    """
+                    SELECT pg_terminate_backend(pid)
+                    FROM pg_stat_activity
+                    WHERE datname = :database
+                        AND pid <> pg_backend_pid()
+                    """
+                ),
+                {"database": database},
+            )
+            connection.execute(
+                text(f"DROP DATABASE IF EXISTS {quoted_database} WITH (FORCE)")
+            )
+    finally:
+        maintenance_engine.dispose()
+
+
+def _recreate_database(user: str, password: str, port: int, database: str) -> None:
+    _drop_database(user, password, port, database)
+    maintenance_engine = create_engine(
+        _postgres_url(user, password, port, "postgres"),
+        isolation_level="AUTOCOMMIT",
+    )
+
+    try:
+        with maintenance_engine.connect() as connection:
+            connection.execute(text(f'CREATE DATABASE "{database}"'))
+    finally:
+        maintenance_engine.dispose()
 
 
 class DevelopmentSettings(BaseSettings):
@@ -88,19 +155,33 @@ def drop_all_tables(engine: Engine) -> None:
     metadata.drop_all(bind=engine)
 
 
+@pytest.fixture(scope="session")
+def postgres_warehouse_database(
+    development_settings: DevelopmentSettings,
+    worker_id: str,
+) -> Generator[str, None, None]:
+    """Create an isolated warehouse database for this pytest worker."""
+    port = development_settings.warehouse_port
+    database = _worker_database_name("warehouse", worker_id)
+
+    _recreate_database(WAREHOUSE_USER, WAREHOUSE_PASSWORD, port, database)
+    yield database
+    _drop_database(WAREHOUSE_USER, WAREHOUSE_PASSWORD, port, database)
+
+
 @pytest.fixture(scope="function")
 def sqla_postgres_warehouse(
     development_settings: DevelopmentSettings,
+    postgres_warehouse_database: str,
 ) -> Generator[Engine, None, None]:
     """Creates an engine for the test warehouse database"""
-    user = "warehouse_user"
-    password = "warehouse_password"
-    host = "localhost"
-    database = "warehouse"
-    port = development_settings.warehouse_port
-
     engine = create_engine(
-        f"postgresql+psycopg://{user}:{password}@{host}:{port}/{database}"
+        _postgres_url(
+            WAREHOUSE_USER,
+            WAREHOUSE_PASSWORD,
+            development_settings.warehouse_port,
+            postgres_warehouse_database,
+        )
     )
     yield engine
     drop_all_tables(engine)
@@ -204,20 +285,19 @@ def matchbox_datastore(
     )
 
 
-@pytest.fixture(scope="session")
-def matchbox_postgres_settings(
+def _build_matchbox_postgres_settings(
     development_settings: DevelopmentSettings,
     matchbox_datastore: MatchboxDatastoreSettings,
+    database: str,
 ) -> MatchboxPostgresSettings:
-    """Settings for the Matchbox PostgreSQL database."""
     return MatchboxPostgresSettings(
         batch_size=250_000,
         postgres={
-            "host": "localhost",
+            "host": POSTGRES_HOST,
             "port": development_settings.postgres_backend_port,
-            "user": "matchbox_user",
-            "password": "matchbox_password",
-            "database": "matchbox",
+            "user": MATCHBOX_USER,
+            "password": MATCHBOX_PASSWORD,
+            "database": database,
             "db_schema": "mb",
             "alembic_config": "src/matchbox/server/postgresql/alembic.ini",
         },
@@ -225,38 +305,54 @@ def matchbox_postgres_settings(
     )
 
 
+@pytest.fixture(scope="session")
+def matchbox_postgres_session(
+    development_settings: DevelopmentSettings,
+    matchbox_datastore: MatchboxDatastoreSettings,
+    worker_id: str,
+) -> Generator[MatchboxPostgres, None, None]:
+    """The worker-scoped Matchbox PostgreSQL adapter."""
+    port = development_settings.postgres_backend_port
+    database = _worker_database_name("matchbox", worker_id)
+    _recreate_database(MATCHBOX_USER, MATCHBOX_PASSWORD, port, database)
+
+    settings = _build_matchbox_postgres_settings(
+        development_settings=development_settings,
+        matchbox_datastore=matchbox_datastore,
+        database=database,
+    )
+
+    try:
+        with MBDB.settings_scope(settings):
+            yield MatchboxPostgres(settings=settings)
+    finally:
+        _drop_database(MATCHBOX_USER, MATCHBOX_PASSWORD, port, database)
+
+
 @pytest.fixture(scope="function")
 def matchbox_postgres(
-    matchbox_postgres_settings: MatchboxPostgresSettings,
-) -> Generator[MatchboxPostgres, None, None]:
-    """The Matchbox PostgreSQL database, cleared."""
-
-    adapter = MatchboxPostgres(settings=matchbox_postgres_settings)
-
-    # Clean up the Matchbox database before each test
-    adapter.clear(certain=True)
-
-    yield adapter
-
-    # Clean up the Matchbox database after each test
-    adapter.clear(certain=True)
+    matchbox_postgres_session: MatchboxPostgres,
+) -> MatchboxPostgres:
+    """The Matchbox PostgreSQL database, cleared before each test."""
+    matchbox_postgres_session.clear(certain=True)
+    return matchbox_postgres_session
 
 
 @pytest.fixture(scope="function")
-def matchbox_postgres_dropped(
-    matchbox_postgres_settings: MatchboxPostgresSettings,
+def shared_matchbox_postgres(
+    development_settings: DevelopmentSettings,
+    matchbox_datastore: MatchboxDatastoreSettings,
 ) -> Generator[MatchboxPostgres, None, None]:
-    """The Matchbox PostgreSQL database, dropped and recreated."""
-
-    adapter = MatchboxPostgres(settings=matchbox_postgres_settings)
-
-    # Clean up the Matchbox database before each test
-    adapter.drop(certain=True)
-
-    yield adapter
-
-    # Clean up the Matchbox database after each test
-    adapter.drop(certain=True)
+    """The API container's shared Matchbox PostgreSQL database."""
+    settings = _build_matchbox_postgres_settings(
+        development_settings=development_settings,
+        matchbox_datastore=matchbox_datastore,
+        database="matchbox",
+    )
+    with MBDB.settings_scope(settings):
+        adapter = MatchboxPostgres(settings=settings)
+        adapter.clear(certain=True)
+        yield adapter
 
 
 # Mock AWS fixtures
@@ -292,11 +388,14 @@ def upload_tracker_in_memory() -> Generator[InMemoryUploadTracker, None, None]:
 @pytest.fixture(scope="function")
 def upload_tracker_redis(
     development_settings: DevelopmentSettings,
+    worker_id: str,
 ) -> Generator[RedisUploadTracker, None, None]:
     """Redis-backed upload tracker."""
     r = redis.Redis.from_url(development_settings.redis_url)
     tracker = RedisUploadTracker(
-        redis_url=development_settings.redis_url, expiry_minutes=100
+        redis_url=development_settings.redis_url,
+        expiry_minutes=100,
+        key_space=f"upload:{worker_id}",
     )
 
     def empty_tracker() -> None:
